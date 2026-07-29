@@ -288,3 +288,70 @@ Stage Summary:
 - **Backup**: download/nova-v5-backup.zip (192KB, 90 files) — install-ready
 - **Git**: committed as 30aa707 with full descriptive message
 - **Honest finding**: markdown editor mission fails ~100% (LLM returns truncated output). This is an LLM/prompt issue, not a code bug. The error handling catches it correctly and offers retry. Future fix: few-shot examples or mission-specific prompt tuning.
+
+---
+Task ID: 6
+Agent: main (Z.ai Code)
+Task: Roast from new angles, find deeper bugs, add more tests.
+
+Work Log:
+- Roasted from 12 NEW angles I hadn't examined before:
+  1. getZai() race condition: two builds before first create() resolves → double instantiation
+  2. zaiInstance never resets on failure → stale instance poisons all future calls
+  3. System prompt didn't explicitly forbid markdown fences (said "no markdown" but LLM still fenced)
+  4. No "Build cancelled" toast on Esc → user doesn't know if cancelled or finished
+  5. Dev-mode rate limit was 10/hour → too restrictive for development
+  6. stripCodeFences: empty first fence block returned empty string (regex matched but content was empty)
+  7. No test for newBuildId uniqueness
+  8. No test for logger being called with correct events
+  9. No test for request.signal passthrough
+  10. No test for stripCodeFences edge cases (multiple blocks, empty blocks)
+  11. No test for looksLikeHtml edge cases (BOM, SVG, XML)
+  12. result closure in build causes unnecessary re-renders (acknowledged, not fixed — not a bug)
+- Fixed getZai() race condition:
+  - Added `zaiPromise` promise cache
+  - If two builds call getZai() before first create() resolves, both await the same promise
+  - On success: zaiInstance = inst, zaiPromise = null
+  - On failure: zaiPromise = null (retry on next call)
+- Fixed zaiInstance staleness:
+  - On generic error in llmChat catch block, set zaiInstance = null
+  - Next call will call getZai() → create() → fresh instance
+- Fixed system prompt:
+  - Added: "Do NOT wrap the output in \`\`\`html or \`\`\` code fences. Output raw HTML directly."
+  - Changed: "Output ONLY the HTML" → "Output ONLY raw HTML"
+- Added "Build cancelled" toast:
+  - Esc handler now calls toast.info('Build cancelled') after abort
+  - User gets immediate feedback that the cancel worked
+- Added dev-mode rate limit:
+  - `const RATE_LIMIT_MAX = process.env.NODE_ENV === 'production' ? 10 : 100`
+  - Dev: 100 builds/hour. Prod: 10 builds/hour.
+- Fixed stripCodeFences:
+  - Changed from single-match to global regex loop
+  - Finds all fence blocks, returns the first non-empty one
+  - Handles: "```\n```\n```html\n<!DOCTYPE...\n```" → returns the HTML from the second block
+- Wrote 21 new tests (84 total):
+  - tests/edge-cases.test.ts (11 tests):
+    - stripCodeFences: empty first block, whitespace-only first block, multiple empty blocks, all-empty regression
+    - looksLikeHtml: BOM prefix (accepted — trimStart removes BOM), leading newlines, leading tabs, SVG rejection, XML rejection
+  - tests/build-id.test.ts (4 tests):
+    - newBuildId: 10000 unique IDs, correct prefix, 3-part format, sortable by timestamp
+  - tests/build-route.test.ts (6 new tests):
+    - Logger: build.started+completed on success, build.invalid_mission on validation, build.llm_failed on LLM error, build.invalid_html on non-HTML, build.rate_limited on limit exceeded
+    - Signal: request.signal passed to llmChat opts
+  - Updated rate limit test: handles dev-mode (100/hr) vs prod (10/hr) dynamically
+- Ran all tests: 84 pass, 0 fail, 144 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors.
+- Verified with Agent Browser:
+  1. Esc cancel: "Build cancelled" toast appeared, loading stopped
+  2. Snake game build: 36.3s, 12.8KB HTML, "Snake Game" heading in iframe
+  3. Console: zero errors
+  4. Backend log: structured JSON (build.started with remaining:98, build.completed with htmlBytes:12797)
+
+Stage Summary:
+- **Real bugs fixed**: getZai race condition, stale instance, stripCodeFences empty-block, missing cancel toast, dev rate limit too restrictive
+- **Prompt improved**: explicit fence prohibition (was the #1 cause of "invalid HTML" errors)
+- **Tests**: 84 total (was 63). Added edge-cases, build-id, logger verification, signal passthrough.
+- **Dev UX**: 100 builds/hour in dev (was 10), cancel toast on Esc
+- **Backup**: download/nova-v6-backup.zip (197KB, 92 files)
+- **Git**: committed with full message
+- **Current LOC**: ~550 total (llm.ts ~180, rate-limit.ts ~75, route.ts ~120, page.tsx ~225, ErrorBoundary.tsx ~50, logger.ts ~25, tests ~350)
