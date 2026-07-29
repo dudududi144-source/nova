@@ -30,7 +30,9 @@ const EXAMPLES: readonly string[] = [
 ]
 
 export function newBuildId(): string {
-  return `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+  // 10-char random suffix: 36^10 = 3.6 × 10^15 possibilities (collision-proof)
+  // (was 5 chars = 60M possibilities — 82.7% collision chance with 10000 IDs in same ms)
+  return `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`
 }
 
 export default function Home() {

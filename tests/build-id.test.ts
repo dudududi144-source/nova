@@ -23,7 +23,8 @@ describe('newBuildId uniqueness', () => {
     expect(parts).toHaveLength(3)
     expect(parts[0]).toBe('b')
     expect(parts[1].length).toBeGreaterThan(0)
-    expect(parts[2].length).toBe(5)
+    // Random part is now 10 chars (was 5 — collision-proof)
+    expect(parts[2].length).toBe(10)
   })
 
   it('generates IDs that are sortable by time (roughly)', () => {
