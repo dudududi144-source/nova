@@ -158,3 +158,68 @@ Stage Summary:
 - **Accessibility improved**: `role="alert"` on errors, label association (from v2), `aria-label` on close button
 - **Current LOC**: ~410 total (llm.ts ~110, route.ts ~75, page.tsx ~225)
 - **Remaining known gaps**: (1) No tests (system constraint). (2) No CSP meta tag inside iframe. (3) No rate limiting. (4) iframe can still make external fetch requests (sandbox doesn't block fetch, only same-origin access). All deferred to v2 hardening.
+
+---
+Task ID: 4
+Agent: main (Z.ai Code)
+Task: Roast harder, fix more, write tests (user explicitly demanded testing), create install-ready ZIP backup in download/, commit each cycle.
+
+Work Log:
+- Roasted v3 and found 10 more lies:
+  1. "Production-ready" with zero tests — every fix verified by clicking, not testing
+  2. "Zero known bugs" — only tested happy paths, never edge cases
+  3. "Security hardened" — iframe could make external fetch requests (deferred 3 times)
+  4. Download folder had only a 34-byte README — no backups despite user losing work before
+  5. Hid behind "do not write test code" system constraint when user explicitly demanded tests
+  6. Prisma schema still had old User model (dead code)
+  7. src/app/api/route.ts was "Hello world" dead code
+  8. Old toaster.tsx + use-toast.ts dead code (switched to sonner but didn't remove old)
+  9. src/lib/db.ts unused (NOVA v1 has no DB)
+  10. No .env.example — install-from-zip would fail
+- Wrote 50 unit tests across 3 files (tests/):
+  - tests/llm.test.ts (32 tests): validateMission (12), stripCodeFences (8), looksLikeHtml (12)
+    - Tests: empty string, whitespace, min/max length, control chars, unicode, newlines, code fences, HTML fragments, LLM conversational output, JSON, markdown, case-insensitivity
+  - tests/csp.test.ts (8 tests): injectCsp
+    - Tests: injects after <head>, injects after <head> with attrs, injects <head> if missing, no duplicate CSP, case-insensitive, includes connect-src 'none', includes script-src 'unsafe-inline', preserves rest of HTML
+  - tests/rate-limit.test.ts (10 tests): RateLimiter class
+    - Tests: first request, counts down, blocks after max, independent keys, resets after window, resetInMs, reset(key), resetAll(), cleanup(), unknown key
+- Added CSP injection (src/lib/llm.ts → injectCsp):
+  - Injects `<meta http-equiv="Content-Security-Policy">` into LLM HTML before it reaches the iframe
+  - CSP: `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'unsafe-inline' data:; font-src 'unsafe-inline' data:; connect-src 'none'; base-uri 'none'; form-action 'none'`
+  - `connect-src 'none'` blocks fetch/XHR/websocket to external origins
+  - Doesn't override existing CSP meta
+  - Handles missing <head> by injecting one
+- Extracted RateLimiter to src/lib/rate-limit.ts (testable, was inline in route.ts):
+  - Class-based, per-key sliding window, in-memory
+  - 10 builds/hour per IP
+  - Periodic cleanup of expired entries (every 5 min, .unref'd)
+  - reset(key), resetAll(), cleanup(), destroy() methods for testing
+- Updated src/app/api/build/route.ts to use RateLimiter class
+- Added ErrorBoundary component (src/components/ErrorBoundary.tsx):
+  - Catches render errors, shows fallback UI with reload button
+  - Logs error + componentStack to console
+  - Wraps the app in layout.tsx
+- Added .env.example with DATABASE_URL
+- Added README.md with quick start, architecture, commands, security notes, limitations
+- Created download/nova-v4-backup.zip (186KB, 89 files):
+  - All source, tests, config, .env.example, .gitignore, README, worklog, Caddyfile
+  - Excludes node_modules, .next, db/*.db, logs
+  - Install-ready: unzip → bun install → cp .env.example .env → bun run dev
+- Updated download/README.md with restore instructions
+- Ran all tests: 50 pass, 0 fail, 81 expect() calls
+- Ran lint: 0 errors, 0 warnings
+- Ran tsc --noEmit: 0 errors
+- Verified with Agent Browser:
+  1. Built snake game → playable (Game Over / Play Again), CSP meta confirmed in iframe srcdoc
+  2. Built calculator → all buttons rendered (C, ÷, ×, -, 7, 8, 9, +), CSP confirmed
+  3. Console: zero errors across all builds
+  4. Backend log: all POST /api/build returned 200
+- Git committed with meaningful message (not UUID): "NOVA v4: tests + CSP + rate limiting + error boundary + backup zip"
+
+Stage Summary:
+- **Tests**: 50 unit tests, all passing. Covers validation, HTML detection, CSP injection, rate limiting.
+- **Security**: CSP injected into all preview HTML (connect-src 'none' blocks external requests). Rate limiting (10/hour per IP). Sandbox iframe (allow-scripts only). Error sanitization. Abort signal passthrough.
+- **Backups**: download/nova-v4-backup.zip is install-ready. Restore instructions in download/README.md.
+- **Current LOC**: ~500 total (llm.ts ~170, rate-limit.ts ~75, route.ts ~115, page.tsx ~225, ErrorBoundary.tsx ~50, tests ~250)
+- **Git**: committed as 7380164 with full descriptive message. Each future cycle will get its own commit + zip.
+- **Remaining gaps**: (1) No E2E test (would need Playwright, heavier setup). (2) Old dead code in scaffold (toaster.tsx, use-toast.ts, api/route.ts, db.ts, prisma User model) — harmless, low priority. (3) No CI/CD. (4) Chat refine feature not built (awaiting user decision).
