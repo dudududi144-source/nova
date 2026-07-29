@@ -920,3 +920,46 @@ Stage Summary:
   use — I never tested "type mission → build → cancel → check if mission is still there."
   I tested the happy path (build succeeds) but not the cancellation path. Lesson: test
   the "undo" path, not just the "do" path.
+
+---
+Task ID: 17
+Agent: main (Z.ai Code)
+Task: Real user experience audit. What breaks when people actually use it?
+
+Work Log:
+- Found 9 UX issues that only appear during real use:
+
+  CRITICAL (3):
+  - Clear history: no confirmation dialog. One click = all history gone, no undo.
+    FIXED: window.confirm('Clear all build history? This cannot be undone.')
+  - 'Try again' button used failedMission, ignoring textarea edits. If user typed
+    a different mission after failure and clicked 'Try again', it rebuilt the OLD
+    mission, not the new one. FIXED: checks if textarea was edited, uses current
+    mission if different.
+  - Download button labeled 'HTML' — unclear what it does. FIXED: 'Download'.
+
+  MEDIUM (2):
+  - No character count on textarea. User hits 500 char limit with no warning.
+    FIXED: shows N/500 counter below textarea, turns red when over limit.
+  - iframe loading='lazy' delays preview load. The iframe is always in viewport
+    when shown, so lazy loading is wrong. FIXED: removed.
+
+  LOW (2):
+  - Loading message didn't indicate max wait time. After 60s user thinks it's broken.
+    FIXED: shows '(taking longer than expected — please wait)' after 60s.
+  - '⌘+Enter to build' hint only in footer. Now also below textarea.
+
+  NOT FIXED (acknowledged):
+  - autoFocus on mobile pops keyboard. Would need touch detection. Minor.
+  - No keyboard shortcut for 'New'. ⌘N is browser's new window. Would need
+    alternative like Ctrl+Shift+N. Low value.
+
+- All tests pass, lint clean, tsc clean. Browser verified.
+
+Stage Summary:
+- **3 CRITICAL UX fixes**: confirmation dialog, retry uses edits, download label
+- **2 MEDIUM fixes**: char count, iframe lazy loading
+- **2 LOW improvements**: max wait indicator, keyboard hint placement
+- **Lesson**: These are all "undo path" and "feedback" bugs. I tested the happy path
+  (build succeeds) for 16 cycles but never tested: clear history, edit after failure,
+  over-limit typing, long builds. Real users hit these immediately.
