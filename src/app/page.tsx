@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -25,8 +25,8 @@ interface BuildResponse {
 const EXAMPLES: readonly string[] = [
   'Build a snake game with score and game-over',
   'Build a todo app with add, complete, and delete',
-  'Build a markdown editor with live preview',
   'Build a calculator with keyboard support',
+  'Build a color palette generator with copy-to-clipboard',
 ]
 
 export function newBuildId(): string {
@@ -42,6 +42,7 @@ export default function Home() {
   const [failedMission, setFailedMission] = useState<string | null>(null) // what to retry
   const [result, setResult] = useState<BuildResult | null>(null)
   const [history, setHistory] = useState<BuildResult[]>([])
+  const [elapsed, setElapsed] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
   // This prevents build from being re-created on every result change (every build).
@@ -79,6 +80,19 @@ export default function Home() {
   useEffect(() => {
     return () => abortRef.current?.abort()
   }, [])
+
+  // Elapsed time counter during build
+  useEffect(() => {
+    if (!loading) {
+      setElapsed(0)
+      return
+    }
+    const startTime = Date.now()
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [loading])
 
   // Centralized build function. Aborts any in-flight build first.
   // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
@@ -224,7 +238,18 @@ export default function Home() {
     setFailedMission(null)
   }, [])
 
+  const cancelBuild = useCallback(() => {
+    // Cancel only aborts the in-flight build — does NOT clear mission or result.
+    // The user keeps their mission text and the old preview (if any).
+    abortRef.current?.abort()
+    abortRef.current = null
+    setLoading(false)
+    setError(null)
+    setFailedMission(null)
+  }, [])
+
   const reset = useCallback(() => {
+    // Reset clears everything — used by the "New" button.
     abortRef.current?.abort()
     abortRef.current = null
     setLoading(false)
@@ -250,12 +275,13 @@ export default function Home() {
     a.href = url
     // Sanitize filename: alphanumeric only, collapse consecutive dashes, trim
     const rawName = result.mission.slice(0, 30).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
-    a.download = `${rawName || 'app'}.html`
+    const filename = `${rawName || 'app'}.html`
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    toast.success('Downloaded')
+    toast.success(`Downloaded ${filename}`)
   }, [result])
 
   // Keyboard shortcuts: Esc=cancel build, ⌘S/Ctrl+S=download
@@ -266,14 +292,14 @@ export default function Home() {
       // Esc cancels a build
       if (e.key === 'Escape' && loading) {
         e.preventDefault()
-        abortRef.current?.abort()
+        cancelBuild()
         toast.info('Build cancelled')
         return
       }
-      // ⌘S / Ctrl+S downloads the current result
+      // ⌘S / Ctrl+S downloads the current result (always preventDefault to stop browser save)
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
         if (result) {
-          e.preventDefault()
           download()
         }
         return
@@ -281,7 +307,7 @@ export default function Home() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [loading, result, download])
+  }, [loading, result, download, cancelBuild])
 
   // Whether to show examples (only when no result, no error, not loading)
   const showExamples = !result && !loading && !error
@@ -306,7 +332,7 @@ export default function Home() {
             {loading || !result ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin" />
-                <span>Building...</span>
+                <span>Building... {elapsed > 0 && `${elapsed}s`}</span>
               </>
             ) : (
               <>
@@ -364,7 +390,7 @@ export default function Home() {
           {loading && !result && (
             <div className="mt-4 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-              <span>The model is writing your app. This usually takes 20-60 seconds.</span>
+              <span>The model is writing your app. {elapsed > 0 && `${elapsed}s elapsed.`} This usually takes 20-60 seconds.</span>
             </div>
           )}
 
@@ -482,10 +508,10 @@ export default function Home() {
                   HTML
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading}>
-                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={reset}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset}>
                   {loading ? <X className="h-3.5 w-3.5" /> : <RotateCcw className="h-3.5 w-3.5" />}
                   {loading ? 'Cancel' : 'New'}
                 </Button>
