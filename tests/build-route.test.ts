@@ -350,4 +350,29 @@ describe('POST /api/build', () => {
     // The route should handle the abort gracefully (no throw)
     expect(mockLlmChat).toHaveBeenCalledTimes(1)
   })
+
+  // ── Content-Type verification ──
+
+  it('returns JSON content-type on success', async () => {
+    const res = await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
+    const contentType = res.headers.get('content-type') ?? ''
+    expect(contentType).toContain('application/json')
+  })
+
+  it('returns JSON content-type on error', async () => {
+    const res = await POST(makeRequest({ mission: 'ab' }) as unknown as NextRequest)
+    const contentType = res.headers.get('content-type') ?? ''
+    expect(contentType).toContain('application/json')
+  })
+
+  it('returns JSON content-type on rate limit', async () => {
+    const ip = '5.5.5.5'
+    // Exhaust the limit
+    for (let i = 0; i < 110; i++) {
+      await POST(makeRequest({ mission: `Build app ${i}` }, { ip }) as unknown as NextRequest)
+    }
+    const res = await POST(makeRequest({ mission: 'One more' }, { ip }) as unknown as NextRequest)
+    const contentType = res.headers.get('content-type') ?? ''
+    expect(contentType).toContain('application/json')
+  })
 })

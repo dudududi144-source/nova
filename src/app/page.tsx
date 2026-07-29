@@ -112,12 +112,25 @@ export default function Home() {
         signal: controller.signal,
       })
 
-      // Parse JSON safely — server might return non-JSON (e.g., 500 HTML error page)
+      // Check Content-Type BEFORE parsing — if the server returns HTML
+      // (e.g., Next.js dev compilation page, 500 error page, proxy error),
+      // res.json() would throw a SyntaxError that logs to the console
+      // even when caught. Checking the header avoids the parse entirely.
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('application/json')) {
+        const msg = `Server error (${res.status})`
+        setError(msg)
+        setFailedMission(m)
+        if (!resultRef.current) toast.error(msg)
+        return
+      }
+
+      // Safe to parse as JSON — Content-Type confirmed
       let data: BuildResponse
       try {
         data = (await res.json()) as BuildResponse
       } catch (err) {
-        // Server returned non-JSON (e.g., 500 HTML error page)
+        // Fallback: Content-Type said JSON but body was malformed
         console.error('[NOVA] Failed to parse build response:', err)
         const msg = `Server error (${res.status})`
         setError(msg)
