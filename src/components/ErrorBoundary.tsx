@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, type ReactNode } from 'react'
+import { Component, type ReactNode, createRef } from 'react'
 
 interface Props {
   children: ReactNode
@@ -16,10 +16,24 @@ interface State {
 // instead of a blank screen. Offers two recovery options:
 // 1. Clear localStorage history (in case a corrupted history item caused the error)
 // 2. Reload the page
+//
+// The fallback container is focusable and focused on mount so keyboard users
+// can navigate to the recovery buttons.
 export class ErrorBoundary extends Component<Props, State> {
+  private mounted = false
+  private fallbackRef = createRef<HTMLDivElement>()
+
   constructor(props: Props) {
     super(props)
     this.state = { hasError: false }
+  }
+
+  componentDidMount() {
+    this.mounted = true
+  }
+
+  componentWillUnmount() {
+    this.mounted = false
   }
 
   static getDerivedStateFromError(error: Error): State {
@@ -27,11 +41,22 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
+    if (!this.mounted) return
     // Generate an error ID for support — included in the UI so users can reference it
     const errorId = `err_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     this.setState({ errorId })
     // Log to console with error ID — in production this would go to an error tracker
     console.error('[ErrorBoundary]', errorId, error, info.componentStack)
+  }
+
+  componentDidUpdate(_prevProps: Props, prevState: State) {
+    // When error state appears, focus the fallback container for keyboard users
+    if (!prevState.hasError && this.state.hasError) {
+      // Use setTimeout to ensure the DOM is updated
+      setTimeout(() => {
+        this.fallbackRef.current?.focus()
+      }, 0)
+    }
   }
 
   clearHistoryAndReload = () => {
@@ -43,12 +68,23 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.reload()
   }
 
+  reload = () => {
+    window.location.reload()
+  }
+
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-center text-foreground">
-          <h1 className="text-lg font-semibold">Something went wrong</h1>
-          <p className="max-w-md text-sm text-muted-foreground">
+        <div
+          ref={this.fallbackRef}
+          tabIndex={-1}
+          role="alertdialog"
+          aria-labelledby="error-title"
+          aria-describedby="error-description"
+          className="flex h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-center text-foreground outline-none"
+        >
+          <h1 id="error-title" className="text-lg font-semibold">Something went wrong</h1>
+          <p id="error-description" className="max-w-md text-sm text-muted-foreground">
             An unexpected error occurred. Try clearing your history and reloading, or just reload.
           </p>
           {this.state.error?.message && (
@@ -71,7 +107,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </button>
             <button
               type="button"
-              onClick={() => window.location.reload()}
+              onClick={this.reload}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Reload

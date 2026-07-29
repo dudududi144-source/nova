@@ -1,5 +1,9 @@
 // In-memory rate limiter — per-key sliding window.
 // Resets on server restart. Sufficient for single-instance sandbox.
+//
+// Memory protection: caps the number of tracked keys at maxKeys (default 10,000).
+// If exceeded, the oldest entries are evicted. This prevents an attacker from
+// exhausting memory by sending requests from millions of fake IPs.
 
 interface RateLimitEntry {
   count: number
@@ -19,7 +23,8 @@ export class RateLimiter {
   constructor(
     private readonly max: number,
     private readonly windowMs: number,
-    private readonly cleanupMs: number = 5 * 60 * 1000
+    private readonly cleanupMs: number = 5 * 60 * 1000,
+    private readonly maxKeys: number = 10_000
   ) {
     // Start periodic cleanup of expired entries
     if (typeof setInterval !== 'undefined') {
@@ -38,6 +43,10 @@ export class RateLimiter {
       // If max is 0, block immediately
       if (this.max <= 0) {
         return { ok: false, remaining: 0, resetInMs: this.windowMs }
+      }
+      // Evict oldest entries if we're at the key cap (memory protection)
+      if (this.hits.size >= this.maxKeys && !this.hits.has(key)) {
+        this.evictOldest()
       }
       this.hits.set(key, { count: 1, resetAt: now + this.windowMs })
       return { ok: true, remaining: this.max - 1, resetInMs: this.windowMs }
@@ -67,6 +76,24 @@ export class RateLimiter {
     for (const [key, entry] of this.hits) {
       if (entry.resetAt < now) this.hits.delete(key)
     }
+  }
+
+  /** Evict the entry with the earliest resetAt (oldest) — for memory protection */
+  private evictOldest(): void {
+    let oldestKey: string | null = null
+    let oldestReset = Infinity
+    for (const [key, entry] of this.hits) {
+      if (entry.resetAt < oldestReset) {
+        oldestReset = entry.resetAt
+        oldestKey = key
+      }
+    }
+    if (oldestKey) this.hits.delete(oldestKey)
+  }
+
+  /** Get the current number of tracked keys (for testing/monitoring) */
+  get size(): number {
+    return this.hits.size
   }
 
   /** Stop the cleanup timer (for graceful shutdown / tests) */

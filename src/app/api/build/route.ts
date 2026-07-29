@@ -49,20 +49,39 @@ The output must be playable/usable immediately when opened in a browser.`
 
 // Rate limit: 10 builds/hour in production, 100/hour in development
 const RATE_LIMIT_MAX = process.env.NODE_ENV === 'production' ? 10 : 100
-const buildLimiter = new RateLimiter(RATE_LIMIT_MAX, 60 * 60 * 1000)
+// Max 1000 tracked IPs to bound memory (each entry is ~100 bytes → max ~100KB)
+const buildLimiter = new RateLimiter(RATE_LIMIT_MAX, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
+
+// Max request body size (10KB — mission is max 500 chars, so this is generous)
+const MAX_BODY_BYTES = 10_000
 
 interface BuildBody {
   mission?: unknown
 }
 
+interface ErrorBody {
+  ok: false
+  error: string
+}
+
+interface SuccessBody {
+  ok: true
+  html: string
+  tokens: number
+  ms: number
+}
+
+function errorResponse(error: string, status: number, extraHeaders?: Record<string, string>): Response {
+  const body: ErrorBody = { ok: false, error }
+  return Response.json(body, { status, headers: extraHeaders })
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   // ── Request body size limit (prevent abuse) ──
+  // Content-Length may be missing for chunked encoding — treat as 0 (will be caught by JSON parse)
   const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10)
-  if (contentLength > 10_000) {
-    return Response.json(
-      { ok: false, error: 'Request body too large (max 10KB)' },
-      { status: 413 }
-    )
+  if (contentLength > MAX_BODY_BYTES) {
+    return errorResponse('Request body too large (max 10KB)', 413)
   }
 
   // ── Rate limit ──
@@ -75,15 +94,13 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!rl.ok) {
     const mins = Math.ceil(rl.resetInMs / 60000)
     logger.warn('build.rate_limited', { ip, resetInMs: rl.resetInMs })
-    return Response.json(
-      { ok: false, error: `Rate limit reached. Try again in ${mins} minute(s).` },
+    return errorResponse(
+      `Rate limit reached. Try again in ${mins} minute(s).`,
+      429,
       {
-        status: 429,
-        headers: {
-          'Retry-After': String(Math.ceil(rl.resetInMs / 1000)),
-          'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset': String(Math.ceil(rl.resetInMs / 1000)),
-        },
+        'Retry-After': String(Math.ceil(rl.resetInMs / 1000)),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(Math.ceil(rl.resetInMs / 1000)),
       }
     )
   }
@@ -92,32 +109,53 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     body = (await request.json()) as BuildBody
   } catch {
-    return Response.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
+    return errorResponse('Invalid JSON', 400)
   }
 
   const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
   const validation = validateMission(mission)
   if (!validation.ok) {
     logger.warn('build.invalid_mission', { ip, error: validation.error, missionLen: mission.length })
-    return Response.json({ ok: false, error: validation.error }, { status: 400 })
+    return errorResponse(validation.error!, 400)
   }
 
   logger.info('build.started', { ip, mission: mission.slice(0, 80), remaining: rl.remaining })
 
-  // Pass request.signal so the LLM call aborts if the client disconnects
+  // Create an abort controller that fires on:
+  // 1. Client disconnect (request.signal)
+  // 2. Timeout (95s — under Next.js's 120s maxDuration)
+  // This prevents hung LLM calls from tying up the server.
+  const timeoutController = new AbortController()
+  const timeoutMs = 95_000
+  const timeoutTimer = setTimeout(() => timeoutController.abort(), timeoutMs)
+
+  // Link request.signal to our timeout controller
+  if (request.signal.aborted) {
+    clearTimeout(timeoutTimer)
+    timeoutController.abort()
+  } else {
+    request.signal.addEventListener('abort', () => {
+      clearTimeout(timeoutTimer)
+      timeoutController.abort()
+    }, { once: true })
+  }
+
   const result = await llmChat(SYSTEM_PROMPT, `Build this: ${mission}`, {
     maxTokens: 8000,
     temperature: 0.4,
     timeoutMs: 90_000,
-    signal: request.signal,
+    signal: timeoutController.signal,
   })
+
+  clearTimeout(timeoutTimer)
 
   if (!result.ok) {
     // result.error is already human-friendly (sanitized in llmChat)
     logger.error('build.llm_failed', { ip, mission: mission.slice(0, 80), error: result.error, ms: result.ms, tokens: result.tokens })
-    return Response.json(
-      { ok: false, error: result.error, tokens: result.tokens, ms: result.ms },
-      { status: 502, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
+    return errorResponse(
+      result.error!,
+      502,
+      { 'X-RateLimit-Remaining': String(rl.remaining) }
     )
   }
 
@@ -125,14 +163,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   if (!looksLikeHtml(rawHtml)) {
     logger.warn('build.invalid_html', { ip, mission: mission.slice(0, 80), ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
-    return Response.json(
-      {
-        ok: false,
-        error: 'The model did not return valid HTML. Try rephrasing your request.',
-        tokens: result.tokens,
-        ms: result.ms,
-      },
-      { status: 502, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
+    return errorResponse(
+      'The model did not return valid HTML. Try rephrasing your request.',
+      502,
+      { 'X-RateLimit-Remaining': String(rl.remaining) }
     )
   }
 
@@ -141,10 +175,11 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('build.completed', { ip, mission: mission.slice(0, 80), ms: result.ms, tokens: result.tokens, htmlBytes: html.length })
 
-  return Response.json({
+  const responseBody: SuccessBody = {
     ok: true,
     html,
     tokens: result.tokens,
     ms: result.ms,
-  })
+  }
+  return Response.json(responseBody)
 }

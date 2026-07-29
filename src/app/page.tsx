@@ -53,7 +53,20 @@ export default function Home() {
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('nova_history') ?? '[]')
-      if (Array.isArray(stored)) setHistory(stored.slice(0, 10))
+      if (!Array.isArray(stored)) return
+      // Validate each item has the required fields — defend against corrupted/partial data
+      const valid = stored.filter((h: unknown): h is BuildResult => {
+        if (typeof h !== 'object' || h === null) return false
+        const item = h as Record<string, unknown>
+        return (
+          typeof item.id === 'string' &&
+          typeof item.html === 'string' &&
+          typeof item.tokens === 'number' &&
+          typeof item.ms === 'number' &&
+          typeof item.mission === 'string'
+        )
+      })
+      setHistory(valid.slice(0, 10))
     } catch {
       // ignore — localStorage isn't critical
     }
