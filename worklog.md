@@ -1008,3 +1008,43 @@ Stage Summary:
   thinks "this app is broken" and leaves. They click an example, nothing happens,
   they don't know they need to click Build. The fix is one line (build(ex)) but
   the impact is enormous — every first-time user hits this.
+
+---
+Task ID: 19
+Agent: main (Z.ai Code)
+Task: The silent failure. What breaks that the user never sees?
+
+Work Log:
+- Found the most insidious bug yet: SILENT localStorage FAILURE.
+
+  CRITICAL (1):
+  - sandbox="allow-scripts" (no allow-same-origin) blocks localStorage AND sessionStorage.
+  - The LLM generates localStorage code for todo apps (natural for persistence).
+  - In the sandboxed iframe, localStorage.setItem() throws SecurityError.
+  - But the error is inside the iframe — the browser console doesn't surface it.
+  - The user adds tasks, they appear to save, but on reload they're gone.
+  - NO ERROR VISIBLE TO THE USER. Silent data loss.
+  - Fix: added STORAGE LIMITATION section to system prompt:
+    "Do NOT use localStorage, sessionStorage, or cookies. Use in-memory variables."
+  - Verified: generated todo app no longer contains localStorage (grep returned empty).
+
+  MEDIUM (1):
+  - window.confirm() for clear history might not work in embedded preview contexts.
+    The preview gateway might block modal dialogs.
+    FIXED: replaced with inline confirm/cancel buttons (state-based, not browser dialog).
+
+- How I found it: I was checking the iframe's srcDoc content and noticed the LLM
+  generated localStorage code. Then I realized the sandbox blocks it. Then I realized
+  the error is invisible because it's inside the iframe. This is the kind of bug that
+  real users would report as "my tasks disappear" — not "localStorage throws SecurityError."
+
+- All tests pass, lint clean, tsc clean. Browser verified: no localStorage in generated code.
+
+Stage Summary:
+- **1 CRITICAL fix**: localStorage silent failure — the most insidious bug found yet
+- **1 MEDIUM fix**: window.confirm → inline buttons
+- **Lesson**: Silent failures are worse than crashes. A crash tells the user something
+  is wrong. A silent failure lets the user think everything is fine until it isn't.
+  The todo app "saved" tasks — the UI showed them — but they were never persisted.
+  The user wouldn't know until they refreshed and saw empty state. This is data loss
+  disguised as working software.
