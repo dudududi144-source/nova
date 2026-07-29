@@ -12,6 +12,14 @@ export interface LlmResult {
   error?: string
 }
 
+export interface LlmOptions {
+  maxTokens?: number
+  temperature?: number
+  timeoutMs?: number
+  /** External abort signal (e.g., client disconnect). Aborts the LLM call. */
+  signal?: AbortSignal
+}
+
 let zaiInstance: any = null
 
 async function getZai(): Promise<any> {
@@ -23,7 +31,7 @@ async function getZai(): Promise<any> {
 export async function llmChat(
   systemPrompt: string,
   userPrompt: string,
-  opts: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {}
+  opts: LlmOptions = {}
 ): Promise<LlmResult> {
   const t0 = Date.now()
   const maxTokens = opts.maxTokens ?? 4000
@@ -32,6 +40,20 @@ export async function llmChat(
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  // Link external signal (client disconnect) to our controller
+  let externalAborted = false
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      externalAborted = true
+      controller.abort()
+    } else {
+      opts.signal.addEventListener('abort', () => {
+        externalAborted = true
+        controller.abort()
+      }, { once: true })
+    }
+  }
 
   try {
     const zai = await getZai()
@@ -55,25 +77,38 @@ export async function llmChat(
     clearTimeout(timer)
 
     if (!text || !text.trim()) {
-      return { ok: false, text: '', tokens, ms: Date.now() - t0, error: 'empty response' }
+      return { ok: false, text: '', tokens, ms: Date.now() - t0, error: 'The model returned an empty response. Try again.' }
     }
     return { ok: true, text, tokens, ms: Date.now() - t0 }
   } catch (err) {
     clearTimeout(timer)
+
+    // Human-friendly abort/timeout messages
+    if (externalAborted) {
+      return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'Build was cancelled.' }
+    }
+    if (controller.signal.aborted) {
+      return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: `Build timed out after ${Math.round(timeoutMs / 1000)}s. Try simplifying your request.` }
+    }
+
     const msg = err instanceof Error ? err.message : String(err)
-    return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: msg }
+
+    // Rate limit — don't expose raw SDK message
+    if (msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many requests')) {
+      return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'The AI service is busy. Try again in a minute.' }
+    }
+
+    // Don't leak raw internal errors; give a safe generic message
+    return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'The AI service encountered an error. Try again.' }
   }
 }
 
 // Mission validation — cheap, deterministic, no LLM.
-// Length + charset + a tiny blocklist. The real safety check is the LLM
-// returning HTML structure we can verify.
 export function validateMission(mission: string): { ok: boolean; error?: string } {
   if (!mission || !mission.trim()) return { ok: false, error: 'Mission is empty' }
   const trimmed = mission.trim()
   if (trimmed.length < 3) return { ok: false, error: 'Mission too short (min 3 chars)' }
   if (trimmed.length > 500) return { ok: false, error: `Mission too long (max 500 chars, got ${trimmed.length})` }
-  // Reject control characters
   if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(trimmed)) {
     return { ok: false, error: 'Mission contains invalid characters' }
   }
@@ -82,7 +117,7 @@ export function validateMission(mission: string): { ok: boolean; error?: string 
 
 // Strip markdown fences if the LLM wrapped its HTML in ```html ... ```
 export function stripCodeFences(text: string): string {
-  const fenceMatch = text.match(/```(?:html)?\s*\n?([\s\S]*?)\n?```/)
+  const fenceMatch = text.match(/```(?:html|htm)?\s*\n?([\s\S]*?)\n?```/)
   if (fenceMatch) return fenceMatch[1].trim()
   return text.trim()
 }

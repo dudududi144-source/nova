@@ -24,29 +24,36 @@ Rules:
 - Do not include any external scripts, stylesheets, fonts, or images. Everything must be inline.
 - The output must be playable/usable immediately when opened in a browser.`
 
+interface BuildBody {
+  mission?: unknown
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
-  let body: any
+  let body: BuildBody
   try {
-    body = await request.json()
+    body = (await request.json()) as BuildBody
   } catch {
     return Response.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const mission = String(body?.mission ?? '').trim()
+  const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
   const validation = validateMission(mission)
   if (!validation.ok) {
     return Response.json({ ok: false, error: validation.error }, { status: 400 })
   }
 
+  // Pass request.signal so the LLM call aborts if the client disconnects
   const result = await llmChat(SYSTEM_PROMPT, `Build this: ${mission}`, {
     maxTokens: 8000,
     temperature: 0.4,
     timeoutMs: 90_000,
+    signal: request.signal,
   })
 
   if (!result.ok) {
+    // result.error is already human-friendly (sanitized in llmChat)
     return Response.json(
-      { ok: false, error: `LLM error: ${result.error}`, tokens: result.tokens, ms: result.ms },
+      { ok: false, error: result.error, tokens: result.tokens, ms: result.ms },
       { status: 502 }
     )
   }

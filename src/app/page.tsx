@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -26,8 +26,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<BuildResult | null>(null)
   const [history, setHistory] = useState<BuildResult[]>([])
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const [iframeUrl, setIframeUrl] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -39,25 +38,10 @@ export default function Home() {
     }
   }, [])
 
-  // Manage the iframe blob URL: create when result changes, revoke previous + on unmount
+  // Abort any in-flight build on unmount
   useEffect(() => {
-    if (!result?.html) {
-      setIframeUrl(prev => {
-        if (prev) URL.revokeObjectURL(prev)
-        return null
-      })
-      return
-    }
-    const blob = new Blob([result.html], { type: 'text/html' })
-    const url = URL.createObjectURL(blob)
-    setIframeUrl(prev => {
-      if (prev) URL.revokeObjectURL(prev)
-      return url
-    })
-    return () => {
-      URL.revokeObjectURL(url)
-    }
-  }, [result])
+    return () => abortRef.current?.abort()
+  }, [])
 
   const build = async (missionText?: string) => {
     const m = (missionText ?? mission).trim()
@@ -67,24 +51,28 @@ export default function Home() {
     }
     if (loading) return
 
+    // Abort any in-flight build (race condition guard)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     setError(null)
-    setResult(null)
 
     try {
       const res = await fetch('/api/build', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mission: m }),
+        signal: controller.signal,
       })
 
       const data = await res.json()
 
       if (!res.ok || !data.ok) {
-        const msg = data?.error ?? `Server error (${res.status})`
+        const msg = typeof data?.error === 'string' ? data.error : `Server error (${res.status})`
         setError(msg)
         toast.error(msg)
-        setLoading(false)
         return
       }
 
@@ -98,31 +86,44 @@ export default function Home() {
       setResult(buildResult)
       setMission(m)
 
-      // Save to history (localStorage, last 10)
-      const newHistory = [buildResult, ...history.filter(h => h.mission !== m)].slice(0, 10)
-      setHistory(newHistory)
-      try {
-        localStorage.setItem('nova_history', JSON.stringify(newHistory))
-      } catch {
-        // quota exceeded — drop oldest, try again
+      // Functional setState — avoids stale closure on rapid successive builds
+      setHistory(prev => {
+        const next = [buildResult, ...prev.filter(h => h.mission !== m)].slice(0, 10)
+        // Best-effort localStorage; shrink if quota exceeded
         try {
-          localStorage.setItem('nova_history', JSON.stringify(newHistory.slice(0, 5)))
+          localStorage.setItem('nova_history', JSON.stringify(next))
         } catch {
-          // give up silently
+          for (let i = next.length - 1; i >= 0; i--) {
+            try {
+              localStorage.setItem('nova_history', JSON.stringify(next.slice(0, i + 1)))
+              break
+            } catch {
+              // keep trying smaller
+            }
+          }
         }
-      }
+        return next
+      })
 
       toast.success(`Built in ${(data.ms / 1000).toFixed(1)}s · ${data.tokens} tokens`)
     } catch (err) {
+      // AbortError = user started a new build or navigated away; silently ignore
+      if (err instanceof DOMException && err.name === 'AbortError') return
       const msg = err instanceof Error ? err.message : 'Network error'
       setError(msg)
       toast.error(msg)
     } finally {
-      setLoading(false)
+      // Only clear loading if this controller is still the active one
+      // (a newer build may have started and set its own controller)
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setLoading(false)
+      }
     }
   }
 
   const reset = () => {
+    abortRef.current?.abort()
     setResult(null)
     setError(null)
     setMission('')
@@ -164,154 +165,178 @@ export default function Home() {
       </header>
 
       {/* Main */}
-      <main className="flex flex-1 flex-col overflow-hidden md:flex-row">
-        {/* Left: prompt + history (or full-width when no result) */}
-        <section className={`flex shrink-0 flex-col overflow-hidden border-b border-border/40 md:border-b-0 md:border-r ${result ? 'md:w-80' : 'md:w-full md:max-w-2xl md:mx-auto'}`}>
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-            <label className="text-xs font-medium text-muted-foreground">
-              What do you want to build?
-            </label>
-            <Textarea
-              value={mission}
-              onChange={(e) => setMission(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                  e.preventDefault()
-                  build()
-                }
-              }}
-              placeholder="Build a snake game with score and game-over..."
-              disabled={loading}
-              className="min-h-[120px] resize-none font-mono text-sm"
-            />
-            <Button
-              onClick={() => build()}
-              disabled={loading || !mission.trim()}
-              className="w-full gap-2"
-              size="lg"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Building...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Build
-                </>
-              )}
-            </Button>
-
-            {/* Examples (when no result yet) */}
-            {!result && !loading && (
-              <div className="mt-2 space-y-1.5">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                  Try one
-                </p>
-                {EXAMPLES.map((ex) => (
-                  <button
-                    key={ex}
-                    onClick={() => setMission(ex)}
-                    className="block w-full rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-                  >
-                    {ex}
-                  </button>
-                ))}
-              </div>
+      <main className={`flex flex-1 flex-col overflow-hidden md:flex-row ${result ? '' : 'md:justify-center'}`}>
+        {/* Left panel: prompt + examples + history */}
+        <section className={`overflow-y-auto border-b border-border/40 p-4 md:border-b-0 md:border-r ${
+          result ? 'shrink-0 md:w-80' : 'flex-1 md:max-w-2xl'
+        }`}>
+          <label htmlFor="mission-input" className="mb-2 block text-xs font-medium text-muted-foreground">
+            What do you want to build?
+          </label>
+          <Textarea
+            id="mission-input"
+            value={mission}
+            onChange={(e) => setMission(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault()
+                build()
+              }
+            }}
+            placeholder="Build a snake game with score and game-over..."
+            disabled={loading}
+            className="min-h-[120px] resize-none font-mono text-sm"
+          />
+          <Button
+            onClick={() => build()}
+            disabled={loading || !mission.trim()}
+            className="mt-3 w-full gap-2"
+            size="lg"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Building...
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                Build
+              </>
             )}
+          </Button>
 
-            {/* History */}
-            {history.length > 0 && (
-              <div className="mt-4 space-y-1.5">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                  Recent
-                </p>
-                {history.map((h, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setResult(h)
-                      setMission(h.mission)
-                    }}
-                    className="block w-full truncate rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          {/* First-build loading (no prior result) */}
+          {loading && !result && (
+            <div className="mt-4 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+              <span>The model is writing your app. This usually takes 20-60 seconds.</span>
+            </div>
+          )}
+
+          {/* First-build error (no prior result) */}
+          {error && !result && !loading && (
+            <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div className="flex-1">
+                  <p className="text-xs text-destructive">{error}</p>
+                  <Button
+                    onClick={() => build()}
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-7 gap-1.5 text-xs"
                   >
-                    {h.mission}
-                  </button>
-                ))}
-                {history.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setHistory([])
-                      try { localStorage.removeItem('nova_history') } catch {}
-                    }}
-                    className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive"
-                  >
-                    Clear history
-                  </button>
-                )}
+                    <RotateCcw className="h-3 w-3" />
+                    Try again
+                  </Button>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Examples (only when no result and not loading) */}
+          {!result && !loading && (
+            <div className="mt-4 space-y-1.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                Try one
+              </p>
+              {EXAMPLES.map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setMission(ex)}
+                  className="block w-full rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* History */}
+          {history.length > 0 && (
+            <div className="mt-4 space-y-1.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                Recent
+              </p>
+              {history.map((h, i) => (
+                <button
+                  key={`${h.mission}-${i}`}
+                  onClick={() => {
+                    setResult(h)
+                    setMission(h.mission)
+                    setError(null)
+                  }}
+                  className="block w-full truncate rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                >
+                  {h.mission}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  setHistory([])
+                  try { localStorage.removeItem('nova_history') } catch {}
+                }}
+                className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive"
+              >
+                Clear history
+              </button>
+            </div>
+          )}
         </section>
 
-        {/* Right: preview (only when there's a result) */}
+        {/* Right panel: preview (only when result) */}
         {result && (
-          <section className="flex flex-1 flex-col overflow-hidden">
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/* Error banner (rebuild failed, but keep old preview visible) */}
+            {error && (
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+                  <span className="text-xs text-destructive">Rebuild failed: {error}</span>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="text-destructive/60 transition-colors hover:text-destructive"
+                  aria-label="Dismiss error"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Toolbar */}
             <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-2">
-              <p className="truncate text-xs text-muted-foreground">{result.mission}</p>
-              <div className="flex items-center gap-1">
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download}>
+              <div className="flex min-w-0 items-center gap-2">
+                {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
+                <p className="truncate text-xs text-muted-foreground">
+                  {loading ? 'Rebuilding...' : result.mission}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={loading}>
                   <Download className="h-3.5 w-3.5" />
                   HTML
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()}>
-                  <RotateCcw className="h-3.5 w-3.5" />
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading}>
+                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={reset}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={reset} disabled={loading}>
                   New
                 </Button>
               </div>
             </div>
-            <div className="relative flex-1 bg-neutral-950">
-              {iframeUrl && (
-                <iframe
-                  ref={iframeRef}
-                  src={iframeUrl}
-                  title="Preview"
-                  sandbox="allow-scripts"
-                  className="h-full w-full border-0"
-                />
-              )}
-            </div>
-          </section>
-        )}
 
-        {/* Error state (right side) */}
-        {error && !result && (
-          <section className="flex flex-1 flex-col items-center justify-center p-6">
-            <div className="w-full max-w-md space-y-4 text-center">
-              <AlertCircle className="mx-auto h-10 w-10 text-destructive" />
-              <h2 className="text-base font-semibold">Build failed</h2>
-              <p className="text-sm text-muted-foreground">{error}</p>
-              <Button onClick={() => build()} variant="outline" size="sm" className="gap-1.5">
-                <RotateCcw className="h-3.5 w-3.5" />
-                Try again
-              </Button>
-            </div>
-          </section>
-        )}
-
-        {/* Loading state (right side, when no prior result) */}
-        {loading && !result && (
-          <section className="flex flex-1 flex-col items-center justify-center p-6">
-            <div className="w-full max-w-md space-y-4 text-center">
-              <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
-              <h2 className="text-base font-semibold">Building...</h2>
-              <p className="text-sm text-muted-foreground">
-                The model is writing your app. This usually takes 20-60 seconds.
-              </p>
+            {/* Preview iframe — srcDoc avoids blob URL lifecycle complexity */}
+            <div className="relative min-h-0 flex-1 bg-neutral-950">
+              <iframe
+                key={`${result.mission}-${result.ms}`}
+                srcDoc={result.html}
+                title="Preview"
+                sandbox="allow-scripts"
+                className="h-full w-full border-0"
+              />
             </div>
           </section>
         )}
