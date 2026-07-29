@@ -484,3 +484,79 @@ Stage Summary:
 - **Git**: committed with full message
 - **Current state**: 115 tests, ~600 LOC app + ~450 LOC tests, 8 backup zips
 - **Honest assessment**: This was the massive roast. Found 8 real bugs (4 medium, 4 low). The codebase is now genuinely robust: tested, secure, accessible, observable, backed up. The remaining "issues" are either acknowledged trade-offs (useCallback deps, Math.random) or out of scope (E2E tests, dead code cleanup).
+
+---
+Task ID: 9
+Agent: main (Z.ai Code)
+Task: The nitpick purge. Fix ALL acknowledged nitpicks.
+
+Work Log:
+- Found and fixed ALL nitpicks across 6 categories:
+
+  DEAD CODE (5 files + prisma models):
+  - Deleted src/app/api/route.ts (Hello World scaffold)
+  - Deleted src/lib/db.ts (unused Prisma client — NOVA v1 has no DB)
+  - Deleted src/components/ui/toaster.tsx (old toast system, replaced by sonner)
+  - Deleted src/hooks/use-toast.ts (old toast hook)
+  - Deleted src/components/ui/toast.tsx (old toast component)
+  - Cleaned prisma/schema.prisma: removed User + Post models (unused, only DATABASE_URL needed)
+
+  TYPE SAFETY (removed all `any`):
+  - Removed `as any` cast from llmChat SDK call
+  - Added ZaiClient interface with proper ChatRole type ('system' | 'user' | 'assistant')
+  - Added ZaiCompletion interface for response shape
+  - Typed BuildResponse interface (was `data: any` in fetch handler)
+  - Typed EXAMPLES as `readonly string[]`
+  - Changed `catch (err)` to `catch (err: unknown)` with instanceof narrowing
+  - Changed zaiInstance from `any` to `ZaiClient | null`
+  - getZai() now casts `ZAI.create()` result as `unknown` → `ZaiClient`
+
+  PERFORMANCE:
+  - Fixed build() useCallback: removed `result` from deps, uses `resultRef` instead
+    (was: re-created on every keystroke + every build → all children re-rendered)
+  - Removed redundant `h.id !== buildResult.id` in history filter (mission dedup is sufficient)
+
+  A11Y:
+  - Added `aria-busy={loading}` on root container
+  - Added `loading="lazy"` on iframe
+  - ErrorBoundary: generates error ID (`err_<timestamp>_<random>`) for support reference
+  - Verified: LLM generates proper aria-labels (snake game: "Start game", "Pause game")
+
+  FEATURES:
+  - stripCodeFences: handles 3+ backtick fences (````html, `````html, etc.)
+    (was: only exactly 3 backticks)
+  - logger: LOG_LEVEL env var (debug/info/warn/error)
+    - Default: info in dev, warn in production
+    - Added debug level, getLevel() for testing
+    - Proper shouldLog() filtering by priority
+
+  TESTS (14 new, 129 total):
+  - tests/cycle-9.test.ts (14 tests):
+    - 4+ backtick fences: 4-backtick, 5-backtick, no-language, mixed, regression
+    - Logger level filtering: warn filters info, error filters warn, defaults, invalid, debug
+    - injectCsp defensive: XML declaration, comment before head, preserved attributes
+  - Updated build-route.test.ts: removed logger mock (was globally mocking @/lib/logger,
+    breaking other test files), replaced with console spies via spyOn
+
+- Ran all tests: 129 pass, 0 fail, 218 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors.
+- Verified with Agent Browser:
+  1. Autofocus: TEXTAREA focused on mount
+  2. Snake game build: 28.2s, 12.6KB HTML
+  3. A11y: "Start game" button, "Pause game" button (properly disabled initially)
+  4. Console: zero errors
+
+Stage Summary:
+- **Dead code**: 5 files + 2 prisma models removed (~200 LOC of dead code gone)
+- **Type safety**: zero `any` in application code (one `as any` in test mock is acceptable)
+- **Performance**: build() no longer re-creates on every keystroke (resultRef pattern)
+- **A11y**: aria-busy, iframe lazy loading, error IDs, verified LLM-generated aria-labels
+- **Logger**: LOG_LEVEL env var with 4 levels, proper filtering
+- **Fence stripping**: handles 3+ backticks (markdown spec compliance)
+- **Tests**: 129 total, 218 assertions, 10 test files
+- **Backup**: download/nova-v9-backup.zip (204KB, 95 files)
+- **Git**: committed with full message
+- **Current state**: ~575 LOC app (was ~600, removed dead code) + ~500 LOC tests
+- **ALL acknowledged nitpicks from cycles 4-8 are now fixed.** The only remaining items are:
+  1. E2E tests (Playwright) — heavy infrastructure, not a nitpick
+  2. Chat refine feature — the next feature to build, not a nitpick
