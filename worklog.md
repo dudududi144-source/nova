@@ -355,3 +355,64 @@ Stage Summary:
 - **Backup**: download/nova-v6-backup.zip (197KB, 92 files)
 - **Git**: committed with full message
 - **Current LOC**: ~550 total (llm.ts ~180, rate-limit.ts ~75, route.ts ~120, page.tsx ~225, ErrorBoundary.tsx ~50, logger.ts ~25, tests ~350)
+
+---
+Task ID: 7
+Agent: main (Z.ai Code)
+Task: Roast until nothing's left. Find the last bugs.
+
+Work Log:
+- Roasted from 5 more angles:
+  1. res.json() crashes on non-JSON response (500 HTML error page) — unhandled
+  2. Old preview visible during rebuild — user can't tell if it's new or old
+  3. HTML <button> elements missing type="button" — default type=submit, could submit forms
+  4. RateLimiter max=0 allows first request — count=1 >= max=0 checked AFTER increment
+  5. stripCodeFences doesn't handle whitespace around language identifier (````  html  `)
+- Fixed res.json() crash:
+  - Wrapped in try/catch with fallback error message
+  - Server returning 500 HTML page no longer crashes the client
+- Added rebuild loading overlay:
+  - Absolute-positioned dark blur over the iframe during rebuild
+  - Shows spinner + "Rebuilding..." text
+  - Old preview is dimmed but still visible underneath
+  - User can clearly see a rebuild is in progress
+- Added type="button" to all 5 plain <button> elements:
+  - 4 example buttons
+  - History buttons (each + clear history)
+  - Error dismiss button
+  - (shadcn Button components are fine — they render type="button" by default)
+- Fixed RateLimiter max=0:
+  - Was: first check sets count=1, returns ok (count=1 >= max=0 is false, then count++)
+  - Now: if max <= 0, block immediately without creating an entry
+  - Test confirms: max=0 blocks everything, max=1 allows first then blocks
+- Fixed stripCodeFences whitespace:
+  - Old regex: /```(?:html|htm)?\s*\n?/ — didn't match "```  html  \n"
+  - New regex: /```\s*(?:html|htm)?\s*\n?/ — allows whitespace before and after language
+  - Updated mock in build-route.test.ts to match
+- Wrote 15 new tests (99 total):
+  - tests/edge-cases-2.test.ts (9 tests):
+    - looksLikeHtml: comment before doctype (rejected), leading whitespace, empty, only-whitespace
+    - injectCsp: multiple heads, self-closing head, preserved meta tags
+    - stripCodeFences: extra whitespace, Windows line endings, nested backticks
+  - tests/rate-limit-concurrency.test.ts (5 tests):
+    - No mutation on reject (count doesn't increment after max)
+    - Concurrent same-IP (first 3 pass, last 2 fail)
+    - Fixed window (resetInMs decreases, not sliding)
+    - max=0 blocks everything
+    - max=1 allows first, blocks rest
+- Ran all tests: 99 pass, 0 fail, 166 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors.
+- Verified with Agent Browser:
+  1. Todo app build: 37.6s, 15.6KB HTML — has All/Active/Completed filters (good quality)
+  2. Rebuild overlay: "Rebuilding..." appeared with spinner, old preview dimmed underneath
+  3. Esc cancel: "Build cancelled" toast appeared, rebuild stopped, old preview restored
+  4. Console: zero errors throughout
+
+Stage Summary:
+- **Real bugs fixed**: res.json() crash (would crash on any non-JSON server response), RateLimiter max=0 (edge case but real bug), stripCodeFences whitespace (real LLM output variation)
+- **UX improved**: rebuild loading overlay (was confusing — old preview looked like the new one), type="button" (form safety)
+- **Tests**: 99 total (was 84). Added concurrency, edge cases, fence variations.
+- **Backup**: download/nova-v7-backup.zip (201KB, 94 files)
+- **Git**: committed with full message
+- **Current state**: 99 tests, ~575 LOC app + ~400 LOC tests, 7 backup zips, zero known bugs
+- **Honest assessment**: The bugs are getting smaller. res.json() was the last "real" bug (would crash in production). The rest are edge cases and polish. We're approaching the point of diminishing returns where roasting finds nitpicks, not bugs.
