@@ -784,3 +784,59 @@ Stage Summary:
   Cycle 12: tsconfig excluded tests. Cycle 13: eslint ignored tests. I keep finding the same pattern
   in different config files. The lesson: when a check passes "clean", verify it's actually checking
   what you think it's checking. "lint clean" is meaningless if lint ignores half the codebase.
+
+---
+Task ID: 14
+Agent: main (Z.ai Code)
+Task: Roast again. Find what's still broken.
+
+Work Log:
+- Found 7 issues, 1 was CRITICAL (flaky test with 82.7% failure rate):
+
+  CRITICAL (1):
+  - newBuildId used 5-char random suffix (Math.random().toString(36).slice(2, 7)).
+    Entropy: 36^5 = 60,466,176 possibilities.
+    The test generates 10000 IDs in a tight loop (all same ms timestamp).
+    Birthday paradox collision probability: 10000²/(2×60M) = 82.7%.
+    The test was almost guaranteed to fail — it passed by luck (17.3% chance).
+    It DID fail in cycle 12 (I ignored it as a one-off).
+    FIXED: 10-char suffix (slice(2, 12)) → 36^10 = 3.6×10^15 possibilities.
+    Verified: ran build-id test 5×, all pass.
+
+  DEAD CODE (4):
+  - tailwind.config.ts: Tailwind 3 config syntax, but project uses Tailwind 4.
+    Tailwind 4 uses CSS-based config (@theme inline in globals.css).
+    The file was ignored. DELETED.
+  - tests/python-runtime-build.sh, tests/database-runtime-build.sh,
+    tests/python-runtime-container.sh: old scaffold test scripts, not NOVA tests.
+    DELETED.
+  - @prisma/client + prisma in package.json deps: src/lib/db.ts was deleted in v9.
+    No code uses Prisma. REMOVED from deps.
+  - db:push/generate/migrate/reset scripts in package.json: no DB in NOVA v1.
+    REMOVED.
+
+  DOCS (1):
+  - README said "129 tests" but actual is 163. UPDATED.
+
+  NOT BUGS (verified):
+  - .env.example uses relative path (./db/custom.db), .env uses absolute (/home/z/my-project/db/custom.db).
+    Intentional: .env.example is portable, .env is sandbox-specific. Not a bug.
+  - ~60 unused radix/dnd-kit/etc deps in package.json: removing them risks breaking
+    shadcn/ui components that import from these packages. Not worth the risk.
+
+- Ran all tests: 163 pass, 0 fail, 268 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors.
+- Verified build-id test: 5/5 passes (was flaky before)
+- Browser: todo app build completed (42.8s), zero console errors
+
+Stage Summary:
+- **1 CRITICAL fix**: newBuildId collision probability 82.7% → ~0% (10-char suffix)
+- **4 dead code removals**: tailwind.config.ts, 3 shell scripts, prisma deps, db scripts
+- **1 doc fix**: README test count
+- **Tests**: 163 pass, build-id test verified 5× (was flaky)
+- **Backup**: download/nova-v14-backup.zip (214KB, 98 files)
+- **Git**: committed with full message
+- **Honest assessment**: The flaky test was the most important find. I saw it fail in cycle 12
+  and dismissed it as a one-off. It had an 82.7% failure rate. That's not a one-off — that's
+  a guaranteed flaky test. The lesson: when a test fails once, investigate WHY. Don't dismiss
+  it as randomness without checking the math.
