@@ -963,3 +963,48 @@ Stage Summary:
 - **Lesson**: These are all "undo path" and "feedback" bugs. I tested the happy path
   (build succeeds) for 16 cycles but never tested: clear history, edit after failure,
   over-limit typing, long builds. Real users hit these immediately.
+
+---
+Task ID: 18
+Agent: main (Z.ai Code)
+Task: Edge cases that matter. What breaks when real users push the boundaries.
+
+Work Log:
+- Found 10 issues, 3 were CRITICAL UX bugs:
+
+  CRITICAL (3):
+  - Examples didn't auto-build. User clicks "Build a snake game", mission text
+    fills in textarea, but nothing else happens. User has to find and click Build.
+    FIXED: clicking an example now sets mission AND calls build(ex) immediately.
+    Verified: clicked example → snake game built automatically in 40s.
+  - Textarea had no maxLength attribute. User could type past 500 chars.
+    Server rejects with "Mission too long" — user doesn't know why.
+    FIXED: maxLength={500} — browser prevents typing past limit.
+  - Download disabled during rebuild. User starts rebuild, wants to download the
+    old result while waiting — button is disabled. FIXED: Download enabled whenever
+    result exists (even during rebuild).
+
+  MEDIUM (2):
+  - 'New' button used RotateCcw icon (same as 'Try again' and old Rebuild).
+    Confusing: is it retry or new? FIXED: Plus icon (clearer: create new).
+  - 6 repeated error-handling blocks in build() — each had slight variations,
+    all doing setError + setFailedMission + toast.error. If one was wrong,
+    they were all wrong. FIXED: extracted into fail(msg) helper.
+
+  LOW (2):
+  - Examples and history items looked identical (same border, same bg, same text).
+    Visually indistinguishable. FIXED: examples have primary border/bg, history
+    items have Zap icon.
+  - Build button disabled when mission > 500 — but maxLength now prevents this
+    entirely. The char count still shows red > 500 for safety, but it can't happen.
+
+- All tests pass, lint clean, tsc clean. Browser verified: auto-build works.
+
+Stage Summary:
+- **3 CRITICAL fixes**: auto-build examples, maxLength, download during rebuild
+- **2 MEDIUM fixes**: New button icon, error helper extraction
+- **2 LOW improvements**: visual distinction, char count safety
+- **Lesson**: The auto-build examples bug is the kind of thing where the user
+  thinks "this app is broken" and leaves. They click an example, nothing happens,
+  they don't know they need to click Build. The fix is one line (build(ex)) but
+  the impact is enormous — every first-time user hits this.
