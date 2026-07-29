@@ -416,3 +416,71 @@ Stage Summary:
 - **Git**: committed with full message
 - **Current state**: 99 tests, ~575 LOC app + ~400 LOC tests, 7 backup zips, zero known bugs
 - **Honest assessment**: The bugs are getting smaller. res.json() was the last "real" bug (would crash in production). The rest are edge cases and polish. We're approaching the point of diminishing returns where roasting finds nitpicks, not bugs.
+
+---
+Task ID: 8
+Agent: main (Z.ai Code)
+Task: The massive roast. Find everything across 8 dimensions.
+
+Work Log:
+- Roasted across 8 dimensions, found 18 issues (8 real bugs, 10 acknowledged non-bugs):
+  DIMENSION 1 - Abort logic:
+    - Esc abort timing: abortRef.current === controller check in finally works by accident
+      (Esc doesn't create a new controller, so old one is still current). Not a bug, just fragile.
+  DIMENSION 2 - Layout/render:
+    - Header: result info vanished during rebuild (result && !loading = false during loading). FIXED.
+    - Clear history button not disabled during loading. FIXED.
+  DIMENSION 3 - Filename safety:
+    - Download filename: "---hello---" → "---hello---.html" (ugly, multiple dashes). FIXED.
+      Now: collapse consecutive non-alphanumeric, trim leading/trailing dashes.
+  DIMENSION 4 - Server security:
+    - No request body size limit. FIXED: 10KB max, 413 response.
+    - X-Forwarded-For spoofable without proxy. Documented (Caddy required).
+    - Logger context types: all fine (JSON.stringify handles escaping).
+  DIMENSION 5 - React performance:
+    - build() useCallback deps [mission, result] → re-creates on every keystroke. Acknowledged,
+      not fixed (using a ref would complicate the code for marginal gain).
+  DIMENSION 6 - Accessibility & UX:
+    - Textarea not auto-focused. FIXED: autoFocus attribute.
+    - No viewport meta. FIXED: viewport export in layout.
+    - Spinners don't respect prefers-reduced-motion. FIXED: CSS media query.
+    - ErrorBoundary only offered Reload (infinite loop on corrupted history). FIXED: added
+      "Clear history & reload" button.
+  DIMENSION 7 - Test gaps:
+    - No test for injectCsp case-insensitivity. FIXED (4 tests).
+    - No test for logger output format. FIXED (5 tests).
+    - No test for filename sanitization. FIXED (7 tests).
+  DIMENSION 8 - Code smells:
+    - data: any in fetch handler. Acknowledged, not worth typing (response shape is simple).
+    - EXAMPLES as module constant. Fine.
+    - Math.random() for build IDs. Fine (not security-sensitive).
+
+- Fixed 8 real bugs:
+  1. Request body size limit (10KB max, 413) — prevents abuse
+  2. Autofocus textarea — prompt-first UX
+  3. Header shows "Building..." during rebuild — no more vanishing info
+  4. Clear history disabled during loading — consistency
+  5. Filename sanitization (collapse dashes, trim) — clean filenames
+  6. Viewport meta export — mobile rendering
+  7. prefers-reduced-motion CSS — vestibular disorder accessibility
+  8. ErrorBoundary "Clear history & reload" — recovery from corrupted state
+- Wrote 16 new tests (115 total):
+  - tests/cycle-8.test.ts: injectCsp case-insensitive (4), logger format (5), filename (7)
+- Ran all tests: 115 pass, 0 fail, 194 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors.
+- Verified with Agent Browser:
+  1. Autofocus: textarea focused on mount (document.activeElement = TEXTAREA mission-input)
+  2. Calculator build: 30.3s, 11.3KB HTML, has aria-labels (Clear all, Divide, Multiply) — a11y prompt working
+  3. Header during rebuild: shows "Building..." (verified in snapshot)
+  4. Esc cancel: works, zero console errors
+  5. Console: zero errors throughout
+
+Stage Summary:
+- **Real bugs fixed**: 8 (body limit, autofocus, header UX, clear-history, filename, viewport, reduced-motion, ErrorBoundary recovery)
+- **Tests**: 115 total (was 99). Added case-insensitivity, logger, filename tests.
+- **A11y**: prefers-reduced-motion, viewport, aria-labels in generated apps, autofocus
+- **Security**: body size limit (10KB), documented IP trust assumption
+- **Backup**: download/nova-v8-backup.zip (204KB, 95 files)
+- **Git**: committed with full message
+- **Current state**: 115 tests, ~600 LOC app + ~450 LOC tests, 8 backup zips
+- **Honest assessment**: This was the massive roast. Found 8 real bugs (4 medium, 4 low). The codebase is now genuinely robust: tested, secure, accessible, observable, backed up. The remaining "issues" are either acknowledged trade-offs (useCallback deps, Math.random) or out of scope (E2E tests, dead code cleanup).
