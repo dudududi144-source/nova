@@ -130,3 +130,41 @@ export function looksLikeHtml(text: string): boolean {
   const lower = text.trimStart().toLowerCase()
   return lower.startsWith('<!doctype') || lower.startsWith('<html')
 }
+
+// Inject a Content-Security-Policy meta tag into the HTML <head>.
+// This blocks the sandboxed iframe from making external network requests
+// (fetch, XHR, websocket, img, script, etc.) — defense in depth on top of
+// the sandbox="allow-scripts" attribute.
+//
+// If a CSP meta already exists, we don't add another (browsers use the first).
+// If there's no <head>, we inject one.
+const PREVIEW_CSP = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src 'unsafe-inline' data:",
+  "font-src 'unsafe-inline' data:",
+  "connect-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ')
+
+export function injectCsp(html: string): string {
+  // Already has a CSP meta — don't override (respect the LLM's choice)
+  if (/<meta\s+http-equiv=["']?content-security-policy["']?/i.test(html)) {
+    return html
+  }
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`
+  // Inject right after <head> (case-insensitive)
+  const headMatch = html.match(/<head[^>]*>/i)
+  if (headMatch) {
+    return html.replace(/<head[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
+  }
+  // No <head> — inject one right after <html> or at the start
+  const htmlTagMatch = html.match(/<html[^>]*>/i)
+  if (htmlTagMatch) {
+    return html.replace(/<html[^>]*>/i, `${htmlTagMatch[0]}<head>${cspMeta}</head>`)
+  }
+  // No <html> tag — shouldn't happen (looksLikeHtml requires it), but handle gracefully
+  return `${cspMeta}\n${html}`
+}

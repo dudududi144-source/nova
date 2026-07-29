@@ -3,9 +3,11 @@
 // Returns: { ok, html, tokens, ms } or { ok: false, error }
 //
 // No DB. No streaming. No events. One LLM call, one HTML string.
+// CSP is injected into the returned HTML to block external requests from the preview iframe.
 
 import type { NextRequest } from 'next/server'
-import { llmChat, validateMission, stripCodeFences, looksLikeHtml } from '@/lib/llm'
+import { llmChat, validateMission, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
+import { RateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -24,11 +26,34 @@ Rules:
 - Do not include any external scripts, stylesheets, fonts, or images. Everything must be inline.
 - The output must be playable/usable immediately when opened in a browser.`
 
+// 10 builds per hour per IP
+const buildLimiter = new RateLimiter(10, 60 * 60 * 1000)
+
 interface BuildBody {
   mission?: unknown
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
+  // ── Rate limit ──
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown'
+  const rl = buildLimiter.check(ip)
+  if (!rl.ok) {
+    const mins = Math.ceil(rl.resetInMs / 60000)
+    return Response.json(
+      { ok: false, error: `Rate limit reached. Try again in ${mins} minute(s).` },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(Math.ceil(rl.resetInMs / 1000)),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.ceil(rl.resetInMs / 1000)),
+        },
+      }
+    )
+  }
+
   let body: BuildBody
   try {
     body = (await request.json()) as BuildBody
@@ -54,13 +79,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     // result.error is already human-friendly (sanitized in llmChat)
     return Response.json(
       { ok: false, error: result.error, tokens: result.tokens, ms: result.ms },
-      { status: 502 }
+      { status: 502, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
     )
   }
 
-  const html = stripCodeFences(result.text)
+  const rawHtml = stripCodeFences(result.text)
 
-  if (!looksLikeHtml(html)) {
+  if (!looksLikeHtml(rawHtml)) {
     return Response.json(
       {
         ok: false,
@@ -68,9 +93,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         tokens: result.tokens,
         ms: result.ms,
       },
-      { status: 502 }
+      { status: 502, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
     )
   }
+
+  // Inject CSP to block external requests from the preview iframe
+  const html = injectCsp(rawHtml)
 
   return Response.json({
     ok: true,
