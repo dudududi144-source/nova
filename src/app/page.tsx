@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -118,6 +118,13 @@ export default function Home() {
     setError(null)
     setFailedMission(null)
 
+    // Helper: set error state consistently (replaces 6 repeated blocks)
+    const fail = (msg: string) => {
+      setError(msg)
+      setFailedMission(m)
+      if (!resultRef.current) toast.error(msg)
+    }
+
     try {
       const res = await fetch('/api/build', {
         method: 'POST',
@@ -132,10 +139,7 @@ export default function Home() {
       // even when caught. Checking the header avoids the parse entirely.
       const contentType = res.headers.get('content-type') ?? ''
       if (!contentType.includes('application/json')) {
-        const msg = `Server error (${res.status})`
-        setError(msg)
-        setFailedMission(m)
-        if (!resultRef.current) toast.error(msg)
+        fail(`Server error (${res.status})`)
         return
       }
 
@@ -146,29 +150,20 @@ export default function Home() {
       } catch (err) {
         // Fallback: Content-Type said JSON but body was malformed
         console.error('[NOVA] Failed to parse build response:', err)
-        const msg = `Server error (${res.status})`
-        setError(msg)
-        setFailedMission(m)
-        if (!resultRef.current) toast.error(msg)
+        fail(`Server error (${res.status})`)
         return
       }
 
       if (!res.ok || !data.ok) {
         const msg = typeof data?.error === 'string' ? data.error : `Server error (${res.status})`
-        setError(msg)
-        setFailedMission(m)
-        // Only toast if no result is showing (avoid double notification with banner)
-        if (!resultRef.current) toast.error(msg)
+        fail(msg)
         return
       }
 
       // Safe destructuring — we've verified data.ok is true, so html/tokens/ms must exist
       const { html = '', tokens = 0, ms = 0 } = data
       if (!html) {
-        const msg = 'Server returned empty HTML'
-        setError(msg)
-        setFailedMission(m)
-        if (!resultRef.current) toast.error(msg)
+        fail('Server returned empty HTML')
         return
       }
 
@@ -215,9 +210,7 @@ export default function Home() {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
       const msg = err instanceof Error ? err.message : 'Network error'
-      setError(msg)
-      setFailedMission(m)
-      if (!resultRef.current) toast.error(msg)
+      fail(msg)
     } finally {
       // Only clear loading if this controller is still the active one
       if (abortRef.current === controller) {
@@ -360,6 +353,7 @@ export default function Home() {
             id="mission-input"
             autoFocus
             value={mission}
+            maxLength={500}
             onChange={(e) => setMission(e.target.value)}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -441,8 +435,11 @@ export default function Home() {
                 <button
                   key={ex}
                   type="button"
-                  onClick={() => setMission(ex)}
-                  className="block w-full rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  onClick={() => {
+                    setMission(ex)
+                    build(ex)
+                  }}
+                  className="block w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10"
                 >
                   {ex}
                 </button>
@@ -463,9 +460,10 @@ export default function Home() {
                   title={h.mission}
                   onClick={() => loadFromHistory(h)}
                   disabled={loading}
-                  className="block w-full truncate rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
                 >
-                  {h.mission}
+                  <Zap className="h-3 w-3 shrink-0 text-primary/40" />
+                  <span className="truncate">{h.mission}</span>
                 </button>
               ))}
               <button
@@ -522,7 +520,7 @@ export default function Home() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={loading}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result}>
                   <Download className="h-3.5 w-3.5" />
                   Download
                 </Button>
@@ -531,7 +529,7 @@ export default function Home() {
                   Rebuild
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset}>
-                  {loading ? <X className="h-3.5 w-3.5" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                  {loading ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                   {loading ? 'Cancel' : 'New'}
                 </Button>
               </div>
