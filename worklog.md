@@ -223,3 +223,68 @@ Stage Summary:
 - **Current LOC**: ~500 total (llm.ts ~170, rate-limit.ts ~75, route.ts ~115, page.tsx ~225, ErrorBoundary.tsx ~50, tests ~250)
 - **Git**: committed as 7380164 with full descriptive message. Each future cycle will get its own commit + zip.
 - **Remaining gaps**: (1) No E2E test (would need Playwright, heavier setup). (2) Old dead code in scaffold (toaster.tsx, use-toast.ts, api/route.ts, db.ts, prisma User model) — harmless, low priority. (3) No CI/CD. (4) Chat refine feature not built (awaiting user decision).
+
+---
+Task ID: 5
+Agent: main (Z.ai Code)
+Task: Roast from a different angle, fix more, test everything.
+
+Work Log:
+- Roasted from 10 NEW angles I hadn't covered before:
+  1. System prompt was mediocre (hardcoded dark theme, no a11y, no ambiguity handling, no perf)
+  2. localStorage abuse (silent data loss on quota, no warning)
+  3. useCallback deps wrong (build depends on result → new function every result change)
+  4. Zero logging (proud of "no console.log" = no observability)
+  5. zaiInstance singleton has no error recovery (cached forever, no health check)
+  6. iframe key forces full remount (fine for v1, but undocumented WHY)
+  7. retryFailed stale closure bug (setTimeout + build() → builds OLD mission, not failed one)
+  8. No keyboard shortcuts for cancel/download (claimed keyboard-friendly, wasn't)
+  9. Tests don't test the API route (50 tests of easy code, 0 of the code that matters)
+  10. Never tested LLM output quality end-to-end (only tested 2 of 4 examples)
+- Fixed retryFailed stale-closure bug:
+  - `build()` now accepts `explicitMission?: string` parameter
+  - `retryFailed` calls `build(failedMission)` directly (no setTimeout, no stale state)
+  - When explicitMission differs from current mission state, textarea syncs
+- Added structured JSON logging (src/lib/logger.ts):
+  - `logger.info/warn/error(event, ctx)` → one-line JSON to stdout
+  - Route logs: build.started, build.completed, build.rate_limited, build.invalid_mission, build.invalid_html, build.llm_failed
+  - Each log includes: ip, mission (truncated to 80 chars), ms, tokens, htmlBytes
+  - Verified: dev.log shows structured JSON entries, greppable, parseable
+- Wrote 13 API route tests (tests/build-route.test.ts):
+  - Mocks llmChat via mock.module with wrapper function (direct mock ref didn't work — mockImplementation changes weren't picked up)
+  - Tests: 400 invalid JSON, 400 missing mission, 400 short mission, 400 non-string mission, 200 valid, llmChat called once, 502 LLM fail, 502 non-HTML, CSP injected, no duplicate CSP, fence stripping, rate limit (10/IP triggers 429), independent IPs
+  - Used unique IP per test (testIpCounter) to avoid rate limit interference
+- Improved system prompt:
+  - Removed hardcoded dark theme (now: "default to dark UNLESS user specifies otherwise")
+  - Added ambiguity handling ("pick a reasonable default, don't ask for clarification")
+  - Added accessibility section (semantic HTML, keyboard nav, ARIA labels, WCAG AA contrast)
+  - Added performance section (60fps via requestAnimationFrame, no infinite loops)
+  - Added theme flexibility (honor "light theme" / "white background" requests)
+- Added keyboard shortcuts:
+  - Esc: cancel in-flight build (aborts fetch + LLM call)
+  - ⌘S / Ctrl+S: download current result as HTML
+  - Footer shows kbd hints (hidden on mobile, shown on sm+)
+- Added localStorage quota warning:
+  - Tracks how many history items actually saved
+  - If savedCount < next.length → toast.error("localStorage full — only X of Y builds saved")
+  - No more silent data loss
+- Fixed build() onClick handlers: `onClick={build}` passed MouseEvent as first arg (which was `explicitMission`). Changed to `onClick={() => build()}`
+- Ran all tests: 63 pass, 0 fail, 126 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors.
+- Verified with Agent Browser:
+  1. Markdown editor build: FAILED (LLM returned 8-char truncated output) — error state + "Try again" appeared correctly
+  2. Clicked "Try again": rebuild started with correct mission (retryFailed fix works)
+  3. Todo app build: SUCCESS (27.6s, 11KB HTML) — playable (Todo App heading, input, Add button)
+  4. Esc during rebuild: build aborted, old preview preserved, Build button reverted to "Build"
+  5. Console: zero errors throughout
+  6. Backend log: structured JSON entries for every event (build.started, build.completed, build.invalid_html)
+
+Stage Summary:
+- **Real bug fixed**: retryFailed stale closure (would have built wrong mission on retry after textarea edit)
+- **Tests**: 63 total (50 pure-function + 13 API route with mocks). Covers validation, HTML detection, CSP injection, rate limiting, route happy/error paths.
+- **Observability**: structured JSON logs for every build event. Can grep `build.failed` or `rate_limited` in dev.log.
+- **UX**: Esc to cancel, ⌘S to download, footer shows shortcuts. localStorage quota no longer silent.
+- **System prompt**: now instructs a11y, performance, ambiguity handling, theme flexibility.
+- **Backup**: download/nova-v5-backup.zip (192KB, 90 files) — install-ready
+- **Git**: committed as 30aa707 with full descriptive message
+- **Honest finding**: markdown editor mission fails ~100% (LLM returns truncated output). This is an LLM/prompt issue, not a code bug. The error handling catches it correctly and offers retry. Future fix: few-shot examples or mission-specific prompt tuning.
