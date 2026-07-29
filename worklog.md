@@ -725,3 +725,62 @@ Stage Summary:
   install instructions in README were broken. tsconfig excluding tests means test type errors
   were invisible. These are CONFIGURATION bugs, not code bugs — I was so focused on the code
   that I never audited the config files. Lesson: audit the config, not just the code.
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: Roast again. Find what's still broken.
+
+Work Log:
+- Found 18 more issues, 3 were CRITICAL config bugs (same pattern as cycle 12):
+
+  CRITICAL (3):
+  - eslint.config.mjs had tests/** in ignores — lint didn't check tests at all!
+    Type errors, unused vars, any-usage in tests were all invisible.
+    FIXED: removed tests/** from ignores.
+  - eslint.config.mjs had @typescript-eslint/no-explicit-any: "off"
+    This is why tests were full of `as any` and `: any`.
+    FIXED: "warn".
+  - tests/build-route.test.ts had 11 instances of `as any` / `: any`
+    FIXED: created TestRequest interface, used unknown[] casts, proper typing.
+
+  IDENTITY (2):
+  - package.json name was 'nextjs_tailwind_shadcn_ts' (scaffold default)
+    FIXED: 'nova'
+  - package.json version was 0.2.1
+    FIXED: 1.0.0
+
+  CODE QUALITY (3):
+  - ErrorBoundary: empty catch {} → catch (err) with console.error
+  - TestRequest interface replaces all `as any` casts for NextRequest mock
+  - All test mock call arrays typed with unknown[] and string casts
+
+  NOT BUGS (verified, not fixed):
+  - failedMission not cleared on successful build — actually IS cleared (line 103, setFailedMission(null) at start of build)
+  - maxDuration=120 but timeoutMs=95 — intentional (95s abort < 120s Next.js limit)
+  - suppressHydrationWarning on html — intentional (dark class set server-side, no toggle)
+  - globals.css :root has light theme vars — intentional (future light mode, dead CSS is harmless)
+  - public/logo.svg is Z.ai logo — not used by NOVA UI, harmless
+  - public/robots.txt allows bots — app has no public content, harmless
+  - ~60 unused dependencies in package.json — removing them risks breaking shadcn/ui components
+    that import from radix packages. Not worth the risk for a sandbox.
+
+- Ran all tests: 163 pass, 0 fail, 268 expect() calls
+- Ran lint: 0 errors, 0 warnings (INCLUDING tests now!)
+- Ran tsc: 0 errors (INCLUDING tests)
+- Verified with Agent Browser:
+  1. Snake game build: 46s, 16KB HTML
+  2. "Snake Game" heading, "Start Game" + "Pause" buttons, "How to Play" section
+  3. Console: zero errors
+
+Stage Summary:
+- **3 CRITICAL config bugs fixed** (eslint ignores tests, no-explicit-any off, 11 `any` in tests)
+- **2 identity fixes** (package name + version)
+- **3 code quality fixes** (empty catch, TestRequest type, mock typing)
+- **Tests**: 163 pass, lint clean INCLUDING tests, tsc clean INCLUDING tests
+- **Backup**: download/nova-v13-backup.zip (214KB, 99 files)
+- **Git**: committed with full message
+- **Honest assessment**: This is the THIRD time I've found "tests aren't being checked" as a config bug.
+  Cycle 12: tsconfig excluded tests. Cycle 13: eslint ignored tests. I keep finding the same pattern
+  in different config files. The lesson: when a check passes "clean", verify it's actually checking
+  what you think it's checking. "lint clean" is meaningless if lint ignores half the codebase.
