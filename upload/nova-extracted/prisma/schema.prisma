@@ -1,0 +1,544 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A project is an uploaded ZIP that has been extracted.
+model Project {
+  id            String   @id @default(cuid())
+  name          String
+  fileName      String
+  extractedPath String
+  fileSize      Int
+  fileCount     Int
+  kind          String
+  detection     String
+  createdAt     DateTime @default(now())
+
+  runs          Run[]
+  secrets       Secret[]
+  envVars       EnvVar[]
+  caches        CacheEntry[]
+  triggers      Trigger[]
+  notifications Notification[]
+  pipelines     Pipeline[]
+  settings      ProjectSettings?
+  vaultReleases VaultRelease[]
+}
+
+// A single execution of a workflow on a project.
+model Run {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflow    String
+  status      String    @default("queued")
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  exitCode    Int?
+  durationMs  Int?
+  trigger     String    @default("manual")
+  logs        LogLine[]
+  artifacts   Artifact[]
+  testReports TestReport[]
+
+  // --- Extensions ---
+  // For matrix sub-runs: the parent run.
+  parentRunId    String?
+  // For matrix: JSON of the matrix values applied (e.g. {"node_version":"18"}).
+  matrixValues   String?
+  // For pipeline stages: which stage this run belongs to.
+  pipelineRunId  String?
+  pipelineRun    PipelineRun? @relation("PipelineRunRuns", fields: [pipelineRunId], references: [id], onDelete: SetNull)
+  stageId        String?
+  // For re-runs: which run this re-runs.
+  reRunOfId      String?
+  // Retry count (how many times this step was retried).
+  retryCount     Int       @default(0)
+  // Timeout in ms (null = no timeout).
+  timeoutMs      Int?
+  // Whether approval was required and obtained before running.
+  requiresApproval Boolean @default(false)
+  // Human-readable label for the run (e.g. "build (node 18)").
+  label          String?
+  // Index of this run within a matrix fan-out (0, 1, 2, ...).
+  matrixIndex    Int?
+  // Total number of runs in the matrix (if this is a parent).
+  matrixTotal    Int?
+  // VAULT releases published from this run
+  vaultReleases  VaultRelease[]
+
+  // P1 FIX: add index for project+startedAt queries (was full scan)
+  @@index([projectId, startedAt])
+  @@index([status, startedAt])
+}
+
+model LogLine {
+  id     String   @id @default(cuid())
+  runId  String
+  run    Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  seq    Int
+  stream String
+  text   String
+  ts     DateTime @default(now())
+
+  @@index([runId, seq])
+  @@index([text])
+  // P1 FIX: add index for runId+ts queries (was using runId+seq only)
+  @@index([runId, ts])
+}
+
+model Artifact {
+  id        String   @id @default(cuid())
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name      String
+  path      String
+  size      Int
+  mime      String
+  createdAt DateTime @default(now())
+  vaultArtifacts VaultArtifact[]
+}
+
+// ============================================================
+// Phase 2: Secrets, Env Vars, Cache
+// ============================================================
+
+model Secret {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key       String
+  // AES-256-GCM encrypted value (base64).
+  ciphertext String
+  iv         String
+  tag        String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([projectId, key])
+}
+
+model EnvVar {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, key])
+}
+
+model CacheEntry {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key        String
+  label      String
+  path       String
+  size       Int
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  hitCount   Int      @default(0)
+
+  @@unique([projectId, key])
+  @@index([projectId, lastUsedAt])
+}
+
+// ============================================================
+// Phase 3: Triggers & Notifications
+// ============================================================
+
+model Trigger {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        String   // 'webhook' | 'cron'
+  config      String   // webhook: slug; cron: cron expression
+  workflow    String
+  pipelineId  String?  // optional: trigger a pipeline instead of a single workflow
+  enabled     Boolean  @default(true)
+  secret      String?  // webhook HMAC secret
+  createdAt   DateTime @default(now())
+  lastFiredAt DateTime?
+  deliveries  WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id         String   @id @default(cuid())
+  triggerId  String
+  trigger    Trigger  @relation(fields: [triggerId], references: [id], onDelete: Cascade)
+  method     String
+  headers    String
+  body       String
+  runId      String?
+  status     String   // 'accepted' | 'rejected' | 'error'
+  error      String?
+  receivedAt DateTime @default(now())
+
+  @@index([triggerId, receivedAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  event     String   // 'started' | 'success' | 'failure' | 'always'
+  url       String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ============================================================
+// Phase 4: Pipelines (multi-stage DAG)
+// ============================================================
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  // JSON: [{id, name, workflow, needs:[stageId], matrix:[{key,values}], retry, timeoutMs, requiresApproval, secrets:[key], cache:{key, paths:[]}}]
+  stages    String
+  // JSON: {concurrentCancellation, defaultRetry, defaultTimeoutMs, notifications}
+  config    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  runs      PipelineRun[]
+}
+
+model PipelineRun {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  pipeline    Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  projectId   String
+  status      String   @default("running")
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  trigger     String   @default("manual")
+  context     String   @default("{}")
+  stageRuns   StageRun[]
+  runs        Run[]    @relation("PipelineRunRuns")
+}
+
+model StageRun {
+  id            String   @id @default(cuid())
+  pipelineRunId String
+  pipelineRun   PipelineRun @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+  stageId       String
+  stageName     String
+  status        String   @default("pending")
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  matrixValues  String?  // JSON
+  runIds        String   @default("[]")
+  error         String?
+}
+
+// ============================================================
+// Phase 5: Test Reports & Approvals
+// ============================================================
+
+model TestReport {
+  id        String   @id @default(cuid())
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  format    String   // 'junit' | 'json' | 'tap'
+  total     Int
+  passed    Int
+  failed    Int
+  skipped   Int
+  duration  Int?
+  suites    String   // JSON: full suite tree
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+}
+
+model Approval {
+  id          String   @id @default(cuid())
+  runId       String   @unique
+  status      String   @default("pending")
+  requestedAt DateTime @default(now())
+  decidedAt   DateTime?
+  decidedBy   String?
+  reason      String?
+  expiresAt   DateTime?
+}
+
+// ============================================================
+// Phase 6: Project settings
+// ============================================================
+
+model ProjectSettings {
+  id                    String  @id @default(cuid())
+  projectId             String  @unique
+  project               Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  concurrentCancellation Boolean @default(true)
+  defaultRetry          Int     @default(0)
+  defaultTimeoutMs      Int?
+  maxConcurrentRuns     Int     @default(1)
+  autoSaveCache         Boolean @default(true)
+  retentionDays         Int     @default(90)
+}
+
+// ============================================================
+// ARENA — Multi-runtime execution sandbox
+// ============================================================
+
+model ArenaRun {
+  id          String   @id @default(cuid())
+  runtime     String   // js | ts | python | bash | sql | web
+  source      String
+  stdin       String?
+  stdout      String   @default("")
+  stderr      String   @default("")
+  exitCode    Int?
+  exitSignal  String?
+  durationMs  Int?
+  peakRssKb   Int?
+  cpuMs       Int?
+  bytes       Int      @default(0) // total output bytes
+  ok          Boolean  @default(false)
+  origin      String   @default("manual") // manual | nova | forge | atlas | chain
+  originRef   String?  // forigen runId / nova mission / atlas intel id
+  snippetId   String?
+  createdAt   DateTime @default(now())
+
+  @@index([runtime])
+  @@index([createdAt])
+  @@index([origin])
+  @@index([ok])
+}
+
+model ArenaSnippet {
+  id          String   @id @default(cuid())
+  name        String
+  runtime     String
+  source      String
+  stdin       String?
+  description String?
+  tags        String   @default("")
+  author      String   @default("anonymous")
+  public      Boolean  @default(true)
+  forkedFrom  String?
+  runs        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+
+  @@index([runtime])
+  @@index([public])
+  @@index([createdAt])
+}
+
+model ArenaTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  runtime     String
+  source      String
+  stdin       String?
+  category    String   @default("basics")
+  icon        String   @default("play")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([runtime])
+  @@index([category])
+}
+
+// ============================================================
+// VAULT — Real versioned artifact registry with audit + provenance
+// ============================================================
+
+model VaultRelease {
+  id          String   @id @default(cuid())
+  version     String   // semver: 1.0.0, 1.0.1, 2.0.0-beta.1
+  name        String   // release name (defaults to project name)
+  channelId   String   @default("stable") // stable | beta | nightly | experimental
+  projectId   String?  // linked FORGE project (nullable for ARENA-only releases)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  runId       String?  // FORGE run that produced this release (nullable for ARENA-only)
+  run         Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  arenaRunId  String?  // ARENA run that produced this release (for snippet releases)
+  notes       String   @default("") // markdown release notes
+  changelog   String   @default("") // auto-generated changelog
+  signed      Boolean  @default(false)
+  signature   String?  // sha256 hash signature
+  signedBy    String?
+  signedAt    DateTime?
+  isLatest    Boolean  @default(false) // denormalized "latest" flag per channel
+  isRollback  Boolean  @default(false) // true if this release is a rollback
+  origin      String   @default("forge") // forge | arena | nova | atlas | manual
+  originRef   String?  // original source ID
+  artifactCount Int    @default(0)
+  totalSize   Int      @default(0) // bytes
+  downloads   Int      @default(0)
+  tags        String   @default("[]") // JSON array of tags
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  artifacts   VaultArtifact[]
+
+  @@unique([name, version, channelId])
+  @@index([projectId])
+  @@index([channelId])
+  @@index([isLatest])
+  @@index([createdAt])
+  @@index([origin])
+}
+
+model VaultArtifact {
+  id          String   @id @default(cuid())
+  releaseId   String
+  release     VaultRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  name        String   // file name
+  path        String   // absolute path on disk
+  size        Int      // bytes
+  mime        String   @default("application/octet-stream")
+  sha256      String?  // content hash for integrity verification
+  kind        String   @default("file") // file | source | bundle | archive | image | document
+  preview     String?  // text preview (first 2KB) for quick display
+  artifactId  String?  // link to FORGE Artifact (if sourced from FORGE run)
+  forgeArtifact Artifact? @relation(fields: [artifactId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([releaseId])
+  @@index([kind])
+  @@index([sha256])
+}
+
+model VaultAuditLog {
+  id          String   @id @default(cuid())
+  action      String   // publish | sign | verify | rollback | download | delete | promote
+  releaseId   String?
+  releaseVersion String?
+  actor       String   @default("system") // system | user | chain | api
+  details     String   @default("") // JSON of action-specific data
+  success     Boolean  @default(true)
+  errorMessage String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([releaseId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model VaultChannel {
+  id          String   @id @default(cuid())
+  name        String   @unique // stable | beta | nightly | experimental
+  description String   @default("")
+  isDefault   Boolean  @default(false)
+  autoPublish Boolean  @default(false) // auto-publish successful builds to this channel
+  color       String   @default("#22d3ee") // UI accent
+  createdAt   DateTime @default(now())
+}
+
+// ============================================================
+// CHAIN — Smart orchestration history + templates
+// ============================================================
+
+model ChainRun {
+  id          String   @id @default(cuid())
+  templateId  String?  // if started from a template
+  templateName String?
+  status      String   @default("running") // running | completed | failed | aborted
+  stepCount   Int      @default(0)
+  currentStep Int      @default(0)
+  stepsJson   String   @default("[]") // JSON array of step snapshots
+  resultJson  String?  // final result summary
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+  origin      String   @default("manual") // manual | template | api | atlas | nova
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([templateId])
+}
+
+model ChainTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String   @default("")
+  category    String   @default("custom") // research | bug | benchmark | release | exploratory | apk | custom
+  icon        String   @default("workflow")
+  stepsJson   String   @default("[]") // JSON array of step definitions
+  isBuiltin   Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  useCount    Int      @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([isBuiltin])
+  @@index([sortOrder])
+}
+
+// ── NOVA Pipeline models (restored from buildanything-full) ──
+
+model AgentMemory {
+  id          String   @id @default(cuid())
+  mission     String   @default("")
+  category    String   @default("") // web-app, api, script, etc.
+  subType     String   @default("") // e.g. "snake game"
+  agentId     String   @default("nova-8stage")
+  agentName   String   @default("NOVA 8-Stage")
+  success     Boolean  @default(false)
+  sourceCode  String   @default("") // HTML output (for dedup)
+  learnings   String   @default("")
+  quality     Float    @default(0)
+  tokens      Int      @default(0)
+  durationMs  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([success])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model MissionStreamEvent {
+  id          String   @id @default(cuid())
+  missionId   String
+  correlationId String @default("")
+  eventType   String
+  payload     String   @default("{}") // JSON
+  agentId     String   @default("")
+  agentName   String   @default("")
+  severity    String   @default("info")
+  seq         Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([missionId])
+  @@index([missionId, seq])
+  @@index([correlationId])
+  @@index([eventType])
+}
+
+model MissionCheckpoint {
+  id          String   @id @default(cuid())
+  missionId   String
+  mission     String   @default("")
+  stage       String   @default("")
+  filesJson   String   @default("[]")
+  analysisJson String  @default("{}")
+  qualityScore Float   @default(0)
+  engineConfigJson String @default("{}")
+  healthScore  Int     @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([missionId])
+  @@index([missionId, stage])
+}
