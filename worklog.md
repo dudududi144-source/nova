@@ -1048,3 +1048,61 @@ Stage Summary:
   The todo app "saved" tasks — the UI showed them — but they were never persisted.
   The user wouldn't know until they refreshed and saw empty state. This is data loss
   disguised as working software.
+
+---
+Task ID: 20
+Agent: main (Z.ai Code)
+Task: Massive test expansion. The entire frontend had zero tests.
+
+Work Log:
+- Found that the ENTIRE frontend (page.tsx) had zero tests:
+  - newBuildId: tested via replication (could drift)
+  - sanitizeFilename: tested via replication in cycle-8 (could drift)
+  - validateHistory: tested via replication in cycle-11 (could drift)
+  - ErrorBoundary: zero tests
+  - SYSTEM_PROMPT: zero tests (could silently lose critical instructions)
+  - Route configuration: zero characterization tests
+
+- Fixed by extracting testable functions into src/lib/helpers.ts:
+  - newBuildId, sanitizeFilename, validateHistory, isValidHistoryItem
+  - page.tsx imports from helpers (no more duplication)
+  - Tests import from helpers (no more replication, no drift risk)
+
+- Wrote 69 new tests across 4 new test files (235 total):
+
+  tests/build-id.test.ts (expanded, 28 tests):
+  - newBuildId: uniqueness (10000), prefix, 3 parts, 10-char random, sortability
+  - sanitizeFilename: normal, collapse, trim, fallback, empty, unicode, truncate, numbers, special chars, spaces
+  - validateHistory: non-array, empty, filter invalid, cap at 10, all-valid
+  - isValidHistoryItem: valid, null, non-object, missing fields, wrong types, type narrowing
+
+  tests/prompt-config.test.ts (26 tests):
+  - SYSTEM_PROMPT content: storage limitation, output format, quality bar, accessibility,
+    performance, theme, forbids fences, forbids localStorage, forbids external resources
+  - Route configuration: force-dynamic, nodejs, maxDuration, body size limit, rate limit,
+    maxKeys, timeout, content-length check, errorResponse helper, ErrorBody/SuccessBody,
+    validation before rate limit, CSP after HTML validation, all 6 log events
+  - Content-Type/error patterns: body parse error, ErrorBody, SuccessBody
+
+  tests/error-boundary.test.ts (8 tests):
+  - mounted flag, error ID, focus management, ARIA roles, two recovery options,
+    error handling in catch, console logging, class component pattern
+
+  tests/page-config.test.ts (14 tests):
+  - maxLength, autoFocus, sandbox (no allow-same-origin), srcDoc, aria-busy,
+    Content-Type before res.json, fail() helper, cancelBuild vs reset,
+    keyboard shortcuts, elapsed timer, auto-build examples, inline confirm,
+    char count, prefers-reduced-motion, imports from helpers
+
+- All tests pass, lint clean, tsc clean.
+- Browser verified: calculator build (35s) with a11y labels, zero console errors.
+
+Stage Summary:
+- **69 new tests** (235 total, 399 assertions)
+- **Extracted helpers** to src/lib/helpers.ts (no more duplication)
+- **Characterization tests** for SYSTEM_PROMPT, ErrorBoundary, page.tsx, route.ts
+  — these catch regressions if critical features are accidentally removed
+- **Lesson**: Characterization tests are the safety net. They don't test behavior
+  (that's what unit tests do) — they test that critical CONFIGURATION is present.
+  If someone removes maxLength, sandbox, or the STORAGE LIMITATION prompt section,
+  the test catches it immediately.
