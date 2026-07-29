@@ -56,7 +56,18 @@ interface BuildBody {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
+  // ── Request body size limit (prevent abuse) ──
+  const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10)
+  if (contentLength > 10_000) {
+    return Response.json(
+      { ok: false, error: 'Request body too large (max 10KB)' },
+      { status: 413 }
+    )
+  }
+
   // ── Rate limit ──
+  // X-Forwarded-For is trusted because Caddy (the gateway) sets it.
+  // In a deployment without a trusted proxy, this would be spoofable.
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip')
     || 'unknown'

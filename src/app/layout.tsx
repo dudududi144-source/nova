@@ -17,6 +17,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "NOVA — Describe it. Build it.",
   description: "Type what you want to build. NOVA generates a working, single-file HTML app you can preview and download.",
+}
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({

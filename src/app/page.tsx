@@ -189,7 +189,9 @@ export default function Home() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${result.mission.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '-').toLowerCase() || 'app'}.html`
+    // Sanitize filename: alphanumeric only, collapse consecutive dashes, trim
+    const rawName = result.mission.slice(0, 30).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+    a.download = `${rawName || 'app'}.html`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -238,13 +240,22 @@ export default function Home() {
             <p className="text-[10px] text-muted-foreground">Describe it. Build it.</p>
           </div>
         </div>
-        {result && !loading && (
+        {result && (
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <Zap className="h-3 w-3" />
-            <span>{(result.ms / 1000).toFixed(1)}s · {result.tokens} tokens</span>
+            {loading ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Building...</span>
+              </>
+            ) : (
+              <>
+                <Zap className="h-3 w-3" />
+                <span>{(result.ms / 1000).toFixed(1)}s · {result.tokens} tokens</span>
+              </>
+            )}
           </div>
         )}
-        {loading && (
+        {!result && loading && (
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             <span>Building...</span>
@@ -263,6 +274,7 @@ export default function Home() {
           </label>
           <Textarea
             id="mission-input"
+            autoFocus
             value={mission}
             onChange={(e) => setMission(e.target.value)}
             onKeyDown={(e) => {
@@ -364,7 +376,8 @@ export default function Home() {
                   setHistory([])
                   try { localStorage.removeItem('nova_history') } catch {}
                 }}
-                className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive"
+                disabled={loading}
+                className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
               >
                 Clear history
               </button>
