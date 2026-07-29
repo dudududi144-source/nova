@@ -8,8 +8,8 @@ const __dirname = dirname(__filename);
 
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
-    // TypeScript rules
-    "@typescript-eslint/no-explicit-any": "off",
+    // TypeScript rules — no-explicit-any is ON (we want type safety)
+    "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/no-unused-vars": "off",
     "@typescript-eslint/no-non-null-assertion": "off",
     "@typescript-eslint/ban-ts-comment": "off",
@@ -44,7 +44,8 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "upload/**", "tests/**", "download/**", "mini-services/**"]
+  // tests/ is NO LONGER ignored — lint checks tests too
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "upload/**", "download/**", "mini-services/**"]
 }];
 
 export default eslintConfig;

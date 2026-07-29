@@ -3,6 +3,7 @@
 // without making real LLM calls.
 
 import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from 'bun:test'
+import type { NextRequest } from 'next/server'
 
 // Mock the llm module BEFORE importing the route
 // We mock the functions the route imports
@@ -68,15 +69,22 @@ function nextIp(): string {
   return `10.0.${Math.floor(testIpCounter / 256)}.${testIpCounter++ % 256}`
 }
 
+// Minimal NextRequest-like type for testing (avoids `any`)
+interface TestRequest {
+  headers: Map<string, string>
+  json: () => Promise<unknown>
+  signal: AbortSignal
+}
+
 // Helper to create a NextRequest-like object
-function makeRequest(body: unknown, opts: { ip?: string; signal?: AbortSignal } = {}): any {
+function makeRequest(body: unknown, opts: { ip?: string; signal?: AbortSignal } = {}): TestRequest {
   return {
     headers: new Map([
       ['x-forwarded-for', opts.ip ?? nextIp()],
     ]),
     json: async () => body,
     signal: opts.signal ?? new AbortController().signal,
-  } as any
+  }
 }
 
 describe('POST /api/build', () => {
@@ -107,12 +115,12 @@ describe('POST /api/build', () => {
   })
 
   it('returns 400 for invalid JSON body', async () => {
-    const req = {
+    const req: TestRequest = {
       headers: new Map([['x-forwarded-for', '1.2.3.4']]),
       json: async () => { throw new Error('invalid json') },
       signal: new AbortController().signal,
-    } as any
-    const res = await POST(req)
+    }
+    const res = await POST(req as unknown as NextRequest)
     expect(res.status).toBe(400)
     const data = await res.json()
     expect(data.ok).toBe(false)
@@ -120,7 +128,7 @@ describe('POST /api/build', () => {
   })
 
   it('returns 400 for missing mission', async () => {
-    const res = await POST(makeRequest({}))
+    const res = await POST(makeRequest({}) as unknown as NextRequest)
     expect(res.status).toBe(400)
     const data = await res.json()
     expect(data.ok).toBe(false)
@@ -128,7 +136,7 @@ describe('POST /api/build', () => {
   })
 
   it('returns 400 for mission that is too short', async () => {
-    const res = await POST(makeRequest({ mission: 'ab' }))
+    const res = await POST(makeRequest({ mission: 'ab' }) as unknown as NextRequest)
     expect(res.status).toBe(400)
     const data = await res.json()
     expect(data.ok).toBe(false)
@@ -136,14 +144,14 @@ describe('POST /api/build', () => {
   })
 
   it('returns 400 for mission that is not a string', async () => {
-    const res = await POST(makeRequest({ mission: 123 }))
+    const res = await POST(makeRequest({ mission: 123 }) as unknown as NextRequest)
     expect(res.status).toBe(400)
     const data = await res.json()
     expect(data.ok).toBe(false)
   })
 
   it('returns 200 with HTML for valid mission', async () => {
-    const res = await POST(makeRequest({ mission: 'Build a snake game' }))
+    const res = await POST(makeRequest({ mission: 'Build a snake game' }) as unknown as NextRequest)
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.ok).toBe(true)
@@ -154,7 +162,7 @@ describe('POST /api/build', () => {
   })
 
   it('calls llmChat exactly once for a valid mission', async () => {
-    await POST(makeRequest({ mission: 'Build a calculator' }))
+    await POST(makeRequest({ mission: 'Build a calculator' }) as unknown as NextRequest)
     expect(mockLlmChat).toHaveBeenCalledTimes(1)
   })
 
@@ -162,7 +170,7 @@ describe('POST /api/build', () => {
     mockLlmChat.mockImplementation(async () => ({
       ok: false, text: '', tokens: 0, ms: 100, error: 'The AI service is busy',
     }))
-    const res = await POST(makeRequest({ mission: 'Build a todo app' }))
+    const res = await POST(makeRequest({ mission: 'Build a todo app' }) as unknown as NextRequest)
     expect(res.status).toBe(502)
     const data = await res.json()
     expect(data.ok).toBe(false)
@@ -173,7 +181,7 @@ describe('POST /api/build', () => {
     mockLlmChat.mockImplementation(async () => ({
       ok: true, text: "Here's your app: not actually HTML", tokens: 50, ms: 200,
     }))
-    const res = await POST(makeRequest({ mission: 'Build something' }))
+    const res = await POST(makeRequest({ mission: 'Build something' }) as unknown as NextRequest)
     expect(res.status).toBe(502)
     const data = await res.json()
     expect(data.ok).toBe(false)
@@ -181,7 +189,7 @@ describe('POST /api/build', () => {
   })
 
   it('injects CSP into the returned HTML', async () => {
-    const res = await POST(makeRequest({ mission: 'Build a game' }))
+    const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
     const data = await res.json()
     expect(data.html).toContain('Content-Security-Policy')
     expect(data.html).toContain("connect-src 'none'")
@@ -193,7 +201,7 @@ describe('POST /api/build', () => {
       text: '<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \'self\'"></head><body></body></html>',
       tokens: 50, ms: 200,
     }))
-    const res = await POST(makeRequest({ mission: 'Build an app' }))
+    const res = await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
     const data = await res.json()
     const cspCount = (data.html.match(/Content-Security-Policy/gi) || []).length
     expect(cspCount).toBe(1)
@@ -205,7 +213,7 @@ describe('POST /api/build', () => {
       text: '```html\n<!DOCTYPE html><html><head></head><body></body></html>\n```',
       tokens: 50, ms: 200,
     }))
-    const res = await POST(makeRequest({ mission: 'Build an app' }))
+    const res = await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
     const data = await res.json()
     expect(data.ok).toBe(true)
     expect(data.html).not.toContain('```')
@@ -217,7 +225,7 @@ describe('POST /api/build', () => {
     // Determine the limit (dev=100, prod=10). We'll just try up to 110.
     let count = 0
     for (let i = 0; i < 110; i++) {
-      const res = await POST(makeRequest({ mission: `Build app ${i}` }, { ip }))
+      const res = await POST(makeRequest({ mission: `Build app ${i}` }, { ip }) as unknown as NextRequest)
       if (res.status === 200) count++
       else if (res.status === 429) break
     }
@@ -229,39 +237,39 @@ describe('POST /api/build', () => {
   it('tracks different IPs independently for rate limiting', async () => {
     // Exhaust IP A (use 110 requests to be sure we hit the limit)
     for (let i = 0; i < 110; i++) {
-      await POST(makeRequest({ mission: `Build app ${i}` }, { ip: '1.1.1.1' }))
+      await POST(makeRequest({ mission: `Build app ${i}` }, { ip: '1.1.1.1' }) as unknown as NextRequest)
     }
     // IP B should still work
-    const res = await POST(makeRequest({ mission: 'Build app' }, { ip: '2.2.2.2' }))
+    const res = await POST(makeRequest({ mission: 'Build app' }, { ip: '2.2.2.2' }) as unknown as NextRequest)
     expect(res.status).toBe(200)
   })
 
   // ── Logger verification tests ──
 
   it('logs build.started and build.completed on success', async () => {
-    await POST(makeRequest({ mission: 'Build a test app' }))
+    await POST(makeRequest({ mission: 'Build a test app' }) as unknown as NextRequest)
     // Find the build.started log (info level → console.log)
     const startedCalls = logSpy.mock.calls.filter(
-      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.started"')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.started"')
     )
     const completedCalls = logSpy.mock.calls.filter(
-      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.completed"')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.completed"')
     )
     expect(startedCalls.length).toBe(1)
     expect(completedCalls.length).toBe(1)
     // Verify build.started has ip and mission
-    const startedParsed = JSON.parse(startedCalls[0][0])
+    const startedParsed = JSON.parse(startedCalls[0][0] as string)
     expect(startedParsed.ip).toBeTruthy()
     expect(startedParsed.mission).toContain('test app')
   })
 
   it('logs build.invalid_mission on validation failure', async () => {
-    await POST(makeRequest({ mission: 'ab' }))
+    await POST(makeRequest({ mission: 'ab' }) as unknown as NextRequest)
     const calls = warnSpy.mock.calls.filter(
-      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_mission"')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_mission"')
     )
     expect(calls.length).toBe(1)
-    const parsed = JSON.parse(calls[0][0])
+    const parsed = JSON.parse(calls[0][0] as string)
     expect(parsed.error).toContain('too short')
   })
 
@@ -269,12 +277,12 @@ describe('POST /api/build', () => {
     mockLlmChat.mockImplementation(async () => ({
       ok: false, text: '', tokens: 0, ms: 100, error: 'LLM error',
     }))
-    await POST(makeRequest({ mission: 'Build an app' }))
+    await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
     const calls = errorSpy.mock.calls.filter(
-      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.llm_failed"')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.llm_failed"')
     )
     expect(calls.length).toBe(1)
-    const parsed = JSON.parse(calls[0][0])
+    const parsed = JSON.parse(calls[0][0] as string)
     expect(parsed.error).toBe('LLM error')
   })
 
@@ -282,9 +290,9 @@ describe('POST /api/build', () => {
     mockLlmChat.mockImplementation(async () => ({
       ok: true, text: 'not html at all', tokens: 50, ms: 200,
     }))
-    await POST(makeRequest({ mission: 'Build an app' }))
+    await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
     const calls = warnSpy.mock.calls.filter(
-      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_html"')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_html"')
     )
     expect(calls.length).toBe(1)
   })
@@ -293,13 +301,13 @@ describe('POST /api/build', () => {
     const ip = '7.7.7.7'
     // Exhaust the limit
     for (let i = 0; i < 110; i++) {
-      await POST(makeRequest({ mission: `Build app ${i}` }, { ip }))
+      await POST(makeRequest({ mission: `Build app ${i}` }, { ip }) as unknown as NextRequest)
     }
     warnSpy.mockClear()
     // Next request should be rate limited
-    await POST(makeRequest({ mission: 'One more' }, { ip }))
+    await POST(makeRequest({ mission: 'One more' }, { ip }) as unknown as NextRequest)
     const calls = warnSpy.mock.calls.filter(
-      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.rate_limited"')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.rate_limited"')
     )
     expect(calls.length).toBe(1)
   })
@@ -308,12 +316,12 @@ describe('POST /api/build', () => {
 
   it('passes a signal to llmChat (linked to request.signal)', async () => {
     const controller = new AbortController()
-    const req = {
+    const req: TestRequest = {
       headers: new Map([['x-forwarded-for', '6.6.6.6']]),
       json: async () => ({ mission: 'Build an app' }),
       signal: controller.signal,
-    } as any
-    await POST(req)
+    }
+    await POST(req as unknown as NextRequest)
     // Verify llmChat was called and the third argument includes a signal
     expect(mockLlmChat).toHaveBeenCalledTimes(1)
     const callArgs = mockLlmChat.mock.calls[0] as unknown[] | undefined
@@ -330,18 +338,16 @@ describe('POST /api/build', () => {
       await new Promise(resolve => setTimeout(resolve, 100))
       return { ok: true, text: '<!DOCTYPE html><html></html>', tokens: 50, ms: 100 }
     })
-    const req = {
+    const req: TestRequest = {
       headers: new Map([['x-forwarded-for', '8.8.8.8']]),
       json: async () => ({ mission: 'Build an app' }),
       signal: controller.signal,
-    } as any
-    const promise = POST(req)
+    }
+    const promise = POST(req as unknown as NextRequest)
     // Abort after 10ms (before the 100ms mock resolves)
     setTimeout(() => controller.abort(), 10)
     await promise
     // The route should handle the abort gracefully (no throw)
-    // We can't easily verify the signal was aborted without inspecting the mock args,
-    // but we verify the route didn't crash
     expect(mockLlmChat).toHaveBeenCalledTimes(1)
   })
 })

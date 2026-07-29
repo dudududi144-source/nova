@@ -62,8 +62,8 @@ export class ErrorBoundary extends Component<Props, State> {
   clearHistoryAndReload = () => {
     try {
       localStorage.removeItem('nova_history')
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[ErrorBoundary] Failed to clear history:', err)
     }
     window.location.reload()
   }
