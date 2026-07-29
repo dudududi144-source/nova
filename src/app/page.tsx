@@ -194,6 +194,7 @@ export default function Home() {
       if (e.key === 'Escape' && loading) {
         e.preventDefault()
         abortRef.current?.abort()
+        toast.info('Build cancelled')
         return
       }
       // ⌘S / Ctrl+S downloads the current result

@@ -21,11 +21,24 @@ export interface LlmOptions {
 }
 
 let zaiInstance: any = null
+let zaiPromise: Promise<any> | null = null
 
+// Singleton with promise cache — prevents double-instantiation if two builds
+// start before the first ZAI.create() resolves.
+// Resets on failure so a stale instance doesn't poison all future calls.
 async function getZai(): Promise<any> {
   if (zaiInstance) return zaiInstance
-  zaiInstance = await ZAI.create()
-  return zaiInstance
+  if (zaiPromise) return zaiPromise
+  zaiPromise = ZAI.create().then((inst: any) => {
+    zaiInstance = inst
+    zaiPromise = null
+    return inst
+  }).catch((err: any) => {
+    // Reset so the next call retries
+    zaiPromise = null
+    throw err
+  })
+  return zaiPromise
 }
 
 export async function llmChat(
@@ -99,6 +112,8 @@ export async function llmChat(
     }
 
     // Don't leak raw internal errors; give a safe generic message
+    // Reset the instance — it might be stale (expired token, dropped connection)
+    zaiInstance = null
     return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'The AI service encountered an error. Try again.' }
   }
 }
@@ -116,9 +131,15 @@ export function validateMission(mission: string): { ok: boolean; error?: string 
 }
 
 // Strip markdown fences if the LLM wrapped its HTML in ```html ... ```
+// Handles edge case: if the first fence block is empty, try the next one.
 export function stripCodeFences(text: string): string {
-  const fenceMatch = text.match(/```(?:html|htm)?\s*\n?([\s\S]*?)\n?```/)
-  if (fenceMatch) return fenceMatch[1].trim()
+  // Find all fence blocks
+  const fenceRegex = /```(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
+  let match
+  while ((match = fenceRegex.exec(text)) !== null) {
+    const content = match[1].trim()
+    if (content) return content
+  }
   return text.trim()
 }
 

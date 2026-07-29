@@ -17,7 +17,8 @@ export const maxDuration = 120
 const SYSTEM_PROMPT = `You are a senior front-end engineer who builds complete, working, single-file HTML apps.
 
 OUTPUT FORMAT:
-- Output ONLY the HTML. No explanation, no markdown, no commentary before or after.
+- Output ONLY raw HTML. No explanation, no markdown, no commentary before or after.
+- Do NOT wrap the output in \`\`\`html or \`\`\` code fences. Output raw HTML directly.
 - Must be a complete document: <!DOCTYPE html>, <html>, <head>, <body>.
 - All CSS in a <style> tag in <head>. All JS in a <script> tag before </body>.
 - Everything inline. No external scripts, stylesheets, fonts, images, or fetch requests.
@@ -46,8 +47,9 @@ THEME:
 
 The output must be playable/usable immediately when opened in a browser.`
 
-// 10 builds per hour per IP
-const buildLimiter = new RateLimiter(10, 60 * 60 * 1000)
+// Rate limit: 10 builds/hour in production, 100/hour in development
+const RATE_LIMIT_MAX = process.env.NODE_ENV === 'production' ? 10 : 100
+const buildLimiter = new RateLimiter(RATE_LIMIT_MAX, 60 * 60 * 1000)
 
 interface BuildBody {
   mission?: unknown
