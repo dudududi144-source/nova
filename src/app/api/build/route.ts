@@ -24,6 +24,12 @@ OUTPUT FORMAT:
 - Everything inline. No external scripts, stylesheets, fonts, images, or fetch requests.
 - Keep it in ONE file.
 
+STORAGE LIMITATION:
+- The app runs in a sandboxed iframe WITHOUT access to localStorage or sessionStorage.
+- Do NOT use localStorage, sessionStorage, or cookies. They will silently fail.
+- Use in-memory JavaScript variables (arrays, objects) to store state instead.
+- State will reset when the page reloads — that's expected and fine.
+
 QUALITY BAR:
 - The app must actually work. A snake game needs a game loop, scoring, game-over. A todo app needs add/complete/delete. A markdown editor needs live preview.
 - If the mission is ambiguous (e.g., "build a game"), pick a reasonable default (e.g., snake) and build it well. Don't ask for clarification.

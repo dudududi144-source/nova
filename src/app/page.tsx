@@ -42,6 +42,7 @@ export default function Home() {
   const [failedMission, setFailedMission] = useState<string | null>(null) // what to retry
   const [result, setResult] = useState<BuildResult | null>(null)
   const [history, setHistory] = useState<BuildResult[]>([])
+  const [confirmClear, setConfirmClear] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
@@ -466,20 +467,38 @@ export default function Home() {
                   <span className="truncate">{h.mission}</span>
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm('Clear all build history? This cannot be undone.')) {
-                    setHistory([])
-                    try { localStorage.removeItem('nova_history') } catch {}
-                    toast.success('History cleared')
-                  }
-                }}
-                disabled={loading}
-                className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
-              >
-                Clear history
-              </button>
+              {confirmClear ? (
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHistory([])
+                      try { localStorage.removeItem('nova_history') } catch {}
+                      setConfirmClear(false)
+                      toast.success('History cleared')
+                    }}
+                    className="flex-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/20"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClear(false)}
+                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(true)}
+                  disabled={loading}
+                  className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
+                >
+                  Clear history
+                </button>
+              )}
             </div>
           )}
         </section>
