@@ -260,12 +260,15 @@ export default function Home() {
   }, [])
 
   const retryFailed = useCallback(() => {
-    if (failedMission) {
-      // Pass the failed mission explicitly — avoids stale-closure bug where
-      // build() would read the current `mission` state (which the user may have edited)
+    // If the user edited the textarea after the failure, use the edited mission.
+    // Otherwise, use the original failed mission.
+    const currentMission = mission.trim()
+    if (currentMission && currentMission !== failedMission) {
+      build(currentMission)
+    } else if (failedMission) {
       build(failedMission)
     }
-  }, [failedMission, build])
+  }, [failedMission, build, mission])
 
   const download = useCallback(() => {
     if (!result?.html) return
@@ -367,6 +370,14 @@ export default function Home() {
             placeholder="Build a snake game with score and game-over..."
             className="min-h-[120px] resize-none font-mono text-sm"
           />
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground/40">
+              ⌘+Enter to build
+            </span>
+            <span className={`text-[10px] ${mission.length > 500 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+              {mission.length}/500
+            </span>
+          </div>
           <Button
             onClick={() => build()}
             disabled={loading || !mission.trim()}
@@ -390,7 +401,12 @@ export default function Home() {
           {loading && !result && (
             <div className="mt-4 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-              <span>The model is writing your app. {elapsed > 0 && `${elapsed}s elapsed.`} This usually takes 20-60 seconds.</span>
+              <span>
+                The model is writing your app.
+                {elapsed > 0 && ` ${elapsed}s elapsed.`}
+                {' '}This usually takes 20-60 seconds.
+                {elapsed > 60 && ' (taking longer than expected — please wait)'}
+              </span>
             </div>
           )}
 
@@ -455,8 +471,11 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => {
-                  setHistory([])
-                  try { localStorage.removeItem('nova_history') } catch {}
+                  if (window.confirm('Clear all build history? This cannot be undone.')) {
+                    setHistory([])
+                    try { localStorage.removeItem('nova_history') } catch {}
+                    toast.success('History cleared')
+                  }
                 }}
                 disabled={loading}
                 className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
@@ -505,7 +524,7 @@ export default function Home() {
               <div className="flex shrink-0 items-center gap-1">
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={loading}>
                   <Download className="h-3.5 w-3.5" />
-                  HTML
+                  Download
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading}>
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -536,7 +555,6 @@ export default function Home() {
                 srcDoc={result.html}
                 title="Preview"
                 sandbox="allow-scripts"
-                loading="lazy"
                 className="h-full w-full border-0 bg-neutral-950"
               />
             </div>
