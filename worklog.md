@@ -840,3 +840,36 @@ Stage Summary:
   and dismissed it as a one-off. It had an 82.7% failure rate. That's not a one-off — that's
   a guaranteed flaky test. The lesson: when a test fails once, investigate WHY. Don't dismiss
   it as randomness without checking the math.
+
+---
+Task ID: 15
+Agent: main (Z.ai Code)
+Task: Fix real production error: SyntaxError when server returns HTML instead of JSON.
+
+Work Log:
+- User reported: "Unexpected token '<', \"<html>\\n<h\"... is not valid JSON"
+- Root cause: When the Next.js dev server is recompiling (hot reload), it returns
+  an HTML page for API routes instead of JSON. The client's res.json() call throws
+  a SyntaxError. Even though I had a try/catch around it (added in cycle 7), the
+  browser console STILL logs the SyntaxError before the catch runs — this is a
+  known browser behavior where Response.json() logs the error to the console
+  even when the promise rejection is caught.
+- Fix: Check Content-Type header BEFORE calling res.json(). If the response isn't
+  application/json, skip the parse entirely. This prevents the SyntaxError from
+  ever being thrown, so it never appears in the console.
+- Also added allowedDevOrigins to next.config.ts (was showing cross-origin warning).
+- Added 3 new tests verifying Content-Type is application/json on success/error/rate-limit.
+- Ran all tests: 166 pass, 0 fail, 271 expect() calls
+- Verified with Agent Browser: snake build (31s), zero console errors, zero page errors.
+
+Stage Summary:
+- **1 CRITICAL production fix**: Content-Type check before res.json() — prevents the
+  SyntaxError the user was seeing in production
+- **1 config fix**: allowedDevOrigins for preview gateway
+- **3 new tests**: Content-Type verification
+- **Backup**: download/nova-v15-backup.zip (215KB, 99 files)
+- **Lesson**: try/catch doesn't prevent console errors from Response.json().
+  The browser logs the SyntaxError before the catch runs. The only way to prevent
+  it is to check Content-Type BEFORE calling .json(). I should have done this in
+  cycle 7 when I first "fixed" the res.json() crash — but I only added a try/catch,
+  which catches the error but doesn't prevent the console output.
