@@ -23,9 +23,9 @@ mock.module('@/lib/llm', () => ({
     if (m.trim().length > 500) return { ok: false, error: 'Mission too long' }
     return { ok: true }
   },
-  // Use the same logic as the real implementation (handles empty first fence block)
+  // Use the same logic as the real implementation (handles empty first fence block, extra whitespace)
   stripCodeFences: (t: string) => {
-    const fenceRegex = /```(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
+    const fenceRegex = /```\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
     let match
     while ((match = fenceRegex.exec(t)) !== null) {
       const content = match[1].trim()

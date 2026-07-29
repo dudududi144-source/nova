@@ -131,10 +131,10 @@ export function validateMission(mission: string): { ok: boolean; error?: string 
 }
 
 // Strip markdown fences if the LLM wrapped its HTML in ```html ... ```
-// Handles edge case: if the first fence block is empty, try the next one.
+// Handles edge cases: empty first fence block, extra whitespace around language.
 export function stripCodeFences(text: string): string {
-  // Find all fence blocks
-  const fenceRegex = /```(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
+  // Find all fence blocks. Allow optional whitespace around the language identifier.
+  const fenceRegex = /```\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
   let match
   while ((match = fenceRegex.exec(text)) !== null) {
     const content = match[1].trim()

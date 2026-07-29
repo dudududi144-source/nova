@@ -32,7 +32,13 @@ export class RateLimiter {
     const now = Date.now()
     const entry = this.hits.get(key)
 
+    // Handle max=0 (block everything) and expired/missing entries the same way:
+    // if no entry or expired, create one with count=1, then check against max.
     if (!entry || entry.resetAt < now) {
+      // If max is 0, block immediately
+      if (this.max <= 0) {
+        return { ok: false, remaining: 0, resetInMs: this.windowMs }
+      }
       this.hits.set(key, { count: 1, resetAt: now + this.windowMs })
       return { ok: true, remaining: this.max - 1, resetInMs: this.windowMs }
     }

@@ -80,7 +80,17 @@ export default function Home() {
         signal: controller.signal,
       })
 
-      const data = await res.json()
+      // Parse JSON safely — server might return non-JSON (e.g., 500 HTML error page)
+      let data: any
+      try {
+        data = await res.json()
+      } catch {
+        const msg = `Server error (${res.status})`
+        setError(msg)
+        setFailedMission(m)
+        if (!result) toast.error(msg)
+        return
+      }
 
       if (!res.ok || !data.ok) {
         const msg = typeof data?.error === 'string' ? data.error : `Server error (${res.status})`
@@ -321,6 +331,7 @@ export default function Home() {
               {EXAMPLES.map((ex) => (
                 <button
                   key={ex}
+                  type="button"
                   onClick={() => setMission(ex)}
                   className="block w-full rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                 >
@@ -339,6 +350,7 @@ export default function Home() {
               {history.map((h) => (
                 <button
                   key={h.id}
+                  type="button"
                   onClick={() => loadFromHistory(h)}
                   disabled={loading}
                   className="block w-full truncate rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
@@ -347,6 +359,7 @@ export default function Home() {
                 </button>
               ))}
               <button
+                type="button"
                 onClick={() => {
                   setHistory([])
                   try { localStorage.removeItem('nova_history') } catch {}
@@ -375,6 +388,7 @@ export default function Home() {
                     Retry
                   </Button>
                   <button
+                    type="button"
                     onClick={() => setError(null)}
                     className="text-destructive/60 transition-colors hover:text-destructive"
                     aria-label="Dismiss error"
@@ -410,8 +424,18 @@ export default function Home() {
             </div>
 
             {/* Preview iframe — srcDoc avoids blob URL lifecycle complexity.
-                bg-neutral-950 prevents white flash before the LLM's CSS loads. */}
+                bg-neutral-950 prevents white flash before the LLM's CSS loads.
+                During rebuild, show a loading overlay so the user doesn't think
+                the old preview is the new one. */}
             <div className="relative min-h-0 flex-1 bg-neutral-950">
+              {loading && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+                  <div className="flex flex-col items-center gap-2 text-neutral-400">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    <p className="text-xs">Rebuilding...</p>
+                  </div>
+                </div>
+              )}
               <iframe
                 key={result.id}
                 srcDoc={result.html}
