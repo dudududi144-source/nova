@@ -122,13 +122,11 @@ export function stripCodeFences(text: string): string {
   return text.trim()
 }
 
-// Basic sanity check: does this look like HTML?
+// Basic sanity check: does this look like a complete HTML document?
+// Must start (after optional whitespace/fences) with <!doctype html> or <html>.
+// Rejects "Here's your app:\n<div>...</div>" style LLM outputs that contain HTML
+// fragments but aren't complete documents.
 export function looksLikeHtml(text: string): boolean {
-  const lower = text.toLowerCase()
-  return (
-    lower.includes('<!doctype') ||
-    lower.includes('<html') ||
-    (lower.includes('<body') && lower.includes('</body>')) ||
-    (lower.includes('<div') && lower.includes('</div>'))
-  )
+  const lower = text.trimStart().toLowerCase()
+  return lower.startsWith('<!doctype') || lower.startsWith('<html')
 }

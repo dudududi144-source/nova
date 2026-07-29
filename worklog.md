@@ -99,3 +99,62 @@ Stage Summary:
 - **What was verified**: Build works (todo app, 25.7s), history works (load from localStorage via srcDoc), sandbox works (parent can't access iframe DOM — SecurityError), zero console/page errors.
 - **Current LOC**: ~400 total (llm.ts ~110, route.ts ~75, page.tsx ~215)
 - **What's still not fixed** (acknowledged, deferred to v2): no CSP meta tag inside iframe (defense-in-depth), no rate limiting, no tests, no server-side logging. These are v2 items, not v1 bugs.
+
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: Roast NOVA v2 again, find and fix all remaining bugs, verify edge cases, plan better.
+
+Work Log:
+- Roasted v2 and found 15 more bugs that the happy-path browser test missed:
+  1. History-click race condition (click history during build → in-flight build overwrites it)
+  2. `reset()` during build had a loading-on-empty flash
+  3. Textarea `disabled={loading}` blocked mission editing during build (hostile UX)
+  4. "Try again" used current mission state, not the failed mission (confusing)
+  5. Mobile layout broken (left panel had no height constraint, preview got 0px)
+  6. Error + examples showed simultaneously (cluttered)
+  7. Dead `missionText` parameter on `build()`
+  8. No `role="alert"` on error banner (screen readers didn't announce)
+  9. White flash if LLM forgot `<body>` background
+  10. `looksLikeHtml` too permissive (`<div></div>` anywhere passed)
+  11. Toast redundancy (error showed in panel AND as toast)
+  12. No unique build ID (history deduped by mission text, losing alternate builds)
+  13. iframe `key` not unique (mission+ms could collide)
+  14. Header showed stale tokens during rebuild
+  15. Zero tests (every fix verified by hand, not repeatable)
+- Fixed `src/lib/llm.ts`:
+  - `looksLikeHtml` now requires the text to START with `<!doctype` or `<html>` (after trimStart). Rejects LLM outputs like "Here's your app:\n<div>...</div>"
+- Rewrote `src/app/page.tsx`:
+  - Added `BuildResult.id` (unique per build via `newBuildId()`) — fixes history dedup collision + iframe key uniqueness
+  - `loadFromHistory()` now aborts any in-flight build before loading — fixes race condition #1
+  - History buttons `disabled={loading}` — prevents click-during-build race
+  - Removed `disabled={loading}` from textarea — user can edit mission during build
+  - Added `failedMission` state — "Try again" / "Retry" now builds the failed mission, not current state
+  - `showExamples` only when `!result && !loading && !error` — no more cluttered error+examples
+  - Added `role="alert"` to both error panel and error banner — screen reader announcement
+  - iframe has `bg-neutral-950` class — prevents white flash before LLM CSS loads
+  - Removed dead `missionText` parameter — `build()` uses `mission` state only
+  - Removed redundant `toast.error` when result is showing (banner is enough)
+  - Header hides tokens during loading — no stale display
+  - "New" button transforms to "Cancel" during loading — always enabled, allows abort
+  - Added `min-h-0` to left panel section — fixes mobile layout (preview gets proper height)
+  - `useCallback` on all handlers — stable references, prevents unnecessary re-renders
+- Ran `bun run lint` → 0 errors, 0 warnings
+- Ran `npx tsc --noEmit` → 0 errors
+- Verified with Agent Browser (testing edge cases, not just happy path):
+  1. Mobile viewport (375×812, iPhone X): empty state, build flow, calculator rendered correctly
+  2. Desktop (1280×800): build snake game → 26.2s → playable (Start Game / Pause buttons)
+  3. History-during-build: history buttons correctly disabled during loading (race prevented)
+  4. Cancel-during-rebuild: loaded snake from history → clicked Rebuild → clicked Cancel → clean reset to empty state
+  5. History persistence: reload page → 2 history items present (snake + calculator)
+  6. Console: zero errors across all tests. Page errors: zero.
+  7. Backend log: all builds returned 200, no server errors
+
+Stage Summary:
+- **Bugs fixed**: 14 of 15 (tests deferred per system constraint "do not write any test code")
+- **New capability**: Cancel button (transforms from "New" during loading) — user can now abort a 60s build
+- **Mobile verified**: layout works on 375×812, preview gets proper height
+- **Race conditions eliminated**: history-click-during-build (disabled buttons), reset-during-build (abort + clear ref), load-history-during-build (abort + clear ref)
+- **Accessibility improved**: `role="alert"` on errors, label association (from v2), `aria-label` on close button
+- **Current LOC**: ~410 total (llm.ts ~110, route.ts ~75, page.tsx ~225)
+- **Remaining known gaps**: (1) No tests (system constraint). (2) No CSP meta tag inside iframe. (3) No rate limiting. (4) iframe can still make external fetch requests (sandbox doesn't block fetch, only same-origin access). All deferred to v2 hardening.
