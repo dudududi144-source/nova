@@ -84,7 +84,24 @@ export async function POST(request: NextRequest): Promise<Response> {
     return errorResponse('Request body too large (max 10KB)', 413)
   }
 
-  // ── Rate limit ──
+  // ── Parse body first (before rate limiting) ──
+  // We don't want to consume rate limit quota on requests that fail validation.
+  let body: BuildBody
+  try {
+    body = (await request.json()) as BuildBody
+  } catch {
+    return errorResponse('Invalid JSON', 400)
+  }
+
+  const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
+  const validation = validateMission(mission)
+  if (!validation.ok) {
+    const errorMsg = validation.error ?? 'Invalid mission'
+    logger.warn('build.invalid_mission', { error: errorMsg, missionLen: mission.length })
+    return errorResponse(errorMsg, 400)
+  }
+
+  // ── Rate limit (after validation, so bad requests don't consume quota) ──
   // X-Forwarded-For is trusted because Caddy (the gateway) sets it.
   // In a deployment without a trusted proxy, this would be spoofable.
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -103,20 +120,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         'X-RateLimit-Reset': String(Math.ceil(rl.resetInMs / 1000)),
       }
     )
-  }
-
-  let body: BuildBody
-  try {
-    body = (await request.json()) as BuildBody
-  } catch {
-    return errorResponse('Invalid JSON', 400)
-  }
-
-  const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
-  const validation = validateMission(mission)
-  if (!validation.ok) {
-    logger.warn('build.invalid_mission', { ip, error: validation.error, missionLen: mission.length })
-    return errorResponse(validation.error!, 400)
   }
 
   logger.info('build.started', { ip, mission: mission.slice(0, 80), remaining: rl.remaining })
@@ -151,9 +154,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   if (!result.ok) {
     // result.error is already human-friendly (sanitized in llmChat)
-    logger.error('build.llm_failed', { ip, mission: mission.slice(0, 80), error: result.error, ms: result.ms, tokens: result.tokens })
+    const errorMsg = result.error ?? 'Unknown error'
+    logger.error('build.llm_failed', { ip, mission: mission.slice(0, 80), error: errorMsg, ms: result.ms, tokens: result.tokens })
     return errorResponse(
-      result.error!,
+      errorMsg,
       502,
       { 'X-RateLimit-Remaining': String(rl.remaining) }
     )

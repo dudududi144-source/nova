@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from 'bun:te
 
 // Mock the llm module BEFORE importing the route
 // We mock the functions the route imports
-const mockLlmChat = mock((_sys: string, _user: string) => Promise.resolve({
+const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => Promise.resolve({
   ok: true,
   text: '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>',
   tokens: 100,
@@ -16,7 +16,7 @@ const mockLlmChat = mock((_sys: string, _user: string) => Promise.resolve({
 mock.module('@/lib/llm', () => ({
   // Use a wrapper so mockImplementation/mockResolvedValue changes are picked up.
   // (Directly passing mockLlmChat captures the original implementation.)
-  llmChat: (...args: any[]) => mockLlmChat(...args),
+  llmChat: (sys: string, user: string, opts?: unknown) => mockLlmChat(sys, user, opts),
   validateMission: (m: string) => {
     if (!m || !m.trim()) return { ok: false, error: 'Mission is empty' }
     if (m.trim().length < 3) return { ok: false, error: 'Mission too short (min 3 chars)' }
@@ -316,9 +316,9 @@ describe('POST /api/build', () => {
     await POST(req)
     // Verify llmChat was called and the third argument includes a signal
     expect(mockLlmChat).toHaveBeenCalledTimes(1)
-    const callArgs = mockLlmChat.mock.calls[0]
-    const opts = callArgs[2]
-    expect(opts.signal).toBeInstanceOf(AbortSignal)
+    const callArgs = mockLlmChat.mock.calls[0] as unknown[] | undefined
+    const opts = callArgs?.[2] as { signal: AbortSignal } | undefined
+    expect(opts?.signal).toBeInstanceOf(AbortSignal)
     // Aborting the request signal should abort the llmChat signal too
     // (we can't test this easily without timing, but we verify it's linked)
   })

@@ -2,6 +2,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { RateLimiter } from '../src/lib/rate-limit'
 
+// Minimal type for the filtered history items
+interface BuildResultLike {
+  id: string
+  html: string
+  tokens: number
+  ms: number
+  mission: string
+}
+
 describe('RateLimiter — memory protection (maxKeys)', () => {
   let limiter: RateLimiter
 
@@ -146,7 +155,7 @@ describe('localStorage history validation (type-narrowing)', () => {
     ]
     const valid = stored.filter(isValidHistoryItem)
     expect(valid).toHaveLength(2)
-    expect(valid[0].mission).toBe('valid1')
-    expect(valid[1].mission).toBe('valid2')
+    expect((valid[0] as BuildResultLike)?.mission).toBe('valid1')
+    expect((valid[1] as BuildResultLike)?.mission).toBe('valid2')
   })
 })

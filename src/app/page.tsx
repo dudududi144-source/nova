@@ -67,8 +67,9 @@ export default function Home() {
         )
       })
       setHistory(valid.slice(0, 10))
-    } catch {
-      // ignore — localStorage isn't critical
+    } catch (err) {
+      // localStorage might be corrupted — log and ignore
+      console.error('[NOVA] Failed to load history:', err)
     }
   }, [])
 
@@ -113,7 +114,9 @@ export default function Home() {
       let data: BuildResponse
       try {
         data = (await res.json()) as BuildResponse
-      } catch {
+      } catch (err) {
+        // Server returned non-JSON (e.g., 500 HTML error page)
+        console.error('[NOVA] Failed to parse build response:', err)
         const msg = `Server error (${res.status})`
         setError(msg)
         setFailedMission(m)
@@ -158,7 +161,8 @@ export default function Home() {
         let savedCount = next.length
         try {
           localStorage.setItem('nova_history', JSON.stringify(next))
-        } catch {
+        } catch (quotaErr) {
+          console.error('[NOVA] localStorage quota exceeded:', quotaErr)
           savedCount = 0
           for (let i = next.length - 1; i >= 0; i--) {
             try {
@@ -240,6 +244,8 @@ export default function Home() {
   }, [result])
 
   // Keyboard shortcuts: Esc=cancel build, ⌘S/Ctrl+S=download
+  // These are window-level so they work even when the textarea is focused.
+  // ⌘S calls preventDefault() to stop the browser's "Save Page" dialog.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Esc cancels a build

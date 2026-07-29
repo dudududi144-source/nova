@@ -79,19 +79,19 @@ describe('logger — level filtering', () => {
 
   it('defaults to info level when LOG_LEVEL not set', () => {
     delete process.env.LOG_LEVEL
-    process.env.NODE_ENV = 'development'
+    ;(process.env.NODE_ENV as string) = 'development'
     expect(logger.getLevel()).toBe('info')
   })
 
   it('defaults to warn level in production', () => {
     delete process.env.LOG_LEVEL
-    process.env.NODE_ENV = 'production'
+    ;(process.env.NODE_ENV as string) = 'production'
     expect(logger.getLevel()).toBe('warn')
   })
 
   it('handles invalid LOG_LEVEL gracefully', () => {
     process.env.LOG_LEVEL = 'invalid'
-    process.env.NODE_ENV = 'development'
+    ;(process.env.NODE_ENV as string) = 'development'
     expect(logger.getLevel()).toBe('info')
   })
 
