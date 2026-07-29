@@ -2,7 +2,7 @@
 // Mocks llmChat so we test the route logic (rate limiting, validation, CSP, response shape)
 // without making real LLM calls.
 
-import { describe, it, expect, beforeEach, mock, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from 'bun:test'
 
 // Mock the llm module BEFORE importing the route
 // We mock the functions the route imports
@@ -23,9 +23,9 @@ mock.module('@/lib/llm', () => ({
     if (m.trim().length > 500) return { ok: false, error: 'Mission too long' }
     return { ok: true }
   },
-  // Use the same logic as the real implementation (handles empty first fence block, extra whitespace)
+  // Use the same logic as the real implementation (handles 3+ backticks, empty first block, whitespace)
   stripCodeFences: (t: string) => {
-    const fenceRegex = /```\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
+    const fenceRegex = /`{3,}\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?`{3,}/g
     let match
     while ((match = fenceRegex.exec(t)) !== null) {
       const content = match[1].trim()
@@ -54,18 +54,9 @@ mock.module('@/lib/llm', () => ({
   },
 }))
 
-// Trackable logger mock
-const mockLoggerInfo = mock(() => {})
-const mockLoggerWarn = mock(() => {})
-const mockLoggerError = mock(() => {})
-
-mock.module('@/lib/logger', () => ({
-  logger: {
-    info: mockLoggerInfo,
-    warn: mockLoggerWarn,
-    error: mockLoggerError,
-  },
-}))
+// Note: we do NOT mock @/lib/logger — the real logger is used.
+// Test output will include log lines, which is acceptable.
+// Logger format is tested separately in cycle-8.test.ts.
 
 // Import after mocks are set up
 const { POST } = await import('../src/app/api/build/route')
@@ -88,6 +79,10 @@ function makeRequest(body: unknown, opts: { ip?: string; signal?: AbortSignal } 
 }
 
 describe('POST /api/build', () => {
+  let logSpy: ReturnType<typeof spyOn>
+  let warnSpy: ReturnType<typeof spyOn>
+  let errorSpy: ReturnType<typeof spyOn>
+
   beforeEach(() => {
     // mockReset clears both call history AND implementation
     // Then re-set the default implementation
@@ -98,9 +93,16 @@ describe('POST /api/build', () => {
       tokens: 100,
       ms: 500,
     })
-    mockLoggerInfo.mockClear()
-    mockLoggerWarn.mockClear()
-    mockLoggerError.mockClear()
+    // Spy on console methods to verify logger calls
+    logSpy = spyOn(console, 'log').mockImplementation(() => {})
+    warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+    errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    logSpy.mockRestore()
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
   })
 
   it('returns 400 for invalid JSON body', async () => {
@@ -237,28 +239,29 @@ describe('POST /api/build', () => {
 
   it('logs build.started and build.completed on success', async () => {
     await POST(makeRequest({ mission: 'Build a test app' }))
-    // Find the build.started log
-    const startedCalls = mockLoggerInfo.mock.calls.filter(
-      (c: any[]) => c[0] === 'build.started'
+    // Find the build.started log (info level → console.log)
+    const startedCalls = logSpy.mock.calls.filter(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.started"')
     )
-    const completedCalls = mockLoggerInfo.mock.calls.filter(
-      (c: any[]) => c[0] === 'build.completed'
+    const completedCalls = logSpy.mock.calls.filter(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.completed"')
     )
     expect(startedCalls.length).toBe(1)
     expect(completedCalls.length).toBe(1)
     // Verify build.started has ip and mission
-    const startedCtx = startedCalls[0][1]
-    expect(startedCtx.ip).toBeTruthy()
-    expect(startedCtx.mission).toContain('test app')
+    const startedParsed = JSON.parse(startedCalls[0][0])
+    expect(startedParsed.ip).toBeTruthy()
+    expect(startedParsed.mission).toContain('test app')
   })
 
   it('logs build.invalid_mission on validation failure', async () => {
     await POST(makeRequest({ mission: 'ab' }))
-    const calls = mockLoggerWarn.mock.calls.filter(
-      (c: any[]) => c[0] === 'build.invalid_mission'
+    const calls = warnSpy.mock.calls.filter(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_mission"')
     )
     expect(calls.length).toBe(1)
-    expect(calls[0][1].error).toContain('too short')
+    const parsed = JSON.parse(calls[0][0])
+    expect(parsed.error).toContain('too short')
   })
 
   it('logs build.llm_failed on LLM error', async () => {
@@ -266,11 +269,12 @@ describe('POST /api/build', () => {
       ok: false, text: '', tokens: 0, ms: 100, error: 'LLM error',
     }))
     await POST(makeRequest({ mission: 'Build an app' }))
-    const calls = mockLoggerError.mock.calls.filter(
-      (c: any[]) => c[0] === 'build.llm_failed'
+    const calls = errorSpy.mock.calls.filter(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.llm_failed"')
     )
     expect(calls.length).toBe(1)
-    expect(calls[0][1].error).toBe('LLM error')
+    const parsed = JSON.parse(calls[0][0])
+    expect(parsed.error).toBe('LLM error')
   })
 
   it('logs build.invalid_html when LLM returns non-HTML', async () => {
@@ -278,8 +282,8 @@ describe('POST /api/build', () => {
       ok: true, text: 'not html at all', tokens: 50, ms: 200,
     }))
     await POST(makeRequest({ mission: 'Build an app' }))
-    const calls = mockLoggerWarn.mock.calls.filter(
-      (c: any[]) => c[0] === 'build.invalid_html'
+    const calls = warnSpy.mock.calls.filter(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_html"')
     )
     expect(calls.length).toBe(1)
   })
@@ -290,11 +294,11 @@ describe('POST /api/build', () => {
     for (let i = 0; i < 110; i++) {
       await POST(makeRequest({ mission: `Build app ${i}` }, { ip }))
     }
-    mockLoggerWarn.mockClear()
+    warnSpy.mockClear()
     // Next request should be rate limited
     await POST(makeRequest({ mission: 'One more' }, { ip }))
-    const calls = mockLoggerWarn.mock.calls.filter(
-      (c: any[]) => c[0] === 'build.rate_limited'
+    const calls = warnSpy.mock.calls.filter(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.rate_limited"')
     )
     expect(calls.length).toBe(1)
   })

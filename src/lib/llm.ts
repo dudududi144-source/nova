@@ -1,5 +1,5 @@
 // LLM wrapper — server-side only.
-// Thin, honest wrapper around z-ai-web-dev-sdk.
+// Thin wrapper around z-ai-web-dev-sdk.
 // One job: take a system + user prompt, return text or a structured error.
 
 import ZAI from 'z-ai-web-dev-sdk'
@@ -20,27 +20,57 @@ export interface LlmOptions {
   signal?: AbortSignal
 }
 
-let zaiInstance: any = null
-let zaiPromise: Promise<any> | null = null
+// SDK types are loose; we define a minimal interface for what we use.
+type ChatRole = 'system' | 'user' | 'assistant'
 
-// Singleton with promise cache — prevents double-instantiation if two builds
-// start before the first ZAI.create() resolves.
-// Resets on failure so a stale instance doesn't poison all future calls.
-async function getZai(): Promise<any> {
+interface ZaiCompletion {
+  choices: Array<{ message: { content: string | null } }>
+  usage?: { prompt_tokens?: number; completion_tokens?: number }
+}
+
+interface ZaiClient {
+  chat: {
+    completions: {
+      create: (opts: {
+        messages: Array<{ role: ChatRole; content: string }>
+        temperature: number
+        max_tokens: number
+        thinking: { type: string }
+        stream: boolean
+        signal: AbortSignal
+      }) => Promise<ZaiCompletion>
+    }
+  }
+}
+
+let zaiInstance: ZaiClient | null = null
+let zaiPromise: Promise<ZaiClient> | null = null
+
+/**
+ * Get the ZAI SDK singleton instance.
+ * Uses a promise cache to prevent double-instantiation if two builds
+ * start before the first create() resolves.
+ * Resets on failure so a stale instance doesn't poison all future calls.
+ */
+async function getZai(): Promise<ZaiClient> {
   if (zaiInstance) return zaiInstance
   if (zaiPromise) return zaiPromise
-  zaiPromise = ZAI.create().then((inst: any) => {
-    zaiInstance = inst
+  zaiPromise = ZAI.create().then((inst: unknown) => {
+    zaiInstance = inst as ZaiClient
     zaiPromise = null
-    return inst
-  }).catch((err: any) => {
-    // Reset so the next call retries
+    return zaiInstance
+  }).catch((err: unknown) => {
     zaiPromise = null
     throw err
   })
   return zaiPromise
 }
 
+/**
+ * Call the LLM with a system + user prompt.
+ * Returns a structured result with ok/text/tokens/ms/error.
+ * Errors are sanitized — raw SDK messages never leak to the client.
+ */
 export async function llmChat(
   systemPrompt: string,
   userPrompt: string,
@@ -80,7 +110,7 @@ export async function llmChat(
       thinking: { type: 'disabled' },
       stream: false,
       signal: controller.signal,
-    } as any)
+    })
 
     const text = (completion?.choices?.[0]?.message?.content ?? '').toString()
     const tokens =
@@ -93,7 +123,7 @@ export async function llmChat(
       return { ok: false, text: '', tokens, ms: Date.now() - t0, error: 'The model returned an empty response. Try again.' }
     }
     return { ok: true, text, tokens, ms: Date.now() - t0 }
-  } catch (err) {
+  } catch (err: unknown) {
     clearTimeout(timer)
 
     // Human-friendly abort/timeout messages
@@ -118,7 +148,11 @@ export async function llmChat(
   }
 }
 
-// Mission validation — cheap, deterministic, no LLM.
+/**
+ * Validate a mission string.
+ * Checks: non-empty, length 3-500, no control characters.
+ * Returns { ok: true } or { ok: false, error: string }.
+ */
 export function validateMission(mission: string): { ok: boolean; error?: string } {
   if (!mission || !mission.trim()) return { ok: false, error: 'Mission is empty' }
   const trimmed = mission.trim()
@@ -130,11 +164,15 @@ export function validateMission(mission: string): { ok: boolean; error?: string 
   return { ok: true }
 }
 
-// Strip markdown fences if the LLM wrapped its HTML in ```html ... ```
-// Handles edge cases: empty first fence block, extra whitespace around language.
+/**
+ * Strip markdown code fences from LLM output.
+ * Handles: ```html, ```, 4+ backtick fences, empty first block, whitespace.
+ * Returns the first non-empty fence block, or the trimmed text if no fences.
+ */
 export function stripCodeFences(text: string): string {
   // Find all fence blocks. Allow optional whitespace around the language identifier.
-  const fenceRegex = /```\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?```/g
+  // Handles 3+ backticks (``` or ```` or more).
+  const fenceRegex = /`{3,}\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?`{3,}/g
   let match
   while ((match = fenceRegex.exec(text)) !== null) {
     const content = match[1].trim()
@@ -143,22 +181,20 @@ export function stripCodeFences(text: string): string {
   return text.trim()
 }
 
-// Basic sanity check: does this look like a complete HTML document?
-// Must start (after optional whitespace/fences) with <!doctype html> or <html>.
-// Rejects "Here's your app:\n<div>...</div>" style LLM outputs that contain HTML
-// fragments but aren't complete documents.
+/**
+ * Check if text looks like a complete HTML document.
+ * Must start (after optional whitespace) with <!doctype or <html>.
+ * Rejects HTML fragments, conversational text, JSON, markdown.
+ */
 export function looksLikeHtml(text: string): boolean {
   const lower = text.trimStart().toLowerCase()
   return lower.startsWith('<!doctype') || lower.startsWith('<html')
 }
 
-// Inject a Content-Security-Policy meta tag into the HTML <head>.
-// This blocks the sandboxed iframe from making external network requests
-// (fetch, XHR, websocket, img, script, etc.) — defense in depth on top of
-// the sandbox="allow-scripts" attribute.
-//
-// If a CSP meta already exists, we don't add another (browsers use the first).
-// If there's no <head>, we inject one.
+/**
+ * Content-Security-Policy for preview iframes.
+ * Blocks all external network requests (fetch, XHR, websocket, img, script).
+ */
 const PREVIEW_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
@@ -170,22 +206,24 @@ const PREVIEW_CSP = [
   "form-action 'none'",
 ].join('; ')
 
+/**
+ * Inject a CSP meta tag into the HTML <head>.
+ * - If a CSP meta already exists (case-insensitive), don't override it.
+ * - If there's no <head>, inject one after <html>.
+ * - If there's no <html>, prepend the meta.
+ */
 export function injectCsp(html: string): string {
-  // Already has a CSP meta — don't override (respect the LLM's choice)
   if (/<meta\s+http-equiv=["']?content-security-policy["']?/i.test(html)) {
     return html
   }
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`
-  // Inject right after <head> (case-insensitive)
   const headMatch = html.match(/<head[^>]*>/i)
   if (headMatch) {
     return html.replace(/<head[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
   }
-  // No <head> — inject one right after <html> or at the start
   const htmlTagMatch = html.match(/<html[^>]*>/i)
   if (htmlTagMatch) {
     return html.replace(/<html[^>]*>/i, `${htmlTagMatch[0]}<head>${cspMeta}</head>`)
   }
-  // No <html> tag — shouldn't happen (looksLikeHtml requires it), but handle gracefully
   return `${cspMeta}\n${html}`
 }

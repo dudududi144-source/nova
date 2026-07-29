@@ -9,6 +9,7 @@ interface Props {
 interface State {
   hasError: boolean
   error?: Error
+  errorId?: string
 }
 
 // Catches render errors in the child tree and shows a fallback UI
@@ -26,8 +27,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
-    // Log to console for debugging — in production this would go to an error tracker
-    console.error('[ErrorBoundary]', error, info.componentStack)
+    // Generate an error ID for support — included in the UI so users can reference it
+    const errorId = `err_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+    this.setState({ errorId })
+    // Log to console with error ID — in production this would go to an error tracker
+    console.error('[ErrorBoundary]', errorId, error, info.componentStack)
   }
 
   clearHistoryAndReload = () => {
@@ -51,6 +55,11 @@ export class ErrorBoundary extends Component<Props, State> {
             <pre className="max-w-md overflow-auto rounded-md border border-border/40 bg-card/40 p-3 text-left text-xs text-muted-foreground">
               {this.state.error.message}
             </pre>
+          )}
+          {this.state.errorId && (
+            <p className="text-[10px] text-muted-foreground/50">
+              Error ID: <code className="font-mono">{this.state.errorId}</code>
+            </p>
           )}
           <div className="flex gap-2">
             <button

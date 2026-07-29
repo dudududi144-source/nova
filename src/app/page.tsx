@@ -14,7 +14,15 @@ interface BuildResult {
   mission: string
 }
 
-const EXAMPLES = [
+interface BuildResponse {
+  ok: boolean
+  html?: string
+  tokens?: number
+  ms?: number
+  error?: string
+}
+
+const EXAMPLES: readonly string[] = [
   'Build a snake game with score and game-over',
   'Build a todo app with add, complete, and delete',
   'Build a markdown editor with live preview',
@@ -33,6 +41,10 @@ export default function Home() {
   const [result, setResult] = useState<BuildResult | null>(null)
   const [history, setHistory] = useState<BuildResult[]>([])
   const abortRef = useRef<AbortController | null>(null)
+  // Ref mirror of `result` so build() doesn't need it in useCallback deps.
+  // This prevents build from being re-created on every result change (every build).
+  const resultRef = useRef<BuildResult | null>(null)
+  resultRef.current = result
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -51,6 +63,7 @@ export default function Home() {
 
   // Centralized build function. Aborts any in-flight build first.
   // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
+  // Uses resultRef instead of result state to avoid being re-created on every build.
   const build = useCallback(async (explicitMission?: string) => {
     const m = (explicitMission ?? mission).trim()
     if (!m) {
@@ -81,14 +94,14 @@ export default function Home() {
       })
 
       // Parse JSON safely — server might return non-JSON (e.g., 500 HTML error page)
-      let data: any
+      let data: BuildResponse
       try {
-        data = await res.json()
+        data = (await res.json()) as BuildResponse
       } catch {
         const msg = `Server error (${res.status})`
         setError(msg)
         setFailedMission(m)
-        if (!result) toast.error(msg)
+        if (!resultRef.current) toast.error(msg)
         return
       }
 
@@ -97,15 +110,15 @@ export default function Home() {
         setError(msg)
         setFailedMission(m)
         // Only toast if no result is showing (avoid double notification with banner)
-        if (!result) toast.error(msg)
+        if (!resultRef.current) toast.error(msg)
         return
       }
 
       const buildResult: BuildResult = {
         id: newBuildId(),
-        html: data.html,
-        tokens: data.tokens,
-        ms: data.ms,
+        html: data.html!,
+        tokens: data.tokens!,
+        ms: data.ms!,
         mission: m,
       }
 
@@ -113,7 +126,8 @@ export default function Home() {
 
       // Functional setState — avoids stale closure on rapid successive builds
       setHistory(prev => {
-        const next = [buildResult, ...prev.filter(h => h.id !== buildResult.id && h.mission !== m)].slice(0, 10)
+        // Dedupe by mission (keep only the latest build per mission)
+        const next = [buildResult, ...prev.filter(h => h.mission !== m)].slice(0, 10)
         // Best-effort localStorage; shrink if quota exceeded
         let savedCount = next.length
         try {
@@ -137,14 +151,14 @@ export default function Home() {
         return next
       })
 
-      toast.success(`Built in ${(data.ms / 1000).toFixed(1)}s · ${data.tokens} tokens`)
-    } catch (err) {
+      toast.success(`Built in ${(data.ms! / 1000).toFixed(1)}s · ${data.tokens} tokens`)
+    } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
       const msg = err instanceof Error ? err.message : 'Network error'
       setError(msg)
       setFailedMission(m)
-      if (!result) toast.error(msg)
+      if (!resultRef.current) toast.error(msg)
     } finally {
       // Only clear loading if this controller is still the active one
       if (abortRef.current === controller) {
@@ -152,7 +166,7 @@ export default function Home() {
         setLoading(false)
       }
     }
-  }, [mission, result])
+  }, [mission])
 
   const loadFromHistory = useCallback((h: BuildResult) => {
     // Abort any in-flight build so it doesn't overwrite the history item we're loading
@@ -228,7 +242,7 @@ export default function Home() {
   const showFirstError = !result && !!error && !loading
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading}>
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -454,6 +468,7 @@ export default function Home() {
                 srcDoc={result.html}
                 title="Preview"
                 sandbox="allow-scripts"
+                loading="lazy"
                 className="h-full w-full border-0 bg-neutral-950"
               />
             </div>
