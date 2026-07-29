@@ -150,7 +150,8 @@ export async function llmChat(
 
 /**
  * Validate a mission string.
- * Checks: non-empty, length 3-500, no control characters.
+ * Checks: non-empty, length 3-500, no control characters (including DEL and
+ * extended control chars in the C1 set \x80-\x9F).
  * Returns { ok: true } or { ok: false, error: string }.
  */
 export function validateMission(mission: string): { ok: boolean; error?: string } {
@@ -158,7 +159,9 @@ export function validateMission(mission: string): { ok: boolean; error?: string 
   const trimmed = mission.trim()
   if (trimmed.length < 3) return { ok: false, error: 'Mission too short (min 3 chars)' }
   if (trimmed.length > 500) return { ok: false, error: `Mission too long (max 500 chars, got ${trimmed.length})` }
-  if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(trimmed)) {
+  // Block C0 control chars (except tab \x09, newline \x0A, carriage return \x0D),
+  // DEL (\x7F), and C1 extended control chars (\x80-\x9F)
+  if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F]/.test(trimmed)) {
     return { ok: false, error: 'Mission contains invalid characters' }
   }
   return { ok: true }
@@ -166,13 +169,15 @@ export function validateMission(mission: string): { ok: boolean; error?: string 
 
 /**
  * Strip markdown code fences from LLM output.
- * Handles: ```html, ```, 4+ backtick fences, empty first block, whitespace.
+ * Handles: ```html, ```, 4+ backtick fences, empty first block, whitespace,
+ * and any language identifier (javascript, css, etc. — not just html/htm).
  * Returns the first non-empty fence block, or the trimmed text if no fences.
  */
 export function stripCodeFences(text: string): string {
-  // Find all fence blocks. Allow optional whitespace around the language identifier.
+  // Find all fence blocks. Allow any language identifier (or none).
   // Handles 3+ backticks (``` or ```` or more).
-  const fenceRegex = /`{3,}\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?`{3,}/g
+  // Language identifier is matched permissively: [a-zA-Z0-9_-]*
+  const fenceRegex = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
   let match
   while ((match = fenceRegex.exec(text)) !== null) {
     const content = match[1].trim()

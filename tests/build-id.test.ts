@@ -1,12 +1,7 @@
 // Test that newBuildId generates unique IDs
-// We can't import newBuildId directly (it's not exported from page.tsx),
-// so we replicate the function and test the algorithm.
+// Now imports the real function (was replicated — could drift from real implementation)
 import { describe, it, expect } from 'bun:test'
-
-// Replicated from src/app/page.tsx
-function newBuildId(): string {
-  return `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-}
+import { newBuildId } from '../src/app/page'
 
 describe('newBuildId uniqueness', () => {
   it('generates unique IDs in rapid succession', () => {

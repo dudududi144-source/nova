@@ -29,7 +29,7 @@ const EXAMPLES: readonly string[] = [
   'Build a calculator with keyboard support',
 ]
 
-function newBuildId(): string {
+export function newBuildId(): string {
   return `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
@@ -43,8 +43,11 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null)
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
   // This prevents build from being re-created on every result change (every build).
+  // Updated in a useEffect (not during render — that's a side effect).
   const resultRef = useRef<BuildResult | null>(null)
-  resultRef.current = result
+  useEffect(() => {
+    resultRef.current = result
+  }, [result])
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -114,11 +117,21 @@ export default function Home() {
         return
       }
 
+      // Safe destructuring — we've verified data.ok is true, so html/tokens/ms must exist
+      const { html = '', tokens = 0, ms = 0 } = data
+      if (!html) {
+        const msg = 'Server returned empty HTML'
+        setError(msg)
+        setFailedMission(m)
+        if (!resultRef.current) toast.error(msg)
+        return
+      }
+
       const buildResult: BuildResult = {
         id: newBuildId(),
-        html: data.html!,
-        tokens: data.tokens!,
-        ms: data.ms!,
+        html,
+        tokens,
+        ms,
         mission: m,
       }
 
@@ -151,7 +164,7 @@ export default function Home() {
         return next
       })
 
-      toast.success(`Built in ${(data.ms! / 1000).toFixed(1)}s · ${data.tokens} tokens`)
+      toast.success(`Built in ${(ms / 1000).toFixed(1)}s · ${tokens} tokens`)
     } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
@@ -254,9 +267,9 @@ export default function Home() {
             <p className="text-[10px] text-muted-foreground">Describe it. Build it.</p>
           </div>
         </div>
-        {result && (
+        {(result || loading) && (
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            {loading ? (
+            {loading || !result ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin" />
                 <span>Building...</span>
@@ -267,12 +280,6 @@ export default function Home() {
                 <span>{(result.ms / 1000).toFixed(1)}s · {result.tokens} tokens</span>
               </>
             )}
-          </div>
-        )}
-        {!result && loading && (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            <span>Building...</span>
           </div>
         )}
       </header>
@@ -377,6 +384,7 @@ export default function Home() {
                 <button
                   key={h.id}
                   type="button"
+                  title={h.mission}
                   onClick={() => loadFromHistory(h)}
                   disabled={loading}
                   className="block w-full truncate rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
@@ -481,8 +489,8 @@ export default function Home() {
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
           <span>NOVA · prompt-to-app</span>
           <span className="hidden sm:inline">
-            <kbd className="rounded border border-border/40 px-1">⌘↵</kbd> build ·
-            <kbd className="ml-1 rounded border border-border/40 px-1">⌘S</kbd> download ·
+            <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
             <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel
           </span>
           <span className="sm:hidden">⌘+Enter to build</span>

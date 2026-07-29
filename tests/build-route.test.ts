@@ -21,11 +21,12 @@ mock.module('@/lib/llm', () => ({
     if (!m || !m.trim()) return { ok: false, error: 'Mission is empty' }
     if (m.trim().length < 3) return { ok: false, error: 'Mission too short (min 3 chars)' }
     if (m.trim().length > 500) return { ok: false, error: 'Mission too long' }
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F]/.test(m.trim())) return { ok: false, error: 'Mission contains invalid characters' }
     return { ok: true }
   },
-  // Use the same logic as the real implementation (handles 3+ backticks, empty first block, whitespace)
+  // Use the same logic as the real implementation (handles 3+ backticks, any language, empty first block)
   stripCodeFences: (t: string) => {
-    const fenceRegex = /`{3,}\s*(?:html|htm)?\s*\n?([\s\S]*?)\n?`{3,}/g
+    const fenceRegex = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
     let match
     while ((match = fenceRegex.exec(t)) !== null) {
       const content = match[1].trim()
