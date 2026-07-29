@@ -50,11 +50,17 @@ export default function Home() {
   }, [])
 
   // Centralized build function. Aborts any in-flight build first.
-  const build = useCallback(async () => {
-    const m = mission.trim()
+  // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
+  const build = useCallback(async (explicitMission?: string) => {
+    const m = (explicitMission ?? mission).trim()
     if (!m) {
       toast.error('Describe what to build first')
       return
+    }
+
+    // If an explicit mission was passed, sync the textarea state
+    if (explicitMission && explicitMission !== mission) {
+      setMission(explicitMission)
     }
 
     // Abort any in-flight build (covers: rebuild, history-click-during-build, reset-during-build)
@@ -99,17 +105,24 @@ export default function Home() {
       setHistory(prev => {
         const next = [buildResult, ...prev.filter(h => h.id !== buildResult.id && h.mission !== m)].slice(0, 10)
         // Best-effort localStorage; shrink if quota exceeded
+        let savedCount = next.length
         try {
           localStorage.setItem('nova_history', JSON.stringify(next))
         } catch {
+          savedCount = 0
           for (let i = next.length - 1; i >= 0; i--) {
             try {
               localStorage.setItem('nova_history', JSON.stringify(next.slice(0, i + 1)))
+              savedCount = i + 1
               break
             } catch {
               // keep trying smaller
             }
           }
+        }
+        // Warn if we couldn't save everything
+        if (savedCount < next.length) {
+          toast.error(`localStorage full — only ${savedCount} of ${next.length} builds saved to history`)
         }
         return next
       })
@@ -154,9 +167,9 @@ export default function Home() {
 
   const retryFailed = useCallback(() => {
     if (failedMission) {
-      setMission(failedMission)
-      // Build on next tick so mission state is updated
-      setTimeout(() => build(), 0)
+      // Pass the failed mission explicitly — avoids stale-closure bug where
+      // build() would read the current `mission` state (which the user may have edited)
+      build(failedMission)
     }
   }, [failedMission, build])
 
@@ -173,6 +186,28 @@ export default function Home() {
     URL.revokeObjectURL(url)
     toast.success('Downloaded')
   }, [result])
+
+  // Keyboard shortcuts: Esc=cancel build, ⌘S/Ctrl+S=download
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Esc cancels a build
+      if (e.key === 'Escape' && loading) {
+        e.preventDefault()
+        abortRef.current?.abort()
+        return
+      }
+      // ⌘S / Ctrl+S downloads the current result
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        if (result) {
+          e.preventDefault()
+          download()
+        }
+        return
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [loading, result, download])
 
   // Whether to show examples (only when no result, no error, not loading)
   const showExamples = !result && !loading && !error
@@ -229,7 +264,7 @@ export default function Home() {
             className="min-h-[120px] resize-none font-mono text-sm"
           />
           <Button
-            onClick={build}
+            onClick={() => build()}
             disabled={loading || !mission.trim()}
             className="mt-3 w-full gap-2"
             size="lg"
@@ -362,7 +397,7 @@ export default function Home() {
                   <Download className="h-3.5 w-3.5" />
                   HTML
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={build} disabled={loading}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading}>
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
@@ -392,7 +427,12 @@ export default function Home() {
       <footer className="mt-auto shrink-0 border-t border-border/40 px-4 py-2">
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
           <span>NOVA · prompt-to-app</span>
-          <span>⌘+Enter to build</span>
+          <span className="hidden sm:inline">
+            <kbd className="rounded border border-border/40 px-1">⌘↵</kbd> build ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">⌘S</kbd> download ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel
+          </span>
+          <span className="sm:hidden">⌘+Enter to build</span>
         </div>
       </footer>
     </div>

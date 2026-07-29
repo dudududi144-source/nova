@@ -8,23 +8,43 @@
 import type { NextRequest } from 'next/server'
 import { llmChat, validateMission, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
 import { RateLimiter } from '@/lib/rate-limit'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
-const SYSTEM_PROMPT = `You are a senior front-end engineer. You build complete, working, single-file HTML apps.
+const SYSTEM_PROMPT = `You are a senior front-end engineer who builds complete, working, single-file HTML apps.
 
-Rules:
-- Output ONLY the HTML. No explanation, no markdown, no commentary.
-- The HTML must be a complete document: <!DOCTYPE html>, <html>, <head>, <body>.
-- All CSS goes in a <style> tag in <head>. All JS goes in a <script> tag before </body>.
-- The app must be fully functional in a sandboxed iframe (no external requests, no API keys, no fetch to outside services).
-- Use modern, clean, dark-themed UI (background #0f172a, text #e2e8f0) unless the user specifies otherwise.
-- Make it actually work. A snake game must have a game loop, scoring, and game-over. A todo app must have add/complete/delete. A markdown editor must render in real time.
-- Keep it in ONE file. Do not split into multiple files.
-- Do not include any external scripts, stylesheets, fonts, or images. Everything must be inline.
-- The output must be playable/usable immediately when opened in a browser.`
+OUTPUT FORMAT:
+- Output ONLY the HTML. No explanation, no markdown, no commentary before or after.
+- Must be a complete document: <!DOCTYPE html>, <html>, <head>, <body>.
+- All CSS in a <style> tag in <head>. All JS in a <script> tag before </body>.
+- Everything inline. No external scripts, stylesheets, fonts, images, or fetch requests.
+- Keep it in ONE file.
+
+QUALITY BAR:
+- The app must actually work. A snake game needs a game loop, scoring, game-over. A todo app needs add/complete/delete. A markdown editor needs live preview.
+- If the mission is ambiguous (e.g., "build a game"), pick a reasonable default (e.g., snake) and build it well. Don't ask for clarification.
+- Include clear visual feedback for user actions (hover states, click responses, status messages).
+- Make it responsive — work on both desktop and mobile widths.
+
+ACCESSIBILITY:
+- Use semantic HTML (<button>, <main>, <header>, <section>).
+- All interactive elements must be keyboard-accessible.
+- Include appropriate aria-labels for icon-only buttons.
+- Ensure sufficient color contrast (WCAG AA).
+
+PERFORMANCE:
+- Cap animation at 60fps using requestAnimationFrame.
+- No infinite loops. No busy-waiting. No synchronous heavy computation.
+- Clean up event listeners and intervals on game-over/unmount if applicable.
+
+THEME:
+- Default to a dark theme (background #0f172a, text #e2e8f0) UNLESS the user specifies otherwise.
+- If the user says "light theme" or "white background", honor that.
+
+The output must be playable/usable immediately when opened in a browser.`
 
 // 10 builds per hour per IP
 const buildLimiter = new RateLimiter(10, 60 * 60 * 1000)
@@ -41,6 +61,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const rl = buildLimiter.check(ip)
   if (!rl.ok) {
     const mins = Math.ceil(rl.resetInMs / 60000)
+    logger.warn('build.rate_limited', { ip, resetInMs: rl.resetInMs })
     return Response.json(
       { ok: false, error: `Rate limit reached. Try again in ${mins} minute(s).` },
       {
@@ -64,8 +85,11 @@ export async function POST(request: NextRequest): Promise<Response> {
   const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
   const validation = validateMission(mission)
   if (!validation.ok) {
+    logger.warn('build.invalid_mission', { ip, error: validation.error, missionLen: mission.length })
     return Response.json({ ok: false, error: validation.error }, { status: 400 })
   }
+
+  logger.info('build.started', { ip, mission: mission.slice(0, 80), remaining: rl.remaining })
 
   // Pass request.signal so the LLM call aborts if the client disconnects
   const result = await llmChat(SYSTEM_PROMPT, `Build this: ${mission}`, {
@@ -77,6 +101,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   if (!result.ok) {
     // result.error is already human-friendly (sanitized in llmChat)
+    logger.error('build.llm_failed', { ip, mission: mission.slice(0, 80), error: result.error, ms: result.ms, tokens: result.tokens })
     return Response.json(
       { ok: false, error: result.error, tokens: result.tokens, ms: result.ms },
       { status: 502, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
@@ -86,6 +111,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const rawHtml = stripCodeFences(result.text)
 
   if (!looksLikeHtml(rawHtml)) {
+    logger.warn('build.invalid_html', { ip, mission: mission.slice(0, 80), ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
     return Response.json(
       {
         ok: false,
@@ -99,6 +125,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // Inject CSP to block external requests from the preview iframe
   const html = injectCsp(rawHtml)
+
+  logger.info('build.completed', { ip, mission: mission.slice(0, 80), ms: result.ms, tokens: result.tokens, htmlBytes: html.length })
 
   return Response.json({
     ok: true,
