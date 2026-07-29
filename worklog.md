@@ -873,3 +873,50 @@ Stage Summary:
   it is to check Content-Type BEFORE calling .json(). I should have done this in
   cycle 7 when I first "fixed" the res.json() crash — but I only added a try/catch,
   which catches the error but doesn't prevent the console output.
+
+---
+Task ID: 16
+Agent: main (Z.ai Code)
+Task: Real-usage audit. User reported issues during actual use.
+
+Work Log:
+- Found 7 UX bugs during real usage:
+
+  CRITICAL (3):
+  - Cancel button called reset() which clears mission text — DATA LOSS.
+    User types a mission, clicks Build, realizes they want to cancel, clicks Cancel,
+    and their mission text is gone. FIXED: separate cancelBuild() that only aborts
+    the build, preserves mission text and old result.
+  - Rebuild and New buttons used the same icon (RotateCcw) — visually indistinguishable.
+    FIXED: Rebuild uses RefreshCw, New keeps RotateCcw.
+  - ⌘S didn't preventDefault when no result — browser's "Save Page" dialog fired.
+    FIXED: always preventDefault, only call download() if result exists.
+
+  MEDIUM (2):
+  - Esc handler called abortRef directly instead of cancelBuild — inconsistent with
+    the Cancel button. FIXED: uses cancelBuild() for consistency.
+  - No elapsed time during build — user waits 30-60s with no progress feedback.
+    FIXED: elapsed time counter (updates every second, shows "5s", "10s", etc.)
+    in both the header and the sidebar loading message.
+
+  LOW (2):
+  - Download toast said just "Downloaded" — didn't say what.
+    FIXED: includes filename: "Downloaded snake-game.html"
+  - Markdown editor example consistently failed (LLM truncated output at 8000 tokens
+    because markdown parsing requires complex JS).
+    FIXED: replaced with "Build a color palette generator with copy-to-clipboard"
+    (simpler, more visual, consistently succeeds).
+
+- Ran all tests: 166 pass, 0 fail, 271 expect() calls
+- Verified with Agent Browser: elapsed timer shows "5s elapsed" during build,
+  new examples visible, snake build completes (50s), zero console errors.
+
+Stage Summary:
+- **3 CRITICAL UX fixes**: Cancel data loss, icon confusion, ⌘S browser dialog
+- **2 MEDIUM UX improvements**: Esc consistency, elapsed time counter
+- **2 LOW improvements**: download filename in toast, replaced failing example
+- **Backup**: download/nova-v16-backup.zip (216KB, 100 files)
+- **Lesson**: The Cancel data loss bug is the kind of bug that only shows up in real
+  use — I never tested "type mission → build → cancel → check if mission is still there."
+  I tested the happy path (build succeeds) but not the cancellation path. Lesson: test
+  the "undo" path, not just the "do" path.
