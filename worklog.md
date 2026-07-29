@@ -674,3 +674,54 @@ Stage Summary:
   1. E2E tests (Playwright) — infrastructure, not a bug
   2. Chat refine feature — the next feature
   3. Mobile-specific autofocus (autoFocus pops keyboard on mobile) — minor UX, documented
+
+---
+Task ID: 12
+Agent: main (Z.ai Code)
+Task: Fresh-eyes audit. Find what I've been blind to.
+
+Work Log:
+- Found 14 more issues with completely fresh eyes — 3 were CRITICAL config bugs:
+
+  CRITICAL (3):
+  - next.config.ts had typescript.ignoreBuildErrors=true — this masked ALL type errors in
+    production builds. If I shipped to prod with a type error, the build would succeed but
+    crash at runtime. FIXED: removed the setting.
+  - .gitignore had .env* which excluded .env.example from git. The .env.example file was
+    never committed! Anyone restoring from the zip wouldn't get it. FIXED: specific ignores
+    for .env, .env.local, .env.*.local — .env.example is committed.
+  - tsconfig.json excluded the 'tests' folder — tsc --noEmit wasn't type-checking tests at all.
+    Type errors in tests were invisible. FIXED: removed 'tests' from exclude, added
+    'types': ['bun-types'] for bun:test imports.
+
+  TYPE SAFETY (5):
+  - validation.error! non-null assertion in route → ?? 'Invalid mission' fallback
+  - result.error! non-null assertion in route → ?? 'Unknown error' fallback
+  - layout.tsx viewport export untyped → typed as Viewport
+  - 3 empty catch {} blocks → catch (err) with console.error for debugging
+  - Test type errors: BuildResultLike type, optional chaining, process.env cast
+
+  LOGIC (1):
+  - Rate limit applied BEFORE validation — bad requests consumed quota. A malicious client
+    could exhaust a user's quota by sending invalid missions. FIXED: validation first,
+    rate limit second.
+
+- Ran all tests: 163 pass, 0 fail, 268 expect() calls
+- Ran lint: 0 errors. tsc: 0 errors (INCLUDING tests now!).
+- Verified with Agent Browser:
+  1. Todo app build: 38.9s, 15.6KB HTML
+  2. Full a11y: "Add a new task" input, "Add task" button, All/Active/Completed filters, "Clear Completed"
+  3. Console: zero errors
+
+Stage Summary:
+- **3 CRITICAL config bugs fixed** (ignoreBuildErrors, .gitignore, tsconfig exclude)
+- **5 type safety fixes** (non-null assertions, Viewport type, empty catches)
+- **1 logic fix** (rate limit ordering)
+- **Tests**: 163 pass, tsc clean INCLUDING tests (was: tests invisible to tsc)
+- **Backup**: download/nova-v12-backup.zip (213KB, 98 files)
+- **Git**: committed with full message
+- **Honest assessment**: The 3 config bugs were embarrassing. ignoreBuildErrors=true means I
+  could have shipped type errors to production. .gitignore excluding .env.example means the
+  install instructions in README were broken. tsconfig excluding tests means test type errors
+  were invisible. These are CONFIGURATION bugs, not code bugs — I was so focused on the code
+  that I never audited the config files. Lesson: audit the config, not just the code.
