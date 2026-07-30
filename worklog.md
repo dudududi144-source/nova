@@ -1729,3 +1729,38 @@ Tests now verify:
 
 All tests: 251 pass, 0 fail, 431 expect() calls
 Lint: clean. tsc: clean.
+
+---
+Task ID: 34
+Agent: main (Z.ai Code)
+Task: Make the process intelligent and professional — not just blind LLM calls.
+
+5 INTELLIGENCE CAPABILITIES:
+
+1. MISSION ENRICHMENT:
+   Before: "Build a snake game" → sent as-is to architect
+   After: "Build a snake game\n\nImplementation hints:\n- Use HTML5 Canvas\n- Game loop with requestAnimationFrame\n- Arrow keys for direction\n- Score display, food collision..."
+   8 mission types detected with specific hints.
+
+2. OUTPUT VALIDATION:
+   Before: HTML returned as-is, no quality check
+   After: 8+ automated checks (DOCTYPE, closing tags, JS, CSS, size, mission-specific)
+   Score 0-100. If < 70: auto-retry with targeted hint ("Fix: Missing <canvas>").
+   Only uses retry if score improved.
+
+3. ADAPTIVE TOKEN BUDGET:
+   Before: maxTokens = 32000 (arbitrary, same for everything)
+   After: 4000 * features + 2000 * functions + 2000, clamped [8000, 32000]
+   Simple app → 18000, complex app → 32000. Adapts to what's being built.
+
+4. QUALITY METRICS:
+   Before: "Built in 45s · 2000 tokens"
+   After: "Built in 45s · 2000 tokens · quality: 85 · 150 lines · 8 functions · 3 listeners"
+   User sees real quality data.
+
+5. RETRY GUIDANCE:
+   Before: 502 error, user must retry manually
+   After: If score < 70, server auto-retries with "Fix: Missing <canvas> for game rendering"
+   Only retries once. Only uses retry if score improved.
+
+31 new tests covering all 5 capabilities. 282 total, 500 assertions.
