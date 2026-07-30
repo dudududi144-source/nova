@@ -132,8 +132,8 @@ User request: ${message}
 
 Return the complete updated HTML with the requested change applied.`
 
-  const result = await llmChat(REFINE_PROMPT, userPrompt, {
-    maxTokens: 8000,
+  let result = await llmChat(REFINE_PROMPT, userPrompt, {
+    maxTokens: 16000,
     temperature: 0.3, // lower temp for refinement — more precise
     timeoutMs: 90_000,
     signal: timeoutController.signal,
@@ -147,7 +147,22 @@ Return the complete updated HTML with the requested change applied.`
     return errorResponse(errorMsg, 502)
   }
 
-  const rawHtml = stripCodeFences(result.text)
+  let rawHtml = stripCodeFences(result.text)
+
+  // Check if output was truncated — retry with continuation
+  if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
+    logger.warn('refine.truncated', { ip, ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
+    const lastChars = rawHtml.slice(-500)
+    const retryResult = await llmChat(
+      'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
+      `The previous output was truncated. Last 500 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
+      { maxTokens: 8000, temperature: 0.2, timeoutMs: 60_000, signal: timeoutController.signal }
+    )
+    if (retryResult.ok) {
+      rawHtml = rawHtml + stripCodeFences(retryResult.text)
+      logger.info('refine.retry_completed', { ip, ms: retryResult.ms, tokens: retryResult.tokens, totalLen: rawHtml.length })
+    }
+  }
 
   if (!looksLikeHtml(rawHtml)) {
     logger.warn('refine.invalid_html', { ip, ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })

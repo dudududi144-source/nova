@@ -150,7 +150,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const result = await llmChat(SYSTEM_PROMPT, `Build this: ${mission}`, {
-    maxTokens: 8000,
+    maxTokens: 16000,
     temperature: 0.4,
     timeoutMs: 90_000,
     signal: timeoutController.signal,
@@ -159,7 +159,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   clearTimeout(timeoutTimer)
 
   if (!result.ok) {
-    // result.error is already human-friendly (sanitized in llmChat)
     const errorMsg = result.error ?? 'Unknown error'
     logger.error('build.llm_failed', { ip, mission: mission.slice(0, 80), error: errorMsg, ms: result.ms, tokens: result.tokens })
     return errorResponse(
@@ -169,7 +168,26 @@ export async function POST(request: NextRequest): Promise<Response> {
     )
   }
 
-  const rawHtml = stripCodeFences(result.text)
+  let rawHtml = stripCodeFences(result.text)
+
+  // Check if output was truncated (doesn't end with </html>) — retry with continuation
+  if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
+    logger.warn('build.truncated', { ip, mission: mission.slice(0, 80), ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
+
+    // Retry: ask the LLM to complete the HTML from where it left off
+    const lastChars = rawHtml.slice(-500) // send last 500 chars as context
+    const retryResult = await llmChat(
+      'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML to complete the document. Start exactly where the previous output stopped. Do not repeat what was already generated.',
+      `The previous output was truncated. Here are the last 500 characters:\n\n${lastChars}\n\nContinue from here and complete the HTML document. End with </html>.`,
+      { maxTokens: 8000, temperature: 0.2, timeoutMs: 60_000, signal: timeoutController.signal }
+    )
+
+    if (retryResult.ok) {
+      const continuation = stripCodeFences(retryResult.text)
+      rawHtml = rawHtml + continuation
+      logger.info('build.retry_completed', { ip, ms: retryResult.ms, tokens: retryResult.tokens, totalLen: rawHtml.length })
+    }
+  }
 
   if (!looksLikeHtml(rawHtml)) {
     logger.warn('build.invalid_html', { ip, mission: mission.slice(0, 80), ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
