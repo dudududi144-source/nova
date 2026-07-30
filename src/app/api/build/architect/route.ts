@@ -11,46 +11,16 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-const ARCHITECT_PROMPT = `You are a software architect designing a single-file HTML app. Output a detailed JSON plan.
+const ARCHITECT_PROMPT = `You are a software architect. Output a JSON plan for a single-file HTML app. Output ONLY JSON.
 
-Rules:
-- Output ONLY valid JSON. No markdown, no explanation.
-- Be SPECIFIC — the coder follows this plan exactly.
-- List EVERY feature, EVERY function, EVERY UI element needed.
-
-JSON format:
 {
-  "type": "game|tool|app|utility",
-  "title": "display title for the app",
-  "features": [
-    "specific feature 1 with details",
-    "specific feature 2 with details",
-    ...
-  ],
-  "approach": "detailed description of how to build it (2-3 sentences)",
-  "colors": {
-    "bg": "#0f172a",
-    "primary": "#hex for main accent",
-    "accent": "#hex for highlights",
-    "card": "#1e293b"
-  },
-  "layout": "detailed layout description (e.g., 'centered game board 400x400px with score above and controls below')",
-  "keyFunctions": [
-    "functionName: what it does",
-    ...
-  ],
-  "ui": [
-    "header with title",
-    "main game area",
-    "score display",
-    "controls section",
-    ...
-  ],
-  "interactions": [
-    "arrow keys move snake",
-    "spacebar pauses",
-    ...
-  ]
+  "type": "game|tool|app",
+  "title": "title",
+  "features": ["feature1", "feature2", "feature3"],
+  "approach": "how to build it",
+  "colors": { "bg": "#0f172a", "primary": "#3b82f6", "accent": "#22d3ee" },
+  "layout": "UI layout description",
+  "keyFunctions": ["func1", "func2"]
 }`
 
 const architectLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)

@@ -172,12 +172,26 @@ export default function Home() {
       // If architect failed, continue with mission-based steps (already set)
 
       // ═══ STAGE 2: CODER — generate HTML using the plan ═══
-      const codeRes = await fetch('/api/build/code', {
+      // Try with plan first. If it fails (502/timeout), retry without plan (simpler, faster).
+      let codeRes = await fetch('/api/build/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
         signal: controller.signal,
       })
+
+      // If first attempt failed, retry without the plan (simpler prompt = faster = less likely to timeout)
+      if (!codeRes.ok) {
+        console.log('[NOVA] Code stage failed, retrying without plan...')
+        // Update thinking steps to show retry
+        setBuildSteps(['Retrying with simpler approach...', 'Generating code...', 'Finalizing...'])
+        codeRes = await fetch('/api/build/code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mission: m, plan: null }),
+          signal: controller.signal,
+        })
+      }
 
       const contentType = codeRes.headers.get('content-type') ?? ''
       if (!contentType.includes('application/json')) {
