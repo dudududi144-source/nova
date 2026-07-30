@@ -140,15 +140,26 @@ export function validateOutput(html: string, mission: string): ValidationResult 
     detail: `HTML is ${html.length} bytes (minimum 2000)`,
   })
 
+  // Check 5b: No blocked storage APIs (localStorage/sessionStorage/cookie are blocked in sandbox)
+  // The CODER_PROMPT says don't use them, but LLMs sometimes ignore it. When they do,
+  // the app crashes on first interaction. Catch it here so we can retry.
+  const hasBlockedApi = /localstorage|sessionstorage|document\.cookie/.test(lower)
+  checks.push({
+    name: 'No blocked storage',
+    passed: !hasBlockedApi,
+    detail: hasBlockedApi ? 'Uses localStorage/sessionStorage/cookie (blocked in sandbox)' : 'No blocked storage APIs',
+  })
+
   // Check 6: Game-specific checks
   if (lowerMission.includes('snake') || lowerMission.includes('game')) {
     const hasCanvas = lower.includes('<canvas')
     const hasRAF = lower.includes('requestanimationframe')
+    const hasSetInterval = /setinterval\s*\(/.test(lower)
     const hasEventListener = lower.includes('addeventlistener')
     const hasScore = lower.includes('score')
 
     checks.push({ name: 'Canvas', passed: hasCanvas, detail: hasCanvas ? 'Has <canvas>' : 'Missing <canvas> for game rendering' })
-    checks.push({ name: 'Game loop', passed: hasRAF, detail: hasRAF ? 'Has requestAnimationFrame' : 'Missing game loop' })
+    checks.push({ name: 'Game loop', passed: hasRAF || hasSetInterval, detail: (hasRAF || hasSetInterval) ? 'Has game loop (rAF or setInterval)' : 'Missing game loop' })
     checks.push({ name: 'Event listeners', passed: hasEventListener, detail: hasEventListener ? 'Has event listeners' : 'Missing event listeners' })
     checks.push({ name: 'Score', passed: hasScore, detail: hasScore ? 'Has score' : 'Missing score display' })
   }

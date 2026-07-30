@@ -2119,3 +2119,73 @@ Stage Summary:
   bugs found in any roast cycle — they affected every single build the user did.
 - The first-build live preview fix is the biggest UX improvement: NOVA's breakthrough feature
   now actually works on the most common user flow.
+
+---
+Task ID: 41
+Agent: main (Z.ai Code)
+Task: Deep roast cycle #4 + fix everything. Sub-agent found 41 new issues.
+
+ROAST FINDINGS (top priority):
+CRITICAL:
+1. Live-preview iframe streamed raw LLM output with NO CSP — security hole! During streaming,
+   the iframe srcDoc was set to raw livePreviewHtml (no injectCsp). For 30-50s during every
+   build, the iframe ran LLM output with zero CSP. A prompt-injected LLM could fetch external
+   URLs, leak mission text, or redirect. Fixed: injectCsp(livePreviewHtml) before srcDoc.
+2. iframe srcDoc reloaded on EVERY token (~2000 times per build) — performance disaster.
+   Each reload re-parsed partial HTML, re-ran partial <script> tags (syntax errors spam),
+   re-layouted, re-painted. Fixed: Throttled to 200ms via accumulator ref + interval.
+
+HIGH:
+3. injectCsp respected existing CSP meta — LLM could ship a permissive one (default-src *).
+   Fixed: Always strip existing CSP metas, then inject NOVA's strict CSP.
+4. CODER_PROMPT never referenced the plan — architect's work was wasted. The plan was passed
+   as user content but the system prompt gave no instruction to follow it. Fixed: Added PLAN
+   section to CODER_PROMPT telling the LLM to follow the plan.
+5. Architect JSON parser was naive (indexOf/lastIndexOf) — broke on trailing prose, multiple
+   JSON objects, nested braces in strings. Fixed: New extractBalancedJson() with brace-depth
+   walker that respects string literals and escapes.
+6. Refine route used fixed 16000-token budget — truncated on large HTML after multiple refines.
+   Fixed: Adaptive budget based on html.length / 3.5 + 4000, clamped [16000, 32000].
+7. looksLikeHtml rejected leading HTML comments — build failed if LLM prepended <!-- comment -->.
+   Fixed: Strip leading comments before checking.
+8. ⌘S always preventDefault even when nothing to download — blocked browser save for no reason.
+   Fixed: Only preventDefault when result exists.
+9. Clear history Confirm/Cancel buttons had no disabled state — could fire during build/refine.
+   Fixed: disabled={loading || refining} on all history panel buttons.
+10. History items not disabled during refine — clicking history during refine cancels it silently.
+    Fixed: disabled={loading || refining} on history items.
+
+MEDIUM:
+11. validateOutput didn't catch localStorage/sessionStorage/cookie usage — apps crash at runtime
+    in the sandbox. Fixed: Added "No blocked storage" check.
+12. Game loop check missed setInterval-based games. Fixed: Accept setInterval as game loop.
+13. confirmClear not reset when starting build. Fixed: setConfirmClear(false) in build().
+
+LOW:
+14. Dead import formatMs. Removed.
+15. Debug console.log in production. Gated behind NODE_ENV check.
+16. autoFocus popped mobile keyboard on page load. Fixed: useEffect focuses only on desktop.
+17. Toast position (bottom-right) overlapped chat input. Moved to top-right.
+18. Toast position moved to top-right to avoid overlapping chat input.
+
+NEW FILES:
+- src/lib/json-extract.ts: extractBalancedJson() — robust JSON extraction from LLM output
+
+NEW TESTS:
+- tests/roast-cycle-4.test.ts: 13 tests for CSP stripping, comment stripping, JSON extraction
+
+BROWSER VERIFICATION:
+- Build: snake game built in 52s, quality score 100, 10 checks (new "No blocked storage" check)
+- Elapsed counter works during streaming (shows 18s, 22s, etc.)
+- Throttled live preview works — iframe updates at most 5x/second instead of 2000x
+- CSP is now applied to live preview (security hole closed)
+- Zero page errors. One hydration warning (from React DevTools browser extension, not our code).
+
+Stage Summary:
+- Tests: 371 pass, 0 fail, 646 expect() calls (up from 358)
+- Lint: 0 errors, 1 intentional warning
+- TypeScript: clean
+- The CSP security fix (C1) closes a real security hole — live preview now has CSP enforced
+- The throttling fix (C2) is the biggest performance improvement — 10x fewer iframe reloads
+- The CODER_PROMPT fix (H2) makes the architect stage actually useful — the plan is now followed
+- The JSON parser fix (H1) makes architect plan extraction robust against LLM output variations

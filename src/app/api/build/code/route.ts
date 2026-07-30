@@ -26,8 +26,14 @@ OUTPUT FORMAT:
 - Output ONLY raw HTML. No explanation, no markdown, no code fences.
 - Complete document: <!DOCTYPE html>, <html>, <head>, <body>.
 - All CSS in <style>, all JS in <script>. Everything inline. One file.
-- Do NOT use localStorage. Use in-memory variables.
-- No external resources.
+- Do NOT use localStorage, sessionStorage, or document.cookie. Use in-memory variables.
+- No external resources (no fetch, no CDN scripts, no external fonts/images).
+
+PLAN:
+- If a Plan is provided in the user message, follow it closely:
+  implement every listed feature, use the suggested approach, apply the suggested
+  colors, and structure the UI per the suggested layout.
+- The plan was created by an architect — trust its feature list and key functions.
 
 QUALITY:
 - The app MUST work fully. Every button, input, interaction.

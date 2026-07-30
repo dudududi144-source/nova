@@ -37,7 +37,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <ErrorBoundary>{children}</ErrorBoundary>
-        <Toaster theme="dark" position="bottom-right" />
+        <Toaster theme="dark" position="top-right" />
         <noscript>
           <div style={{ padding: '2rem', textAlign: 'center', color: '#e2e8f0', fontFamily: 'monospace' }}>
             <h1>NOVA requires JavaScript</h1>

@@ -7,7 +7,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
-import { formatTokens, formatMs, BUILD_STAGES, getCurrentStage } from '@/lib/format'
+import { formatTokens, BUILD_STAGES, getCurrentStage } from '@/lib/format'
+import { injectCsp } from '@/lib/html-utils'
 
 interface BuildResponse {
   ok: boolean
@@ -75,6 +76,46 @@ export default function Home() {
     resultRef.current = result
   }, [result])
 
+  // Throttled live-preview accumulator.
+  // CRITICAL: Without throttling, setLivePreviewHtml fires on every token (~2000+ times per build),
+  // and each fires a full iframe srcDoc reload (re-parse + re-render + re-run partial scripts).
+  // We accumulate tokens in a ref and flush to state at most every 200ms via an interval.
+  const livePreviewAccumulatorRef = useRef<string>('')
+  const livePreviewFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Start the throttled flush timer when loading or refining begins; clear when it ends.
+  useEffect(() => {
+    if (!loading && !refining) {
+      // Flush any remaining accumulated text, then stop the timer.
+      if (livePreviewAccumulatorRef.current) {
+        setLivePreviewHtml(livePreviewAccumulatorRef.current)
+        livePreviewAccumulatorRef.current = ''
+      }
+      if (livePreviewFlushTimerRef.current) {
+        clearInterval(livePreviewFlushTimerRef.current)
+        livePreviewFlushTimerRef.current = null
+      }
+      return
+    }
+    // Start a 200ms flush interval — updates the iframe at most 5 times/second instead of ~2000.
+    if (!livePreviewFlushTimerRef.current) {
+      livePreviewFlushTimerRef.current = setInterval(() => {
+        if (livePreviewAccumulatorRef.current) {
+          setLivePreviewHtml(livePreviewAccumulatorRef.current)
+          // Don't clear the accumulator — new tokens may have arrived since the flush.
+          // It's overwritten on the next token event.
+        }
+      }, 200)
+    }
+    return () => {
+      // Cleanup on unmount or dep change — don't leave the interval running.
+      if (livePreviewFlushTimerRef.current) {
+        clearInterval(livePreviewFlushTimerRef.current)
+        livePreviewFlushTimerRef.current = null
+      }
+    }
+  }, [loading, refining])
+
   // Load history from localStorage on mount
   useEffect(() => {
     try {
@@ -82,6 +123,15 @@ export default function Home() {
       setHistory(validateHistory(stored))
     } catch (err) {
       console.error('[NOVA] Failed to load history:', err)
+    }
+  }, [])
+
+  // Focus the mission textarea on mount — desktop only.
+  // On mobile, auto-focusing pops the on-screen keyboard which is annoying.
+  // Runs after mount to avoid SSR hydration mismatch.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+      document.getElementById('mission-input')?.focus()
     }
   }, [])
 
@@ -199,12 +249,14 @@ export default function Home() {
     setError(null)
     setFailedMission(null)
     setChatMessages([])
+    setConfirmClear(false) // Hide confirm-clear UI if it was visible
 
     // Extract dynamic steps from the mission IMMEDIATELY — not pre-canned
     const steps = extractStepsFromMission(m)
     setBuildSteps(steps)
     setPlanSummary(null)
     setLivePreviewHtml(null)
+    livePreviewAccumulatorRef.current = '' // Clear accumulator for fresh build
 
     // Helper: set error state consistently (replaces 6 repeated blocks)
     const fail = (msg: string) => {
@@ -236,7 +288,10 @@ export default function Home() {
         const summary = getPlanSummary(archData.plan)
         setBuildSteps(planSteps)
         setPlanSummary(summary)
-        console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
+        // Debug log gated to non-production — don't spam user's console
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
+        }
       }
       // If architect failed, continue with mission-based steps (already set)
 
@@ -304,8 +359,10 @@ export default function Home() {
                 return [prev[0], evt.step, ...prev.slice(2)]
               })
             } else if (evt.type === 'token') {
-              // REAL TOKEN STREAMING — accumulate partial HTML for live preview
-              setLivePreviewHtml(prev => (prev ?? '') + (evt.text ?? ''))
+              // REAL TOKEN STREAMING — accumulate in ref for throttled flush.
+              // We DON'T call setLivePreviewHtml here (would reload iframe on every token).
+              // The 200ms flush interval picks up the accumulated text.
+              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
               setBuildSteps(prev => {
                 const last = prev[prev.length - 1]
                 const totalLen = (evt.length ?? 0)
@@ -505,6 +562,7 @@ export default function Home() {
 
     // Clear live preview so refine starts fresh
     setLivePreviewHtml(null)
+    livePreviewAccumulatorRef.current = '' // Clear accumulator for fresh refine
 
     try {
       const res = await fetch('/api/refine', {
@@ -554,8 +612,8 @@ export default function Home() {
           try {
             const evt = JSON.parse(dataLine.slice(6))
             if (evt.type === 'token') {
-              // Live token streaming — show refined HTML appearing in real-time
-              setLivePreviewHtml(prev => (prev ?? '') + (evt.text ?? ''))
+              // Live token streaming — accumulate in ref for throttled flush (same as build)
+              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
             } else if (evt.type === 'result') {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0
@@ -649,10 +707,10 @@ export default function Home() {
         }
         return
       }
-      // ⌘S / Ctrl+S downloads the current result (always preventDefault to stop browser save)
+      // ⌘S / Ctrl+S downloads the current result — only preventDefault when we have a result
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
         if (result) {
+          e.preventDefault()
           download()
         }
         return
@@ -742,7 +800,9 @@ export default function Home() {
           </label>
           <Textarea
             id="mission-input"
-            autoFocus
+            // autoFocus only on desktop via useEffect (see missionInputRef).
+            // On mobile, autoFocus pops the on-screen keyboard on load — annoying.
+            autoFocus={false}
             value={mission}
             maxLength={500}
             onChange={(e) => setMission(e.target.value)}
@@ -878,7 +938,7 @@ export default function Home() {
                   type="button"
                   title={h.mission}
                   onClick={() => loadFromHistory(h)}
-                  disabled={loading}
+                  disabled={loading || refining}
                   className="flex w-full items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
                 >
                   <Zap className="h-3 w-3 shrink-0 text-primary/40" />
@@ -895,14 +955,16 @@ export default function Home() {
                       setConfirmClear(false)
                       toast.success('History cleared')
                     }}
-                    className="flex-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/20"
+                    disabled={loading || refining}
+                    className="flex-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/20 disabled:opacity-50"
                   >
                     Confirm
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmClear(false)}
-                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent"
+                    disabled={loading || refining}
+                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -911,7 +973,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setConfirmClear(true)}
-                  disabled={loading}
+                  disabled={loading || refining}
                   className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
                 >
                   Clear history
@@ -1071,7 +1133,7 @@ export default function Home() {
               )}
               <iframe
                 key={result?.id ?? 'loading'}
-                srcDoc={(loading || refining) && livePreviewHtml ? livePreviewHtml : (result?.html ?? '')}
+                srcDoc={(loading || refining) && livePreviewHtml ? injectCsp(livePreviewHtml) : (result?.html ?? '')}
                 title="Preview"
                 sandbox="allow-scripts"
                 className="h-full w-full border-0 bg-neutral-950"

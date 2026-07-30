@@ -63,11 +63,15 @@ describe('injectCsp — works correctly from html-utils module', () => {
     expect(result).toContain('<head>')
   })
 
-  it('does not override existing CSP', () => {
+  it('ALWAYS strips existing CSP and injects NOVA\'s lockdown CSP (roast #4 security fix)', () => {
+    // SECURITY: We no longer respect LLM-emitted CSP meta tags — they could be permissive.
+    // NOVA always enforces its own strict CSP (connect-src 'none', etc.).
     const html = '<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src *"></head></html>'
     const result = injectCsp(html)
-    expect(result).toContain('default-src *')
-    expect(result).not.toContain('connect-src')
+    // The permissive CSP should be stripped
+    expect(result).not.toContain('default-src *')
+    // NOVA's strict CSP should be injected
+    expect(result).toContain("connect-src 'none'")
   })
 
   it('preserves html tag attributes', () => {

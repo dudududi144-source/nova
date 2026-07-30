@@ -27,11 +27,14 @@ describe('injectCsp', () => {
     expect(result).toContain('</head>')
   })
 
-  it('does not inject duplicate CSP if one already exists', () => {
+  it('strips existing CSP and injects NOVA\'s strict CSP (roast #4 security fix)', () => {
     const existingCsp = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">'
     const html = `<!DOCTYPE html><html><head>${existingCsp}</head></html>`
     const result = injectCsp(html)
-    // Should only have one CSP meta
+    // The existing permissive CSP should be stripped, NOVA's strict CSP injected
+    expect(result).not.toContain("default-src 'self'")
+    expect(result).toContain("connect-src 'none'")
+    // Should only have one CSP meta (NOVA's)
     const cspCount = (result.match(/Content-Security-Policy/gi) || []).length
     expect(cspCount).toBe(1)
   })

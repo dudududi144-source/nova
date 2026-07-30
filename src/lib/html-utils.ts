@@ -31,8 +31,14 @@ export function stripCodeFences(text: string): string {
  * Rejects HTML fragments, conversational text, JSON, markdown.
  */
 export function looksLikeHtml(text: string): boolean {
-  // Strip UTF-8 BOM (\uFEFF) if present — some proxies/LLMs prepend it.
-  const lower = text.replace(/^\uFEFF/, '').trimStart().toLowerCase()
+  // Strip UTF-8 BOM (\uFEFF) and leading HTML comments — some LLMs prepend them
+  // despite instructions not to. Without this, a leading <!-- comment --> causes
+  // the build to fail with "invalid output" even though the HTML is fine.
+  const lower = text
+    .replace(/^\uFEFF/, '')
+    .replace(/^<!--[\s\S]*?-->\s*/i, '')
+    .trimStart()
+    .toLowerCase()
   return lower.startsWith('<!doctype') || lower.startsWith('<html')
 }
 
@@ -58,19 +64,20 @@ const PREVIEW_CSP = [
  * - If there's no <html>, prepend the meta.
  */
 export function injectCsp(html: string): string {
-  if (/<meta\s+http-equiv=["']?content-security-policy["']?/i.test(html)) {
-    return html
-  }
+  // SECURITY: Always strip any existing CSP meta tags the LLM may have emitted.
+  // If we respected an existing CSP, the LLM could ship a permissive one (e.g.,
+  // default-src *) and bypass NOVA's lockdown CSP. Always enforce our CSP.
+  const stripped = html.replace(/<meta\s+http-equiv=["']?content-security-policy["']?[^>]*>/gi, '')
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`
   // Match <head> or <head ...> but NOT <header> — use lookahead to ensure the next char
   // is whitespace or '>'. Without this, /<head[^>]*>/i matches <header> too.
-  const headMatch = html.match(/<head(?=[\s>])[^>]*>/i)
+  const headMatch = stripped.match(/<head(?=[\s>])[^>]*>/i)
   if (headMatch) {
-    return html.replace(/<head(?=[\s>])[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
+    return stripped.replace(/<head(?=[\s>])[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
   }
-  const htmlTagMatch = html.match(/<html[^>]*>/i)
+  const htmlTagMatch = stripped.match(/<html[^>]*>/i)
   if (htmlTagMatch) {
-    return html.replace(/<html[^>]*>/i, `${htmlTagMatch[0]}<head>${cspMeta}</head>`)
+    return stripped.replace(/<html[^>]*>/i, `${htmlTagMatch[0]}<head>${cspMeta}</head>`)
   }
-  return `${cspMeta}\n${html}`
+  return `${cspMeta}\n${stripped}`
 }

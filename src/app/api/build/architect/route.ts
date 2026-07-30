@@ -8,6 +8,7 @@ import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { enrichMission } from '@/lib/build-intelligence'
+import { extractBalancedJson } from '@/lib/json-extract'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -70,17 +71,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     return Response.json({ ok: false, error: result.error ?? 'Architect failed' }, { status: 502 })
   }
 
-  // Parse the plan
+  // Parse the plan — use brace-balanced extraction (more robust than indexOf/lastIndexOf).
+  // Handles: trailing prose, multiple JSON objects, nested braces, code fences.
   let plan: unknown = null
   try {
     const text = result.text.trim()
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    if (start >= 0 && end > start) {
-      plan = JSON.parse(text.slice(start, end + 1))
-    }
-  } catch {
-    // Plan parsing failed — return raw text
+    plan = extractBalancedJson(text)
+  } catch (parseErr) {
+    logger.warn('architect.plan_parse_failed', { ip, error: parseErr instanceof Error ? parseErr.message : 'parse error' })
   }
 
   logger.info('architect.completed', { ip, ms: result.ms, tokens: result.tokens, hasPlan: !!plan })

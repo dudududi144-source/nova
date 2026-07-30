@@ -117,9 +117,13 @@ export async function POST(request: NextRequest): Promise<Response> {
       }, 3000)
 
       try {
-        // Adaptive token budget — refine usually needs less than build
-        const tokenBudget = estimateTokenBudget(null) // refine doesn't have a plan, use default
-        logger.info('refine.budget', { ip, maxTokens: tokenBudget })
+        // Adaptive token budget — adapt to current HTML size.
+        // 1 token ≈ 3.5 chars for HTML, plus 4000 for the change.
+        // Clamp to [16000, 32000] so small HTML doesn't under-allocate
+        // and large HTML doesn't exceed the model's context window.
+        const estimatedInputTokens = Math.ceil(html.length / 3.5)
+        const tokenBudget = Math.max(16000, Math.min(32000, estimatedInputTokens + 4000))
+        logger.info('refine.budget', { ip, maxTokens: tokenBudget, htmlBytes: html.length })
 
         // ═══ REAL STREAMING ═══
         // Stream tokens from LLM → client in real-time via SSE
