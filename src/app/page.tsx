@@ -82,6 +82,9 @@ export default function Home() {
   // We accumulate tokens in a ref and flush to state at most every 200ms via an interval.
   const livePreviewAccumulatorRef = useRef<string>('')
   const livePreviewFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Track the last char count we updated buildSteps with — used to throttle setBuildSteps
+  // during token streaming (prevents ~2000 array allocations per build).
+  const generatingCharsRef = useRef(0)
 
   // Start the throttled flush timer when loading or refining begins; clear when it ends.
   useEffect(() => {
@@ -262,6 +265,7 @@ export default function Home() {
     setPlanSummary(null)
     setLivePreviewHtml(null)
     livePreviewAccumulatorRef.current = '' // Clear accumulator for fresh build
+    generatingCharsRef.current = 0 // Reset char counter for build step throttling
 
     // Helper: set error state consistently (replaces 6 repeated blocks)
     const fail = (msg: string) => {
@@ -381,15 +385,22 @@ export default function Home() {
               // We DON'T call setLivePreviewHtml here (would reload iframe on every token).
               // The 200ms flush interval picks up the accumulated text.
               livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
-              setBuildSteps(prev => {
-                const last = prev[prev.length - 1]
-                const totalLen = (evt.length ?? 0)
-                const newLast = `Generating: ${totalLen} chars...`
-                if (last && last.startsWith('Generating:')) {
-                  return [...prev.slice(0, -1), newLast]
-                }
-                return [...prev, newLast]
-              })
+              // Throttle setBuildSteps: only update the "Generating: N chars..." text
+              // when the char count crosses a 500-char threshold (not on every token).
+              // This prevents ~2000 setBuildSteps calls (each creating a new array) per build.
+              const totalLen = (evt.length ?? 0)
+              const lastUpdate = generatingCharsRef.current
+              if (totalLen - lastUpdate >= 500 || totalLen === 0) {
+                generatingCharsRef.current = totalLen
+                setBuildSteps(prev => {
+                  const last = prev[prev.length - 1]
+                  const newLast = `Generating: ${totalLen} chars...`
+                  if (last && last.startsWith('Generating:')) {
+                    return [...prev.slice(0, -1), newLast]
+                  }
+                  return [...prev, newLast]
+                })
+              }
             } else if (evt.type === 'result') {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0
@@ -402,6 +413,30 @@ export default function Home() {
           } catch {
             // Ignore malformed events
           }
+        }
+      }
+
+      // Flush the decoder — any remaining bytes (incomplete multi-byte chars)
+      buffer += decoder.decode()
+      // Process any remaining complete event in the buffer
+      if (buffer.trim()) {
+        const normalized = buffer.replace(/\r\n/g, '\n')
+        const events = normalized.split('\n\n')
+        for (const eventStr of events) {
+          const dataLine = eventStr.trim()
+          if (!dataLine.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(dataLine.slice(6))
+            if (evt.type === 'result') {
+              finalHtml = evt.html ?? ''
+              finalTokens = evt.tokens ?? 0
+              finalMs = evt.ms ?? 0
+              finalQuality = evt.quality ?? 0
+              finalMetrics = evt.metrics ?? ''
+            } else if (evt.type === 'error') {
+              streamError = evt.error ?? 'Unknown error'
+            }
+          } catch {}
         }
       }
 
@@ -654,6 +689,32 @@ export default function Home() {
             const evt = JSON.parse(dataLine.slice(6))
             if (evt.type === 'token') {
               // Live token streaming — accumulate in ref for throttled flush (same as build)
+              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+            } else if (evt.type === 'result') {
+              finalHtml = evt.html ?? ''
+              finalTokens = evt.tokens ?? 0
+              finalMs = evt.ms ?? 0
+              finalQuality = evt.quality ?? 0
+              finalMetrics = evt.metrics ?? ''
+            } else if (evt.type === 'error') {
+              streamError = evt.error ?? 'Unknown error'
+            }
+          } catch {}
+        }
+      }
+
+      // Flush the decoder — any remaining bytes (incomplete multi-byte chars)
+      buffer += decoder.decode()
+      // Process any remaining complete event in the buffer
+      if (buffer.trim()) {
+        const normalized = buffer.replace(/\r\n/g, '\n')
+        const events = normalized.split('\n\n')
+        for (const eventStr of events) {
+          const dataLine = eventStr.trim()
+          if (!dataLine.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(dataLine.slice(6))
+            if (evt.type === 'token') {
               livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
             } else if (evt.type === 'result') {
               finalHtml = evt.html ?? ''

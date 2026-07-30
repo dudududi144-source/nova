@@ -2253,3 +2253,45 @@ Stage Summary:
   history is never wiped by a stale closure
 - The maxDuration fix (H2) prevents silent serverless timeout failures
 - The SSE content-type check (H3) catches proxy/CDN issues that would silently hang
+
+---
+Task ID: 43
+Agent: main (Z.ai Code)
+Task: Continue roast/fix cycle. Manual review found 3 issues from cycle 4 that were never fixed.
+
+ROAST FINDINGS:
+MEDIUM:
+1. Decoder flush missing in llm.ts — after the SSE stream ends, decoder.decode() was
+   never called to flush the internal buffer. If the final chunk ended mid-character
+   (multi-byte UTF-8 like emoji), that character was silently dropped. Rare but a
+   real correctness bug. (Originally reported as M9 in cycle 4, never fixed.)
+2. Same decoder flush issue in client-side SSE parser (page.tsx) — both build and
+   refine parsers. After reader.read() returns done=true, the loop exits without
+   flushing the decoder.
+3. setBuildSteps called on EVERY token event — creates a new array ~2000 times per
+   build, each triggering a re-render. The "Generating: N chars..." text updates
+   on every token, but the user can't read that fast. Should be throttled.
+
+FIXES APPLIED (3 fixes):
+1. llm.ts: After the while loop, call decoder.decode() to flush the internal buffer.
+   Also process any remaining complete SSE event in the buffer (the last event might
+   not have a trailing \n, so it stays in the buffer after split).
+2. page.tsx: Same decoder flush for both build and refine SSE parsers. After the
+   while loop, flush the decoder and process any remaining complete events.
+3. page.tsx: Throttle setBuildSteps during token streaming. Only update the
+   "Generating: N chars..." text when the char count crosses a 500-char threshold
+   (using generatingCharsRef). This reduces ~2000 setBuildSteps calls to ~20 per
+   build (for a typical 10K-char output).
+
+BROWSER VERIFICATION:
+- Build: snake game built in 37s, quality 100, 10 checks, 17 CSS rules
+- Zero console errors, zero page errors
+- Elapsed counter works during streaming (20s shown)
+- Live preview works with throttled updates
+
+Stage Summary:
+- Tests: 371 pass, 0 fail, 646 expect() calls (unchanged)
+- Lint: 0 errors, 1 intentional warning
+- TypeScript: clean
+- The decoder flush fix ensures no data loss at the end of SSE streams
+- The setBuildSteps throttling reduces re-renders by ~100x during token streaming

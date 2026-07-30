@@ -256,6 +256,29 @@ export async function* llmChatStream(
       }
     }
 
+    // Flush the decoder — any remaining bytes in the internal buffer (incomplete multi-byte chars)
+    buffer += decoder.decode()
+    // Process any remaining complete lines in the buffer
+    if (buffer.trim()) {
+      const trimmed = buffer.trim()
+      if (trimmed.startsWith('data: ')) {
+        const jsonStr = trimmed.slice(6)
+        if (jsonStr === '[DONE]') {
+          clearTimeout(timer)
+          yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
+          return
+        }
+        try {
+          const data = JSON.parse(jsonStr)
+          const content = data?.choices?.[0]?.delta?.content ?? ''
+          if (content) fullText += content
+          if (data?.usage?.completion_tokens) {
+            totalTokens = (data.usage.prompt_tokens ?? 0) + (data.usage.completion_tokens ?? 0)
+          }
+        } catch {}
+      }
+    }
+
     // Stream ended without [DONE]
     clearTimeout(timer)
     yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
