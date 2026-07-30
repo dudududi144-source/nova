@@ -9,7 +9,8 @@
 // No arbitrary maxTokens limit — LLM generates until it's naturally done.
 
 import type { NextRequest } from 'next/server'
-import { llmChatStream, llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
+import { llmChatStream, llmChat } from '@/lib/llm'
+import { stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/html-utils'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'

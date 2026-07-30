@@ -7,7 +7,8 @@
 // The integration of llmChat is verified via the /api/build endpoint E2E.
 
 import { describe, it, expect } from 'bun:test'
-import { validateMission, stripCodeFences, looksLikeHtml } from '../src/lib/llm'
+import { validateMission } from '../src/lib/mission'
+import { stripCodeFences, looksLikeHtml } from '../src/lib/html-utils'
 
 // ── validateMission ──
 

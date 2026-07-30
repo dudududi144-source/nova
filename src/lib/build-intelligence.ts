@@ -39,7 +39,7 @@ export function enrichMission(mission: string): EnrichedMission {
     hints.push('Delete button per task')
     hints.push('Filter tabs: All / Active / Completed')
     hints.push('Empty state message when no tasks')
-  } else if (lower.includes('calculator') || lower.includes('calc ')) {
+  } else if (/\bcalc(ulator)?\b/.test(lower)) {
     detectedType = 'tool'
     hints.push('Display at top, button grid below (4 columns)')
     hints.push('Buttons: 0-9, +, -, *, /, =, C, .')
@@ -159,7 +159,7 @@ export function validateOutput(html: string, mission: string): ValidationResult 
   }
 
   // Check 8: Calculator-specific checks
-  if (lowerMission.includes('calculator') || lowerMission.includes('calc ')) {
+  if (/\bcalc(ulator)?\b/.test(lowerMission)) {
     const hasButtons = (html.match(/<button/gi) || []).length
     checks.push({ name: 'Calculator buttons', passed: hasButtons >= 10, detail: `Found ${hasButtons} buttons (need 10+)` })
   }

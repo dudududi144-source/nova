@@ -1,6 +1,6 @@
 // Tests for cycle 9 nitpick fixes
 import { describe, it, expect, spyOn, beforeEach, afterEach } from 'bun:test'
-import { stripCodeFences, injectCsp } from '../src/lib/llm'
+import { stripCodeFences, injectCsp } from '../src/lib/html-utils'
 import { logger } from '../src/lib/logger'
 
 describe('stripCodeFences — 4+ backtick fences', () => {

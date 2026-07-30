@@ -1869,3 +1869,86 @@ This is "the way we do it" — not showing code (like everyone else), but showin
 the actual app being born. The user experiences the creation, not just the result.
 
 All tests: 282 pass, 0 fail, 500 expect() calls
+
+---
+Task ID: 38
+Agent: main (Z.ai Code)
+Task: Broad roast + fix + TFA ideas examination. User asked to examine what was taken from TFA, do a broad roast of inaccuracies, fix everything, verify with tests and browser.
+
+ROAST FINDINGS (CRITICAL):
+1. 20 tests FAILING — mock.module('@/lib/llm') in 3 route test files permanently
+   replaces the module globally in Bun. The mock only exported llmChat/llmChatStream,
+   so stripCodeFences, validateMission, injectCsp became undefined for cycle-9/cycle-10
+   tests when run after the route tests. This was a test pollution bug — tests passed
+   in isolation but failed when run together.
+2. Refine route still used llmChat (not llmChatStream) — no real token streaming for
+   refinement. The import included llmChatStream but it was never called. User stared
+   at spinner for 30+ seconds during refine with no live preview.
+
+ROAST FINDINGS (HIGH):
+3. Dead import — refine route imported llmChatStream but never used it
+4. Duplicate iframe — page.tsx rendered TWO iframes during streaming (z-20 live one
+   + main one with same srcDoc). Redundant and wasteful.
+5. `calc ` word boundary — lower.includes('calc ') with trailing space wouldn't match
+   "calc" at end of string or before punctuation. Used \bcalc(ulator)?\b regex instead.
+6. No live preview during refine — consequence of #2
+
+TFA IDEAS EXAMINATION:
+- Examined TFA Evolution Studio (React Native Expo app for code evolution workflows)
+- TFA has 18 templates in 6 categories — stole the CONCEPT of more quick-start presets
+- TFA's stage rail, formatBytes, timeAgo — already stolen and adapted in previous cycles
+- TFA's templates are for code evolution tasks (refactoring, testing) — not directly
+  applicable to NOVA's prompt-to-app model. Adapted the concept, not the content.
+- Expanded EXAMPLES from 4 to 8 presets (snake, todo, calculator, color palette,
+  pomodoro timer, markdown editor, drawing canvas, quiz app)
+
+FIXES APPLIED:
+1. CRITICAL: Separated pure utilities from LLM client module:
+   - Created src/lib/html-utils.ts (stripCodeFences, looksLikeHtml, injectCsp)
+   - Created src/lib/mission.ts (validateMission)
+   - Updated src/lib/llm.ts to only contain LLM client code (llmChat, llmChatStream)
+   - Updated all route files to import from correct modules
+   - Updated all 8 test files to import from correct modules
+   - Updated 3 route test mocks to only mock @/lib/llm (not utility functions)
+   - Made architect-route.test.ts mock also export llmChatStream (prevents module
+     pollution: Bun's mock.module is permanent, first mock wins)
+2. Fixed refine route to use llmChatStream (real token streaming):
+   - Rewrote /api/refine/route.ts with same streaming pattern as /api/build/code
+   - Streams token events to client as tokens arrive
+   - Truncation retry and validation retry preserved
+3. Fixed page.tsx to handle refine token events:
+   - sendChat now handles 'token' events and updates livePreviewHtml
+   - Live preview shows during refine (not just during build)
+   - Clear livePreviewHtml when refine completes/aborts
+4. Removed duplicate iframe in page.tsx:
+   - Single iframe handles both live preview and final result
+   - srcDoc shows livePreviewHtml during loading OR refining, result.html when idle
+5. Fixed calc word boundary:
+   - build-intelligence.ts: /\bcalc(ulator)?\b/ instead of includes('calc ')
+   - build-steps.ts: same regex fix
+6. Added Copy HTML to clipboard button
+7. Added Open in new tab button (blob URL, opens full-screen preview)
+8. Added ⌘N keyboard shortcut for "New" (reset)
+9. Expanded EXAMPLES from 4 to 8 presets
+
+NEW TESTS:
+- tests/html-utils-isolation.test.ts: 12 tests verifying html-utils module works standalone
+- tests/mission-isolation.test.ts: 14 tests verifying mission module works standalone
+- 3 new calc word boundary tests in build-intelligence.test.ts
+
+BROWSER VERIFICATION:
+- Build: snake game built in 88s, quality score 100/100, 459 lines, 10 functions
+- Refine: "make snake blue + add high score" refined in 81s, quality score 100/100
+- Live preview worked during both build and refine (saw partial HTML updating)
+- All toolbar buttons visible: Copy, Open, Download, Rebuild, New
+- Mobile responsive (tested 375x812 viewport)
+- Sticky footer confirmed
+- Zero console errors
+- Zero page errors
+
+Stage Summary:
+- Tests: 342 pass, 0 fail, 607 expect() calls (up from 288 pass + 20 fail)
+- Lint: 0 errors, 1 intentional warning (SDK type cast)
+- TypeScript: clean (tsc --noEmit passes)
+- Architecture: clean separation of concerns (LLM client vs HTML utils vs mission validation)
+- The mock.module pollution bug is fixed at the ARCHITECTURE level, not just patched

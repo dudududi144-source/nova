@@ -1,6 +1,6 @@
 // Unit tests for injectCsp
 import { describe, it, expect } from 'bun:test'
-import { injectCsp } from '../src/lib/llm'
+import { injectCsp } from '../src/lib/html-utils'
 
 describe('injectCsp', () => {
   it('injects CSP meta after <head>', () => {

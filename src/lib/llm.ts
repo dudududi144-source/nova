@@ -1,6 +1,11 @@
 // LLM wrapper — server-side only.
 // Thin wrapper around z-ai-web-dev-sdk.
 // Supports both non-streaming (llmChat) and real token streaming (llmChatStream).
+//
+// NOTE: Pure utility functions (stripCodeFences, looksLikeHtml, injectCsp)
+// live in html-utils.ts, and mission validation lives in mission.ts.
+// This separation ensures that mocking this module for route tests
+// does NOT break those pure functions for other test files.
 
 import ZAI from 'z-ai-web-dev-sdk'
 
@@ -146,91 +151,6 @@ export async function llmChat(
     zaiInstance = null
     return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'The AI service encountered an error. Try again.' }
   }
-}
-
-/**
- * Validate a mission string.
- * Checks: non-empty, length 3-500, no control characters (including DEL and
- * extended control chars in the C1 set \x80-\x9F).
- * Returns { ok: true } or { ok: false, error: string }.
- */
-export function validateMission(mission: string): { ok: boolean; error?: string } {
-  if (!mission || !mission.trim()) return { ok: false, error: 'Mission is empty' }
-  const trimmed = mission.trim()
-  if (trimmed.length < 3) return { ok: false, error: 'Mission too short (min 3 chars)' }
-  if (trimmed.length > 500) return { ok: false, error: `Mission too long (max 500 chars, got ${trimmed.length})` }
-  // Block C0 control chars (except tab \x09, newline \x0A, carriage return \x0D),
-  // DEL (\x7F), and C1 extended control chars (\x80-\x9F)
-  if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F]/.test(trimmed)) {
-    return { ok: false, error: 'Mission contains invalid characters' }
-  }
-  return { ok: true }
-}
-
-/**
- * Strip markdown code fences from LLM output.
- * Handles: ```html, ```, 4+ backtick fences, empty first block, whitespace,
- * and any language identifier (javascript, css, etc. — not just html/htm).
- * Returns the first non-empty fence block, or the trimmed text if no fences.
- */
-export function stripCodeFences(text: string): string {
-  // Find all fence blocks. Allow any language identifier (or none).
-  // Handles 3+ backticks (``` or ```` or more).
-  // Language identifier is matched permissively: [a-zA-Z0-9_-]*
-  const fenceRegex = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
-  let match
-  while ((match = fenceRegex.exec(text)) !== null) {
-    const content = match[1].trim()
-    if (content) return content
-  }
-  return text.trim()
-}
-
-/**
- * Check if text looks like a complete HTML document.
- * Must start (after optional whitespace) with <!doctype or <html>.
- * Rejects HTML fragments, conversational text, JSON, markdown.
- */
-export function looksLikeHtml(text: string): boolean {
-  const lower = text.trimStart().toLowerCase()
-  return lower.startsWith('<!doctype') || lower.startsWith('<html')
-}
-
-/**
- * Content-Security-Policy for preview iframes.
- * Blocks all external network requests (fetch, XHR, websocket, img, script).
- */
-const PREVIEW_CSP = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "img-src 'unsafe-inline' data:",
-  "font-src 'unsafe-inline' data:",
-  "connect-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join('; ')
-
-/**
- * Inject a CSP meta tag into the HTML <head>.
- * - If a CSP meta already exists (case-insensitive), don't override it.
- * - If there's no <head>, inject one after <html>.
- * - If there's no <html>, prepend the meta.
- */
-export function injectCsp(html: string): string {
-  if (/<meta\s+http-equiv=["']?content-security-policy["']?/i.test(html)) {
-    return html
-  }
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`
-  const headMatch = html.match(/<head[^>]*>/i)
-  if (headMatch) {
-    return html.replace(/<head[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
-  }
-  const htmlTagMatch = html.match(/<html[^>]*>/i)
-  if (htmlTagMatch) {
-    return html.replace(/<html[^>]*>/i, `${htmlTagMatch[0]}<head>${cspMeta}</head>`)
-  }
-  return `${cspMeta}\n${html}`
 }
 
 /**

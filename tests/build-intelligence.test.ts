@@ -70,6 +70,26 @@ describe('enrichMission', () => {
     const result = enrichMission('Build a calculator')
     expect(result.original).toBe('Build a calculator')
   })
+
+  // Word boundary fix: 'calc' must match as a word, not as a substring
+  it('detects calc at end of sentence (word boundary)', () => {
+    const result = enrichMission('Build a calc')
+    expect(result.detectedType).toBe('tool')
+  })
+
+  it('detects calc before punctuation', () => {
+    const result = enrichMission('Build a calc, please')
+    expect(result.detectedType).toBe('tool')
+  })
+
+  it('does NOT detect calc as substring of another word', () => {
+    const result = enrichMission('Build a local calculation tool')
+    // 'local' contains 'cal' but not 'calc' as a word — should NOT be detected as calculator
+    // Actually 'calculation' contains 'calc' — but with word boundary, it should NOT match
+    // because \bcalc\b requires 'calc' to be a complete word
+    // 'calculation' has 'calc' followed by 'ulation', so \bcalc\b won't match
+    expect(result.detectedType).not.toBe('tool')
+  })
 })
 
 describe('validateOutput', () => {

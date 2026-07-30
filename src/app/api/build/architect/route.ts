@@ -3,7 +3,8 @@
 // Fast (~2-3s), cheap (~300 tokens), reliable (never truncates).
 
 import type { NextRequest } from 'next/server'
-import { llmChat, validateMission } from '@/lib/llm'
+import { llmChat } from '@/lib/llm'
+import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { enrichMission } from '@/lib/build-intelligence'

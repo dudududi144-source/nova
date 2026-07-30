@@ -1,6 +1,6 @@
 // Additional unit tests for edge cases found in cycle 6
 import { describe, it, expect } from 'bun:test'
-import { stripCodeFences, looksLikeHtml } from '../src/lib/llm'
+import { stripCodeFences, looksLikeHtml } from '../src/lib/html-utils'
 
 describe('stripCodeFences — edge cases (cycle 6)', () => {
   it('handles empty first fence block, returns content from second', () => {

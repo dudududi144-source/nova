@@ -1,6 +1,6 @@
 // Additional tests for cycle 7 fixes
 import { describe, it, expect } from 'bun:test'
-import { stripCodeFences, looksLikeHtml, injectCsp } from '../src/lib/llm'
+import { stripCodeFences, looksLikeHtml, injectCsp } from '../src/lib/html-utils'
 
 describe('looksLikeHtml — comment edge cases', () => {
   it('accepts HTML starting with comment then doctype', () => {

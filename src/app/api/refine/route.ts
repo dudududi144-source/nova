@@ -1,13 +1,15 @@
-// POST /api/refine — Chat-driven refinement with SSE streaming.
-// Same keepalive pattern as /api/build/code — prevents proxy timeout.
+// POST /api/refine — Chat-driven refinement with SSE streaming + real token streaming.
+// Same keepalive + token streaming pattern as /api/build/code.
 //
 // SSE events:
 //   data: {"type":"progress","step":"Analyzing code...","elapsed":15}
+//   data: {"type":"token","text":"...","length":1234}
 //   data: {"type":"result","html":"...","tokens":2000,"ms":30000}
 //   data: {"type":"error","error":"message"}
 
 import type { NextRequest } from 'next/server'
-import { llmChatStream, llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
+import { llmChatStream, llmChat } from '@/lib/llm'
+import { stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/html-utils'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
@@ -110,41 +112,72 @@ export async function POST(request: NextRequest): Promise<Response> {
         const tokenBudget = estimateTokenBudget(null) // refine doesn't have a plan, use default
         logger.info('refine.budget', { ip, maxTokens: tokenBudget })
 
-        const result = await llmChat(REFINE_PROMPT, userPrompt, {
+        // ═══ REAL STREAMING ═══
+        // Stream tokens from LLM → client in real-time via SSE
+        // User sees the refined HTML appearing character by character
+        let fullText = ''
+        let totalTokens = 0
+        let llmMs = 0
+        let streamError: string | null = null
+
+        for await (const chunk of llmChatStream(REFINE_PROMPT, userPrompt, {
           maxTokens: tokenBudget,
           temperature: 0.3,
           timeoutMs: 150_000,
           signal: request.signal,
-        })
+        })) {
+          if (chunk.error) {
+            streamError = chunk.error
+            break
+          }
+          if (chunk.done) {
+            totalTokens = chunk.tokens
+            llmMs = chunk.ms
+            break
+          }
+          // Send each token chunk to client immediately
+          if (chunk.text) {
+            fullText = chunk.fullText
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`))
+            } catch {
+              // stream closed by client
+              break
+            }
+          }
+        }
 
+        // Stop keepalive
         if (keepAliveInterval) clearInterval(keepAliveInterval)
 
-        if (!result.ok) {
-          logger.error('refine.llm_failed', { ip, error: result.error, ms: result.ms })
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: result.error ?? 'Refine failed' })}\n\n`))
+        if (streamError) {
+          logger.error('refine.failed', { ip, error: streamError, ms: llmMs })
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: streamError })}\n\n`))
           controller.close()
           return
         }
 
-        let rawHtml = stripCodeFences(result.text)
+        let rawHtml = stripCodeFences(fullText)
 
-        // Truncation detection + continuation
+        // Truncation detection + continuation retry
         if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
-          logger.warn('refine.truncated', { ip, ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
+          logger.warn('refine.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`))
+
           const lastChars = rawHtml.slice(-500)
           const retryResult = await llmChat(
-            'Continue the interrupted HTML. Output ONLY the remaining HTML.',
-            `Truncated. Last 500 chars:\n\n${lastChars}\n\nContinue with </html>.`,
+            'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
+            `The previous output was truncated. Last 500 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
             { maxTokens: 8000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
           )
           if (retryResult.ok) {
             rawHtml = rawHtml + stripCodeFences(retryResult.text)
+            logger.info('refine.retry_completed', { ip, ms: retryResult.ms, tokens: retryResult.tokens, totalLen: rawHtml.length })
           }
         }
 
         if (!looksLikeHtml(rawHtml)) {
-          logger.warn('refine.invalid_html', { ip, ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
+          logger.warn('refine.invalid_html', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'The AI generated invalid output. Try rephrasing your request.' })}\n\n`))
           controller.close()
           return
@@ -159,9 +192,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         // ── INTELLIGENCE: Quality metrics ──
         const metrics = analyzeQuality(finalHtml)
-        logger.info('refine.completed', { ip, ms: totalMs, tokens: result.tokens, htmlBytes: finalHtml.length, score: validation.score, metrics: metrics.summary })
+        logger.info('refine.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: finalHtml.length, score: validation.score, metrics: metrics.summary })
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: result.tokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
         controller.close()
       } catch (err: unknown) {
         if (keepAliveInterval) clearInterval(keepAliveInterval)

@@ -9,16 +9,12 @@ const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => Promi
   ms: 2000,
 }))
 
+// Mock the LLM client. Also export llmChatStream (even though architect doesn't use it)
+// so that this mock doesn't hide it from other test files that run after this one
+// in the same process (Bun's mock.module is permanent).
 mock.module('@/lib/llm', () => ({
   llmChat: (sys: string, user: string, opts?: unknown) => mockLlmChat(sys, user, opts),
-  validateMission: (m: string) => {
-    if (!m || !m.trim()) return { ok: false, error: 'Mission is empty' }
-    if (m.trim().length < 3) return { ok: false, error: 'Too short' }
-    return { ok: true }
-  },
-  stripCodeFences: (t: string) => t,
-  looksLikeHtml: (t: string) => t.trimStart().toLowerCase().startsWith('<!doctype'),
-  injectCsp: (h: string) => h,
+  llmChatStream: async function* () { yield { text: '', fullText: '', done: true, tokens: 0, ms: 0 } },
 }))
 
 interface TestRequest {

@@ -1,6 +1,6 @@
 // Tests for cycle 8: viewport, logger, injectCsp case-insensitivity, filename sanitization
 import { describe, it, expect, spyOn } from 'bun:test'
-import { injectCsp } from '../src/lib/llm'
+import { injectCsp } from '../src/lib/html-utils'
 import { logger } from '../src/lib/logger'
 
 describe('injectCsp — case-insensitive existing CSP', () => {

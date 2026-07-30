@@ -1,6 +1,7 @@
 // Tests for cycle 10 nitpick fixes
 import { describe, it, expect } from 'bun:test'
-import { stripCodeFences, validateMission } from '../src/lib/llm'
+import { stripCodeFences } from '../src/lib/html-utils'
+import { validateMission } from '../src/lib/mission'
 
 describe('stripCodeFences — non-html language identifiers', () => {
   it('handles ```javascript fence', () => {

@@ -16,17 +16,11 @@ let mockStreamFn = async function* (_sys: string, _user: string, _opts?: unknown
   yield { text: '', fullText, done: true, tokens: 500, ms: 3000 }
 }
 
+// Only mock the LLM client — utility functions (stripCodeFences, looksLikeHtml, injectCsp)
+// now live in @/lib/html-utils and use their real implementations.
 mock.module('@/lib/llm', () => ({
   llmChat: (sys: string, user: string, opts?: unknown) => mockLlmChat(sys, user, opts),
   llmChatStream: (sys: string, user: string, opts?: unknown) => mockStreamFn(sys, user, opts),
-  validateMission: (m: string) => m && m.trim().length >= 3 ? { ok: true } : { ok: false, error: 'Too short' },
-  stripCodeFences: (t: string) => {
-    const f = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
-    let m; while ((m = f.exec(t)) !== null) { const c = m[1].trim(); if (c) return c }
-    return t.trim()
-  },
-  looksLikeHtml: (t: string) => t.trimStart().toLowerCase().startsWith('<!doctype') || t.trimStart().toLowerCase().startsWith('<html'),
-  injectCsp: (h: string) => h.includes('Content-Security-Policy') ? h : h.replace(/<head[^>]*>/i, m => `${m}<meta http-equiv="Content-Security-Policy" content="default-src 'none'">`),
 }))
 
 interface TestRequest {

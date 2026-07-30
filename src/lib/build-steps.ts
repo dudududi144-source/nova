@@ -41,7 +41,7 @@ export function extractStepsFromMission(mission: string): string[] {
     steps.push('Implementing add/complete/delete...')
     steps.push('Adding filters (all/active/completed)...')
     steps.push('Styling the todo UI...')
-  } else if (lower.includes('calculator') || lower.includes('calc')) {
+  } else if (/\bcalc(ulator)?\b/.test(lower)) {
     steps.push('Planning the calculator logic...')
     steps.push('Building the display & buttons...')
     steps.push('Implementing arithmetic operations...')

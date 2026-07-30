@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -23,11 +23,18 @@ interface ChatMessage {
   ts: number
 }
 
+// Quick-start presets — organized by category (stolen from TFA's templates concept,
+// adapted for NOVA's prompt-to-app model).
+// More presets = lower barrier to entry. Users click and build immediately.
 const EXAMPLES: readonly string[] = [
   'Build a snake game with score and game-over',
   'Build a todo app with add, complete, and delete',
   'Build a calculator with keyboard support',
   'Build a color palette generator with copy-to-clipboard',
+  'Build a pomodoro timer with start/pause/reset',
+  'Build a markdown editor with live preview',
+  'Build a drawing canvas with brush size and color',
+  'Build a quiz app with multiple choice and score',
 ]
 
 const REFINE_THINKING_STEPS: readonly string[] = [
@@ -396,6 +403,28 @@ export default function Home() {
     toast.success(`Downloaded ${filename}`)
   }, [result])
 
+  // Copy HTML to clipboard
+  const copyHtml = useCallback(async () => {
+    if (!result?.html) return
+    try {
+      await navigator.clipboard.writeText(result.html)
+      toast.success('HTML copied to clipboard')
+    } catch {
+      toast.error('Failed to copy — try downloading instead')
+    }
+  }, [result])
+
+  // Open the HTML in a new browser tab (full-screen preview)
+  const openInNewTab = useCallback(() => {
+    if (!result?.html) return
+    const blob = new Blob([result.html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    // Revoke after 30s — enough time for the tab to load
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    toast.info('Opened in new tab')
+  }, [result])
+
   // Chat refine: SSE streaming — same pattern as build/code
   const sendChat = useCallback(async () => {
     const msg = chatInput.trim()
@@ -410,6 +439,9 @@ export default function Home() {
     refineAbortRef.current?.abort()
     const controller = new AbortController()
     refineAbortRef.current = controller
+
+    // Clear live preview so refine starts fresh
+    setLivePreviewHtml(null)
 
     try {
       const res = await fetch('/api/refine', {
@@ -456,7 +488,10 @@ export default function Home() {
           if (!dataLine.startsWith('data: ')) continue
           try {
             const evt = JSON.parse(dataLine.slice(6))
-            if (evt.type === 'result') {
+            if (evt.type === 'token') {
+              // Live token streaming — show refined HTML appearing in real-time
+              setLivePreviewHtml(prev => (prev ?? '') + (evt.text ?? ''))
+            } else if (evt.type === 'result') {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0
               finalMs = evt.ms ?? 0
@@ -511,6 +546,7 @@ export default function Home() {
       if (refineAbortRef.current === controller) {
         refineAbortRef.current = null
         setRefining(false)
+        setLivePreviewHtml(null) // clear live preview so final result shows
       }
     }
   }, [chatInput, refining])
@@ -522,7 +558,7 @@ export default function Home() {
     }
   }, [chatMessages, refining])
 
-  // Keyboard shortcuts: Esc=cancel build/refine, ⌘S/Ctrl+S=download
+  // Keyboard shortcuts: Esc=cancel build/refine, ⌘S/Ctrl+S=download, ⌘N/Ctrl+N=new
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Esc cancels a build or refine
@@ -535,6 +571,7 @@ export default function Home() {
           refineAbortRef.current?.abort()
           refineAbortRef.current = null
           setRefining(false)
+          setLivePreviewHtml(null)
           toast.info('Refine cancelled')
         }
         return
@@ -547,10 +584,18 @@ export default function Home() {
         }
         return
       }
+      // ⌘N / Ctrl+N starts a new build (preventDefault to stop browser new window)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        if (!loading && !refining) {
+          reset()
+        }
+        return
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [loading, refining, result, download, cancelBuild])
+  }, [loading, refining, result, download, cancelBuild, reset])
 
   // Helper: get current thinking step text (DYNAMIC — from mission or plan)
   const getThinkingText = useCallback(() => {
@@ -840,15 +885,23 @@ export default function Home() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={openInNewTab} disabled={!result || loading} title="Open in new tab">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result} title="Download HTML file">
                   <Download className="h-3.5 w-3.5" />
                   Download
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining} title="Rebuild from scratch">
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset} title={loading ? 'Cancel build' : 'Start new'}>
                   {loading ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                   {loading ? 'Cancel' : 'New'}
                 </Button>
@@ -915,22 +968,13 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Preview iframe — srcDoc avoids blob URL lifecycle complexity.
-                bg-neutral-950 prevents white flash before the LLM's CSS loads.
-                During rebuild, show a loading overlay so the user doesn't think
-                the old preview is the new one. */}
+            {/* Preview iframe — single iframe handles both live preview and final result.
+                During build/refine, srcDoc shows livePreviewHtml (partial HTML as tokens arrive).
+                When idle, srcDoc shows the final result.html.
+                bg-neutral-950 prevents white flash before the LLM's CSS loads. */}
             <div className="relative min-h-0 flex-1 bg-neutral-950">
-              {/* Live preview during streaming — show partial HTML as it arrives */}
-              {loading && livePreviewHtml && livePreviewHtml.length > 50 && (
-                <iframe
-                  srcDoc={livePreviewHtml}
-                  title="Live Preview"
-                  sandbox="allow-scripts"
-                  className="absolute inset-0 h-full w-full border-0 bg-neutral-950 z-20"
-                />
-              )}
-              {/* Loading overlay (shown when no live preview yet) */}
-              {loading && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
+              {/* Loading overlay (shown when building/refining and no live preview yet) */}
+              {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
                   <div className="flex flex-col items-center gap-3 text-neutral-400">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -953,7 +997,7 @@ export default function Home() {
               )}
               <iframe
                 key={result.id}
-                srcDoc={livePreviewHtml && loading ? livePreviewHtml : result.html}
+                srcDoc={(loading || refining) && livePreviewHtml ? livePreviewHtml : result.html}
                 title="Preview"
                 sandbox="allow-scripts"
                 className="h-full w-full border-0 bg-neutral-950"
@@ -970,6 +1014,7 @@ export default function Home() {
           <span className="hidden sm:inline">
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+N</kbd> new ·
             <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel
           </span>
           <span className="sm:hidden">⌘+Enter to build</span>
