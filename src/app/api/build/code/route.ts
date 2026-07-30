@@ -9,7 +9,7 @@ import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 90
 
 const CODER_PROMPT = `You are an expert front-end engineer. Output the complete HTML app.
 
@@ -28,7 +28,7 @@ QUALITY:
 - Semantic HTML, aria-labels, CSS transitions on interactive elements.
 - Handle edge cases (empty input, game-over state).
 
-Follow the plan. Implement every feature. Output the HTML now:`
+Keep it concise but complete. Output the HTML now:`
 
 const codeLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
 const MAX_BODY_BYTES = 50_000
@@ -67,9 +67,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('code.started', { ip, mission: mission.slice(0, 80), hasPlan: !!plan })
 
-  // Timeout controller
+  // Timeout controller — 75s (under 90s maxDuration, under Caddy/browser timeout)
   const timeoutController = new AbortController()
-  const timeoutTimer = setTimeout(() => timeoutController.abort(), 110_000)
+  const timeoutTimer = setTimeout(() => timeoutController.abort(), 75_000)
 
   if (request.signal.aborted) {
     clearTimeout(timeoutTimer)
@@ -86,9 +86,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     : `Mission: ${mission}`
 
   const result = await llmChat(CODER_PROMPT, planContext, {
-    maxTokens: 16000,
+    maxTokens: 12000,
     temperature: 0.4,
-    timeoutMs: 100_000,
+    timeoutMs: 70_000,
     signal: timeoutController.signal,
   })
 

@@ -172,25 +172,55 @@ export default function Home() {
       // If architect failed, continue with mission-based steps (already set)
 
       // ═══ STAGE 2: CODER — generate HTML using the plan ═══
-      // Try with plan first. If it fails (502/timeout), retry without plan (simpler, faster).
-      let codeRes = await fetch('/api/build/code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
-        signal: controller.signal,
-      })
-
-      // If first attempt failed, retry without the plan (simpler prompt = faster = less likely to timeout)
-      if (!codeRes.ok) {
-        console.log('[NOVA] Code stage failed, retrying without plan...')
-        // Update thinking steps to show retry
-        setBuildSteps(['Retrying with simpler approach...', 'Generating code...', 'Finalizing...'])
+      // Try with plan first. If the SERVER returns an error (502), retry without plan.
+      let codeRes: Response | null = null
+      try {
         codeRes = await fetch('/api/build/code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mission: m, plan: null }),
+          body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
           signal: controller.signal,
         })
+      } catch (fetchErr) {
+        // Fetch itself threw (network error, abort, or browser timeout)
+        if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') return
+        console.log('[NOVA] Code fetch failed, retrying without plan...', fetchErr)
+        setBuildSteps(['Retrying with simpler approach...', 'Generating code...', 'Finalizing...'])
+        try {
+          codeRes = await fetch('/api/build/code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mission: m, plan: null }),
+            signal: controller.signal,
+          })
+        } catch (retryErr) {
+          if (retryErr instanceof DOMException && retryErr.name === 'AbortError') return
+          fail('Network error during build. Please try again.')
+          return
+        }
+      }
+
+      // If server returned error status, retry without plan
+      if (codeRes && !codeRes.ok) {
+        console.log('[NOVA] Code returned', codeRes.status, ', retrying without plan...')
+        setBuildSteps(['Retrying with simpler approach...', 'Generating code...', 'Finalizing...'])
+        try {
+          codeRes = await fetch('/api/build/code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mission: m, plan: null }),
+            signal: controller.signal,
+          })
+        } catch (retryErr) {
+          if (retryErr instanceof DOMException && retryErr.name === 'AbortError') return
+          fail('Build failed. Please try again.')
+          return
+        }
+      }
+
+      if (!codeRes) {
+        fail('Build failed. Please try again.')
+        return
       }
 
       const contentType = codeRes.headers.get('content-type') ?? ''
