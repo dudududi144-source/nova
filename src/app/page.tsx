@@ -50,6 +50,8 @@ export default function Home() {
   const [thinkingStep, setThinkingStep] = useState(0)
   const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
   const [planSummary, setPlanSummary] = useState<string | null>(null)
+  const [qualityScore, setQualityScore] = useState(0)
+  const [qualityMetrics, setQualityMetrics] = useState('')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [refining, setRefining] = useState(false)
@@ -204,6 +206,8 @@ export default function Home() {
       let finalHtml = ''
       let finalTokens = 0
       let finalMs = 0
+      let finalQuality = 0
+      let finalMetrics = ''
       let streamError: string | null = null
 
       while (true) {
@@ -234,6 +238,8 @@ export default function Home() {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0
               finalMs = evt.ms ?? 0
+              finalQuality = evt.quality ?? 0
+              finalMetrics = evt.metrics ?? ''
             } else if (evt.type === 'error') {
               streamError = evt.error ?? 'Unknown error'
             }
@@ -291,7 +297,9 @@ export default function Home() {
         return next
       })
 
-      toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens`)
+      toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
+      setQualityScore(finalQuality)
+      setQualityMetrics(finalMetrics)
     } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
@@ -342,6 +350,8 @@ export default function Home() {
     setFailedMission(null)
     setMission('')
     setChatMessages([])
+    setQualityScore(0)
+    setQualityMetrics('')
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -413,6 +423,8 @@ export default function Home() {
       let finalHtml = ''
       let finalTokens = 0
       let finalMs = 0
+      let finalQuality = 0
+      let finalMetrics = ''
       let streamError: string | null = null
 
       while (true) {
@@ -432,6 +444,8 @@ export default function Home() {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0
               finalMs = evt.ms ?? 0
+              finalQuality = evt.quality ?? 0
+              finalMetrics = evt.metrics ?? ''
             } else if (evt.type === 'error') {
               streamError = evt.error ?? 'Unknown error'
             }
@@ -469,7 +483,9 @@ export default function Home() {
         ts: Date.now(),
       }])
 
-      toast.success('Refined!')
+      toast.success(`Refined! ${(finalMs / 1000).toFixed(1)}s · quality: ${finalQuality}`)
+      setQualityScore(finalQuality)
+      setQualityMetrics(finalMetrics)
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       const failMsg = err instanceof Error ? err.message : 'Network error'
@@ -564,6 +580,11 @@ export default function Home() {
               <>
                 <Zap className="h-3 w-3" />
                 <span>{(result.ms / 1000).toFixed(1)}s · {result.tokens} tokens</span>
+                {qualityScore > 0 && (
+                  <span className={`ml-1 rounded px-1 ${qualityScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`} title={qualityMetrics}>
+                    Q:{qualityScore}
+                  </span>
+                )}
               </>
             )}
           </div>

@@ -10,6 +10,7 @@ import type { NextRequest } from 'next/server'
 import { llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
+import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -105,8 +106,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       }, 3000)
 
       try {
+        // Adaptive token budget — refine usually needs less than build
+        const tokenBudget = estimateTokenBudget(null) // refine doesn't have a plan, use default
+        logger.info('refine.budget', { ip, maxTokens: tokenBudget })
+
         const result = await llmChat(REFINE_PROMPT, userPrompt, {
-          maxTokens: 32000,
+          maxTokens: tokenBudget,
           temperature: 0.3,
           timeoutMs: 150_000,
           signal: request.signal,
@@ -147,9 +152,16 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         const finalHtml = injectCsp(rawHtml)
         const totalMs = Date.now() - startTime
-        logger.info('refine.completed', { ip, ms: totalMs, tokens: result.tokens, htmlBytes: finalHtml.length })
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: result.tokens, ms: totalMs })}\n\n`))
+        // ── INTELLIGENCE: Validate refined output ──
+        const validation = validateOutput(finalHtml, mission)
+        logger.info('refine.validated', { ip, score: validation.score, passed: validation.passed })
+
+        // ── INTELLIGENCE: Quality metrics ──
+        const metrics = analyzeQuality(finalHtml)
+        logger.info('refine.completed', { ip, ms: totalMs, tokens: result.tokens, htmlBytes: finalHtml.length, score: validation.score, metrics: metrics.summary })
+
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: result.tokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
         controller.close()
       } catch (err: unknown) {
         if (keepAliveInterval) clearInterval(keepAliveInterval)

@@ -116,8 +116,8 @@ describe('Refine route characterization (SSE)', () => {
     expect(refineSource).toContain('maxDuration = 180')
   })
 
-  it('has no arbitrary maxTokens limit', () => {
-    expect(refineSource).toContain('maxTokens: 32000')
+  it('has no arbitrary maxTokens limit (uses estimateTokenBudget)', () => {
+    expect(refineSource).toContain('estimateTokenBudget')
   })
 
   it('has truncation detection', () => {
