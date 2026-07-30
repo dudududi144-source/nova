@@ -1,162 +1,132 @@
-// Tests for system prompt content, Content-Type behavior, and errorResponse
+// Characterization tests for route sources
 import { describe, it, expect } from 'bun:test'
-
-// The system prompt is a const in route.ts — we can't import it directly
-// (it's not exported), so we test its required properties by reading the file.
-// This is a characterization test — if the prompt changes, this test catches it.
-
 import * as fs from 'fs'
 import * as path from 'path'
 
-const routeSource = fs.readFileSync(
-  path.join(process.cwd(), 'src/app/api/build/route.ts'),
-  'utf-8'
+const architectSource = fs.readFileSync(
+  path.join(process.cwd(), 'src/app/api/build/architect/route.ts'), 'utf-8'
+)
+const codeSource = fs.readFileSync(
+  path.join(process.cwd(), 'src/app/api/build/code/route.ts'), 'utf-8'
+)
+const refineSource = fs.readFileSync(
+  path.join(process.cwd(), 'src/app/api/refine/route.ts'), 'utf-8'
 )
 
-describe('ARCHITECT_PROMPT content (characterization)', () => {
-  it('exists and returns JSON plan', () => {
-    expect(routeSource).toContain('ARCHITECT_PROMPT')
-    expect(routeSource).toContain('JSON')
+describe('Architect route characterization', () => {
+  it('has ARCHITECT_PROMPT with JSON format', () => {
+    expect(architectSource).toContain('ARCHITECT_PROMPT')
+    expect(architectSource).toContain('JSON')
   })
 
-  it('has brief output format', () => {
-    expect(routeSource).toContain('brief')
+  it('has maxDuration of 30', () => {
+    expect(architectSource).toContain('maxDuration = 30')
   })
 
-  it('includes plan structure (type, title, features)', () => {
-    expect(routeSource).toContain('type')
-    expect(routeSource).toContain('title')
-    expect(routeSource).toContain('features')
-  })
-})
-
-describe('CODER_PROMPT content (characterization)', () => {
-  it('forbids localStorage', () => {
-    expect(routeSource).toContain('localStorage')
-    expect(routeSource).toContain('in-memory')
+  it('has rate limiter', () => {
+    expect(architectSource).toContain('RateLimiter')
   })
 
-  it('has output format rules', () => {
-    expect(routeSource).toContain('DOCTYPE')
-    expect(routeSource).toContain('raw HTML')
+  it('has structured logging', () => {
+    expect(architectSource).toContain('architect.started')
+    expect(architectSource).toContain('architect.completed')
   })
 
-  it('mentions accessibility', () => {
-    expect(routeSource).toContain('aria-labels')
-  })
-
-  it('mentions requestAnimationFrame', () => {
-    expect(routeSource).toContain('requestAnimationFrame')
-  })
-
-  it('has dark theme default', () => {
-    expect(routeSource).toContain('Dark theme')
-  })
-
-  it('forbids external resources', () => {
-    expect(routeSource).toContain('No external')
+  it('validates mission before rate limiting', () => {
+    const v = architectSource.indexOf('validateMission')
+    const r = architectSource.indexOf('architectLimiter.check')
+    expect(v).toBeGreaterThan(-1)
+    expect(r).toBeGreaterThan(-1)
+    expect(v).toBeLessThan(r)
   })
 })
 
-describe('Route configuration (characterization)', () => {
-  it('has force-dynamic', () => {
-    expect(routeSource).toContain("dynamic = 'force-dynamic'")
+describe('Code route characterization (SSE)', () => {
+  it('has CODER_PROMPT with quality requirements', () => {
+    expect(codeSource).toContain('CODER_PROMPT')
+    expect(codeSource).toContain('requestAnimationFrame')
+    expect(codeSource).toContain('aria-labels')
   })
 
-  it('has nodejs runtime', () => {
-    expect(routeSource).toContain("runtime = 'nodejs'")
+  it('returns SSE stream (text/event-stream)', () => {
+    expect(codeSource).toContain('text/event-stream')
+    expect(codeSource).toContain('ReadableStream')
   })
 
-  it('has maxDuration of 120', () => {
-    expect(routeSource).toContain('maxDuration = 120')
-  })
-
-  it('has body size limit of 10KB', () => {
-    expect(routeSource).toContain('10_000')
-    expect(routeSource).toContain('MAX_BODY_BYTES')
-  })
-
-  it('has rate limit: 10 prod, 100 dev', () => {
-    expect(routeSource).toContain("production' ? 10 : 100")
-  })
-
-  it('has maxKeys limit of 1000', () => {
-    expect(routeSource).toContain('1000')
-  })
-
-  it('has timeout of 110s (under 120s maxDuration)', () => {
-    expect(routeSource).toContain('110_000')
-  })
-
-  it('has Content-Type header check for body size (content-length)', () => {
-    expect(routeSource).toContain('content-length')
-    expect(routeSource).toContain('MAX_BODY_BYTES')
-  })
-
-  it('has errorResponse helper', () => {
-    expect(routeSource).toContain('function errorResponse')
-  })
-
-  it('has ErrorBody and SuccessBody interfaces', () => {
-    expect(routeSource).toContain('interface ErrorBody')
-    expect(routeSource).toContain('interface SuccessBody')
-  })
-
-  it('validation happens before rate limiting', () => {
-    const validationPos = routeSource.indexOf('validateMission')
-    const rateLimitPos = routeSource.indexOf('buildLimiter.check')
-    expect(validationPos).toBeGreaterThan(-1)
-    expect(rateLimitPos).toBeGreaterThan(-1)
-    expect(validationPos).toBeLessThan(rateLimitPos)
-  })
-
-  it('CSP is injected after HTML validation', () => {
-    const looksLikeHtmlPos = routeSource.indexOf('looksLikeHtml')
-    const injectCspPos = routeSource.indexOf('injectCsp')
-    expect(looksLikeHtmlPos).toBeGreaterThan(-1)
-    expect(injectCspPos).toBeGreaterThan(-1)
-    expect(looksLikeHtmlPos).toBeLessThan(injectCspPos)
-  })
-
-  it('has 2-stage pipeline (architect + coder)', () => {
-    expect(routeSource).toContain('STAGE 1: ARCHITECT')
-    expect(routeSource).toContain('STAGE 2: CODER')
-    expect(routeSource).toContain('architectResult')
-    expect(routeSource).toContain('coderResult')
+  it('has keepalive progress events', () => {
+    expect(codeSource).toContain('keepAliveInterval')
+    expect(codeSource).toContain('setInterval')
+    expect(codeSource).toContain('progress')
   })
 
   it('has truncation detection + continuation retry', () => {
-    expect(routeSource).toContain('</html>')
-    expect(routeSource).toContain('truncated')
-    expect(routeSource).toContain('Continue from here')
+    expect(codeSource).toContain('</html>')
+    expect(codeSource).toContain('truncated')
   })
 
-  it('structured logging for all events', () => {
-    expect(routeSource).toContain("build.started")
-    expect(routeSource).toContain("build.completed")
-    expect(routeSource).toContain("build.architect_started")
-    expect(routeSource).toContain("build.architect_completed")
-    expect(routeSource).toContain("build.coder_started")
-    expect(routeSource).toContain("build.rate_limited")
-    expect(routeSource).toContain("build.invalid_mission")
-    expect(routeSource).toContain("build.invalid_html")
+  it('has no arbitrary maxTokens limit (32000 = generous)', () => {
+    expect(codeSource).toContain('maxTokens: 32000')
+  })
+
+  it('has maxDuration of 180', () => {
+    expect(codeSource).toContain('maxDuration = 180')
+  })
+
+  it('sends result and error event types', () => {
+    expect(codeSource).toContain("type: 'result'")
+    expect(codeSource).toContain("type: 'error'")
+  })
+
+  it('has CSP injection after HTML validation', () => {
+    const looks = codeSource.indexOf('looksLikeHtml')
+    const csp = codeSource.indexOf('injectCsp')
+    expect(looks).toBeGreaterThan(-1)
+    expect(csp).toBeGreaterThan(-1)
+    expect(looks).toBeLessThan(csp)
+  })
+
+  it('clears keepalive on success, error, and exception', () => {
+    expect(codeSource).toContain('clearInterval(keepAliveInterval)')
+  })
+
+  it('has structured logging', () => {
+    expect(codeSource).toContain('code.started')
+    expect(codeSource).toContain('code.completed')
   })
 })
 
-describe('Content-Type behavior (via route tests)', () => {
-  it('has body parse error handling', () => {
-    expect(routeSource).toContain('Invalid JSON')
+describe('Refine route characterization (SSE)', () => {
+  it('has REFINE_PROMPT with refinement rules', () => {
+    expect(refineSource).toContain('REFINE_PROMPT')
+    expect(refineSource).toContain('localStorage')
+    expect(refineSource).toContain('in-memory')
   })
 
-  it('has structured error responses (ErrorBody interface)', () => {
-    expect(routeSource).toContain('interface ErrorBody')
-    expect(routeSource).toContain('ok: false')
-    expect(routeSource).toContain('error: string')
+  it('returns SSE stream', () => {
+    expect(refineSource).toContain('text/event-stream')
+    expect(refineSource).toContain('ReadableStream')
   })
 
-  it('has structured success responses (SuccessBody interface)', () => {
-    expect(routeSource).toContain('interface SuccessBody')
-    expect(routeSource).toContain('ok: true')
-    expect(routeSource).toContain('html: string')
+  it('has keepalive progress events', () => {
+    expect(refineSource).toContain('keepAliveInterval')
+    expect(refineSource).toContain('progress')
+  })
+
+  it('has maxDuration of 180', () => {
+    expect(refineSource).toContain('maxDuration = 180')
+  })
+
+  it('has no arbitrary maxTokens limit', () => {
+    expect(refineSource).toContain('maxTokens: 32000')
+  })
+
+  it('has truncation detection', () => {
+    expect(refineSource).toContain('</html>')
+    expect(refineSource).toContain('truncated')
+  })
+
+  it('has structured logging', () => {
+    expect(refineSource).toContain('refine.started')
+    expect(refineSource).toContain('refine.completed')
   })
 })

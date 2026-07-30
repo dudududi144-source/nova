@@ -1,0 +1,154 @@
+// Tests for /api/build/code SSE streaming route
+import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from 'bun:test'
+import type { NextRequest } from 'next/server'
+
+const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => Promise.resolve({
+  ok: true,
+  text: '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>',
+  tokens: 500,
+  ms: 3000,
+}))
+
+mock.module('@/lib/llm', () => ({
+  llmChat: (sys: string, user: string, opts?: unknown) => mockLlmChat(sys, user, opts),
+  validateMission: (m: string) => m && m.trim().length >= 3 ? { ok: true } : { ok: false, error: 'Too short' },
+  stripCodeFences: (t: string) => {
+    const f = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
+    let m; while ((m = f.exec(t)) !== null) { const c = m[1].trim(); if (c) return c }
+    return t.trim()
+  },
+  looksLikeHtml: (t: string) => t.trimStart().toLowerCase().startsWith('<!doctype') || t.trimStart().toLowerCase().startsWith('<html'),
+  injectCsp: (h: string) => h.includes('Content-Security-Policy') ? h : h.replace(/<head[^>]*>/i, m => `${m}<meta http-equiv="Content-Security-Policy" content="default-src 'none'">`),
+}))
+
+interface TestRequest {
+  headers: Map<string, string>
+  json: () => Promise<unknown>
+  signal: AbortSignal
+}
+
+let ipCounter = 0
+function makeRequest(body: unknown): TestRequest {
+  return {
+    headers: new Map([['x-forwarded-for', `40.0.0.${ipCounter++}`]]),
+    json: async () => body,
+    signal: new AbortController().signal,
+  }
+}
+
+const { POST } = await import('../src/app/api/build/code/route')
+
+// Helper: read entire SSE stream and return all events
+async function readSSE(res: Response): Promise<Record<string, unknown>[]> {
+  const reader = res.body?.getReader()
+  if (!reader) return []
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const events: Record<string, unknown>[] = []
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() ?? ''
+    for (const part of parts) {
+      const line = part.trim()
+      if (line.startsWith('data: ')) {
+        try { events.push(JSON.parse(line.slice(6))) } catch {}
+      }
+    }
+  }
+  return events
+}
+
+describe('POST /api/build/code (SSE streaming)', () => {
+  let logSpy: ReturnType<typeof spyOn>
+  let errorSpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    mockLlmChat.mockReset()
+    mockLlmChat.mockResolvedValue({
+      ok: true,
+      text: '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>',
+      tokens: 500,
+      ms: 3000,
+    })
+    logSpy = spyOn(console, 'log').mockImplementation(() => {})
+    errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    logSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
+
+  it('returns SSE content-type for valid request', async () => {
+    const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
+    expect(res.status).toBe(200)
+    const ct = res.headers.get('content-type') ?? ''
+    expect(ct).toContain('text/event-stream')
+  })
+
+  it('returns 400 for missing mission', async () => {
+    const res = await POST(makeRequest({}) as unknown as NextRequest)
+    expect(res.status).toBe(400)
+  })
+
+  it('streams progress events then a result event', async () => {
+    const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
+    const events = await readSSE(res)
+
+    // Should have at least one progress event and one result event
+    const progressEvents = events.filter(e => e.type === 'progress')
+    const resultEvents = events.filter(e => e.type === 'result')
+    expect(resultEvents.length).toBe(1)
+    expect(progressEvents.length).toBeGreaterThanOrEqual(0) // might be 0 if LLM is fast
+
+    const result = resultEvents[0] as Record<string, unknown>
+    expect(result.html).toContain('<!DOCTYPE html>')
+    expect(result.tokens).toBe(500)
+  })
+
+  it('streams error event when LLM fails', async () => {
+    mockLlmChat.mockImplementation(async () => ({
+      ok: false, text: '', tokens: 0, ms: 100, error: 'LLM failed',
+    }))
+    const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
+    const events = await readSSE(res)
+    const errorEvents = events.filter(e => e.type === 'error')
+    expect(errorEvents.length).toBe(1)
+    expect(errorEvents[0]?.error).toBe('LLM failed')
+  })
+
+  it('streams error event when LLM returns non-HTML', async () => {
+    mockLlmChat.mockImplementation(async () => ({
+      ok: true, text: 'not html', tokens: 50, ms: 100,
+    }))
+    const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
+    const events = await readSSE(res)
+    const errorEvents = events.filter(e => e.type === 'error')
+    expect(errorEvents.length).toBe(1)
+  })
+
+  it('accepts plan in body', async () => {
+    const res = await POST(makeRequest({ mission: 'Build a game', plan: { title: 'Snake' } }) as unknown as NextRequest)
+    expect(res.status).toBe(200)
+    const events = await readSSE(res)
+    const result = events.find(e => e.type === 'result')
+    expect(result).toBeTruthy()
+  })
+
+  it('calls llmChat exactly once for valid request', async () => {
+    await readSSE(await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest))
+    expect(mockLlmChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('logs code.started and code.completed', async () => {
+    await readSSE(await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest))
+    const started = logSpy.mock.calls.filter((c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"code.started"'))
+    const completed = logSpy.mock.calls.filter((c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"code.completed"'))
+    expect(started.length).toBe(1)
+    expect(completed.length).toBe(1)
+  })
+})

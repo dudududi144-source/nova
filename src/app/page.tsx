@@ -370,7 +370,7 @@ export default function Home() {
     toast.success(`Downloaded ${filename}`)
   }, [result])
 
-  // Chat refine: send message + current HTML to LLM, get back updated HTML
+  // Chat refine: SSE streaming — same pattern as build/code
   const sendChat = useCallback(async () => {
     const msg = chatInput.trim()
     const currentResult = resultRef.current
@@ -381,7 +381,6 @@ export default function Home() {
     setChatInput('')
     setRefining(true)
 
-    // Abort any in-flight refine (separate from build abort)
     refineAbortRef.current?.abort()
     const controller = new AbortController()
     refineAbortRef.current = controller
@@ -394,40 +393,70 @@ export default function Home() {
         signal: controller.signal,
       })
 
-      const contentType = res.headers.get('content-type') ?? ''
-      if (!contentType.includes('application/json')) {
-        const failMsg = `Server error (${res.status})`
-        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
-        toast.error(failMsg)
+      if (!res.ok) {
+        let errorMsg = `Server error (${res.status})`
+        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMsg}`, ts: Date.now() }])
+        toast.error(errorMsg)
         return
       }
 
-      let data: BuildResponse
-      try {
-        data = (await res.json()) as BuildResponse
-      } catch {
-        const failMsg = `Server error (${res.status})`
-        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
-        toast.error(failMsg)
+      // Read SSE stream
+      const reader = res.body?.getReader()
+      if (!reader) {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: No stream', ts: Date.now() }])
         return
       }
 
-      if (!res.ok || !data.ok) {
-        const failMsg = typeof data?.error === 'string' ? data.error : `Server error (${res.status})`
-        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
-        toast.error(failMsg)
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalHtml = ''
+      let finalTokens = 0
+      let finalMs = 0
+      let streamError: string | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() ?? ''
+
+        for (const eventStr of events) {
+          const dataLine = eventStr.trim()
+          if (!dataLine.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(dataLine.slice(6))
+            if (evt.type === 'result') {
+              finalHtml = evt.html ?? ''
+              finalTokens = evt.tokens ?? 0
+              finalMs = evt.ms ?? 0
+            } else if (evt.type === 'error') {
+              streamError = evt.error ?? 'Unknown error'
+            }
+          } catch {}
+        }
+      }
+
+      if (streamError) {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${streamError}`, ts: Date.now() }])
+        toast.error(streamError)
         return
       }
 
-      // Update the result with the refined HTML
+      if (!finalHtml) {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: Empty response', ts: Date.now() }])
+        return
+      }
+
       const refinedResult: BuildResult = {
         ...currentResult,
         id: newBuildId(),
-        html: data.html ?? '',
+        html: finalHtml,
       }
       setResult(refinedResult)
 
-      // Update history with the refined version
       setHistory(prev => {
         const next = [refinedResult, ...prev.filter(h => h.mission !== currentResult.mission)].slice(0, 10)
         try { localStorage.setItem('nova_history', JSON.stringify(next)) } catch {}
@@ -436,7 +465,7 @@ export default function Home() {
 
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        content: `Updated! ${data.ms ? `${(data.ms / 1000).toFixed(1)}s` : ''} · ${data.tokens ?? 0} tokens`,
+        content: `Updated! ${finalMs ? `${(finalMs / 1000).toFixed(1)}s` : ''} · ${finalTokens} tokens`,
         ts: Date.now(),
       }])
 
