@@ -2348,3 +2348,52 @@ Stage Summary:
   the general quality hints (dark theme, responsive, transitions) in the enriched
   text sent to the architect. Previously these were silently dropped.
 - Dead code removal keeps the codebase clean and maintainable.
+
+---
+Task ID: 45
+Agent: main (Z.ai Code)
+Task: Fix build failure — "network error" when building a music looper. User reported the process broke and couldn't finish.
+
+ROOT CAUSE:
+The user tried to build "build i music looper with effects and spounds i can play in loops".
+The architect succeeded, the coder streamed 7367 chars, but the output was truncated (no </html>).
+The truncation retry (llmChat, 40s timeout) was attempted. During the retry, the controller
+was already closed (client disconnect or runtime cleanup), and calling controller.enqueue or
+controller.close on a closed controller threw "Invalid state: Controller is already closed".
+This exception was caught, but the catch block ALSO tried to controller.enqueue (to send the
+error event) on the already-closed controller, which threw again. The client's SSE connection
+was abruptly terminated, and the client saw "network error".
+
+Dev log evidence:
+  code.truncated (7367 chars)
+  code.exception: "Invalid state: Controller is already closed"
+  POST /api/build/code 200 in 31.5s (no result event delivered)
+
+FIX:
+Added safeEnqueue() and safeClose() helper functions to both code and refine routes.
+These track a `controllerClosed` flag and wrap all controller operations in try-catch.
+If the controller is already closed, safeEnqueue returns false (no-op) and safeClose
+returns void (no-op). This prevents the "Controller is already closed" exception from
+ever being thrown.
+
+Also improved AbortError handling: when the client disconnects (AbortError), the server
+now logs it as info (not error) and doesn't try to send an error event to the gone client.
+
+Applied to BOTH routes:
+- src/app/api/build/code/route.ts: safeEnqueue/safeClose + AbortError handling
+- src/app/api/refine/route.ts: same pattern
+
+BROWSER VERIFICATION:
+- Rebuilt the exact same mission: "build i music looper with effects and spounds i can play in loops"
+- Build COMPLETED SUCCESSFULLY: 114s, quality 100, 696 lines, 24 functions, 11 listeners, 45 CSS rules
+- The Music Looper app works: Play/Previous/Next buttons, Set Loop Start/End, Playlist, Audio Effects
+- Live preview showed the app building in real-time during the 114s build
+- Zero console errors, zero page errors
+
+Stage Summary:
+- Tests: 367 pass, 0 fail, 641 expect() calls
+- Lint: 0 errors, 1 intentional warning
+- TypeScript: clean
+- This was a REAL USER-FACING BUG that caused every complex build (one that triggers truncation
+  retry) to fail with "network error". The music looper was complex enough (696 lines) to trigger
+  truncation. Now complex builds complete successfully.

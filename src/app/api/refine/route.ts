@@ -102,14 +102,29 @@ export async function POST(request: NextRequest): Promise<Response> {
     async start(controller) {
       let keepAliveInterval: ReturnType<typeof setInterval> | null = null
       let stepIndex = 0
+      let controllerClosed = false
+
+      // Safe enqueue/close — same pattern as code route. Prevents "Controller is already closed" errors.
+      const safeEnqueue = (data: string): boolean => {
+        if (controllerClosed) return false
+        try {
+          controller.enqueue(encoder.encode(data))
+          return true
+        } catch {
+          controllerClosed = true
+          return false
+        }
+      }
+      const safeClose = (): void => {
+        if (controllerClosed) return
+        controllerClosed = true
+        try { controller.close() } catch {}
+      }
 
       keepAliveInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - startTime) / 1000)
         const step = REFINE_PROGRESS_STEPS[Math.min(stepIndex, REFINE_PROGRESS_STEPS.length - 1)]
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step, elapsed })}\n\n`))
-        } catch {
-          // Stream closed by client — stop the keepalive to prevent silent interval spam
+        if (!safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step, elapsed })}\n\n`)) {
           if (keepAliveInterval) clearInterval(keepAliveInterval)
           keepAliveInterval = null
         }
@@ -151,10 +166,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           // Send each token chunk to client immediately
           if (chunk.text) {
             fullText = chunk.fullText
-            try {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`))
-            } catch {
-              // stream closed by client
+            if (!safeEnqueue(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`)) {
               break
             }
           }
@@ -165,8 +177,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         if (streamError) {
           logger.error('refine.failed', { ip, error: streamError, ms: llmMs })
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: streamError })}\n\n`))
-          controller.close()
+          safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: streamError })}\n\n`)
+          safeClose()
           return
         }
 
@@ -175,7 +187,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         // Truncation detection + continuation retry
         if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
           logger.warn('refine.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`))
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
 
           const lastChars = rawHtml.slice(-500)
           const retryResult = await llmChat(
@@ -191,8 +203,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         if (!looksLikeHtml(rawHtml)) {
           logger.warn('refine.invalid_html', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'The AI generated invalid output. Try rephrasing your request.' })}\n\n`))
-          controller.close()
+          safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: 'The AI generated invalid output. Try rephrasing your request.' })}\n\n`)
+          safeClose()
           return
         }
 
@@ -206,7 +218,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         // If validation failed (score < 70), try ONE retry with targeted hint (same as code route)
         if (!validation.passed && validation.retryHint) {
           logger.warn('refine.validation_failed', { ip, score: validation.score, retrying: true })
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step: 'Improving output quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`))
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Improving output quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
 
           const retryPrompt = `${userPrompt}\n\n${validation.retryHint}\n\nOutput the complete corrected HTML:`
           const retryResult = await llmChat(REFINE_PROMPT, retryPrompt, {
@@ -226,8 +238,8 @@ export async function POST(request: NextRequest): Promise<Response> {
                 const improvedHtml = injectCsp(retryHtml)
                 const metrics = analyzeQuality(improvedHtml)
                 logger.info('refine.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: improvedHtml.length, score: retryValidation.score, metrics: metrics.summary })
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: improvedHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`))
-                controller.close()
+                safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: improvedHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`)
+                safeClose()
                 return
               }
             }
@@ -239,16 +251,18 @@ export async function POST(request: NextRequest): Promise<Response> {
         const metrics = analyzeQuality(finalHtml)
         logger.info('refine.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: finalHtml.length, score: validation.score, metrics: metrics.summary })
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
-        controller.close()
+        safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`)
+        safeClose()
       } catch (err: unknown) {
         if (keepAliveInterval) clearInterval(keepAliveInterval)
         const errorMsg = err instanceof Error ? err.message : 'Unknown error'
-        logger.error('refine.exception', { ip, error: errorMsg })
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`))
-        } catch {}
-        controller.close()
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          logger.info('refine.aborted', { ip })
+        } else {
+          logger.error('refine.exception', { ip, error: errorMsg })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`)
+        }
+        safeClose()
       }
     },
   })
