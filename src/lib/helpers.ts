@@ -41,7 +41,16 @@ export function isValidHistoryItem(h: unknown): h is BuildResult {
 }
 
 // Filter and validate a history array from localStorage.
+// Dedupes by id (in case localStorage was hand-edited or two tabs raced).
 export function validateHistory(stored: unknown): BuildResult[] {
   if (!Array.isArray(stored)) return []
-  return stored.filter(isValidHistoryItem).slice(0, 10)
+  const seen = new Set<string>()
+  return stored
+    .filter(isValidHistoryItem)
+    .filter(h => {
+      if (seen.has(h.id)) return false
+      seen.add(h.id)
+      return true
+    })
+    .slice(0, 10)
 }

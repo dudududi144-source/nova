@@ -31,7 +31,8 @@ export function stripCodeFences(text: string): string {
  * Rejects HTML fragments, conversational text, JSON, markdown.
  */
 export function looksLikeHtml(text: string): boolean {
-  const lower = text.trimStart().toLowerCase()
+  // Strip UTF-8 BOM (\uFEFF) if present — some proxies/LLMs prepend it.
+  const lower = text.replace(/^\uFEFF/, '').trimStart().toLowerCase()
   return lower.startsWith('<!doctype') || lower.startsWith('<html')
 }
 
@@ -61,9 +62,11 @@ export function injectCsp(html: string): string {
     return html
   }
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`
-  const headMatch = html.match(/<head[^>]*>/i)
+  // Match <head> or <head ...> but NOT <header> — use lookahead to ensure the next char
+  // is whitespace or '>'. Without this, /<head[^>]*>/i matches <header> too.
+  const headMatch = html.match(/<head(?=[\s>])[^>]*>/i)
   if (headMatch) {
-    return html.replace(/<head[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
+    return html.replace(/<head(?=[\s>])[^>]*>/i, `${headMatch[0]}\n${cspMeta}`)
   }
   const htmlTagMatch = html.match(/<html[^>]*>/i)
   if (htmlTagMatch) {

@@ -129,7 +129,18 @@ export default function Home() {
     }
   }, [])
 
-  // Elapsed time counter + dynamic thinking step rotation
+  // Ref mirror of buildSteps so the elapsed-time effect doesn't need buildSteps in its deps.
+  // If buildSteps is in the deps, the effect tears down and re-runs on every token event
+  // (because setBuildSteps is called on every token), resetting startTime and thinkingStep.
+  const buildStepsRef = useRef<string[]>(['Building...'])
+  useEffect(() => {
+    buildStepsRef.current = buildSteps
+  }, [buildSteps])
+
+  // Elapsed time counter + dynamic thinking step rotation.
+  // CRITICAL: deps are [loading, refining] ONLY — not buildSteps.
+  // If buildSteps were in deps, every token event would reset startTime to Date.now(),
+  // the interval would be cleared before it ever fires, and elapsed would stay at 0.
   useEffect(() => {
     if (!loading && !refining) {
       setElapsed(0)
@@ -137,7 +148,6 @@ export default function Home() {
       return
     }
     const startTime = Date.now()
-    const steps = loading ? buildSteps : REFINE_THINKING_STEPS
     let step = 0
     setThinkingStep(0)
 
@@ -145,9 +155,12 @@ export default function Home() {
       const sec = Math.floor((Date.now() - startTime) / 1000)
       setElapsed(sec)
 
-      // Rotate through steps — timing depends on how many steps we have
-      // Allocate ~4 seconds per step, but always keep the last step if we run out
-      const stepDuration = loading ? 4 : 5 // 4s for build (more steps), 5s for refine
+      // Read steps from ref (not from closure — closure would be stale)
+      const steps = loading ? buildStepsRef.current : REFINE_THINKING_STEPS
+      if (steps.length === 0) return
+
+      // Rotate through steps — ~4s per step for build, 5s for refine
+      const stepDuration = loading ? 4 : 5
       const nextStep = Math.min(steps.length - 1, Math.floor(sec / stepDuration))
       if (nextStep !== step) {
         step = nextStep
@@ -155,7 +168,7 @@ export default function Home() {
       }
     }, 1000)
     return () => clearInterval(timer)
-  }, [loading, refining, buildSteps])
+  }, [loading, refining])
 
   // Centralized build function. Aborts any in-flight build first.
   // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
@@ -172,8 +185,13 @@ export default function Home() {
       setMission(explicitMission)
     }
 
-    // Abort any in-flight build (covers: rebuild, history-click-during-build, reset-during-build)
+    // Abort any in-flight build AND refine (covers: rebuild during refine, history-click-during-build, reset-during-build)
+    // This prevents the race condition where build and refine run simultaneously and
+    // both call setResult/setHistory, corrupting state.
     abortRef.current?.abort()
+    refineAbortRef.current?.abort()
+    refineAbortRef.current = null
+    setRefining(false)
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -265,8 +283,10 @@ export default function Home() {
 
         buffer += decoder.decode(value, { stream: true })
 
-        // Parse SSE events (separated by \n\n)
-        const events = buffer.split('\n\n')
+        // Parse SSE events (separated by \n\n or \r\n\r\n — some proxies normalize to \r\n)
+        // Normalize \r\n to \n first so the split works regardless of proxy behavior.
+        const normalized = buffer.replace(/\r\n/g, '\n')
+        const events = normalized.split('\n\n')
         buffer = events.pop() ?? '' // keep incomplete event in buffer
 
         for (const eventStr of events) {
@@ -329,6 +349,7 @@ export default function Home() {
       }
 
       setResult(buildResult)
+      resultRef.current = buildResult // Update ref synchronously
       addBuildToHistory(buildResult)
 
       toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
@@ -357,6 +378,7 @@ export default function Home() {
     setLoading(false)
     setRefining(false)
     setResult(h)
+    resultRef.current = h // Update ref synchronously so sendChat sees the correct result immediately
     setMission(h.mission)
     setError(null)
     setFailedMission(null)
@@ -377,6 +399,17 @@ export default function Home() {
     setLoading(false)
     setError(null)
     setFailedMission(null)
+    setLivePreviewHtml(null) // Clear stale partial HTML so it doesn't flash back later
+  }, [])
+
+  // Cancel an in-flight refine — accessible via the toolbar Cancel button during refining.
+  // Previously, the Cancel button only appeared during loading, leaving no mouse-accessible
+  // way to cancel a refine (only Esc worked, which is not discoverable).
+  const cancelRefine = useCallback(() => {
+    refineAbortRef.current?.abort()
+    refineAbortRef.current = null
+    setRefining(false)
+    setLivePreviewHtml(null)
   }, [])
 
   const reset = useCallback(() => {
@@ -422,7 +455,9 @@ export default function Home() {
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    // Delay revocation — Safari <16 and Firefox with large blobs read asynchronously.
+    // Revoking immediately can produce 0-byte files.
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     toast.success(`Downloaded ${filename}`)
   }, [result])
 
@@ -460,7 +495,8 @@ export default function Home() {
 
     const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
     setChatMessages(prev => [...prev, userMsg])
-    setChatInput('')
+    // Don't clear chatInput yet — clear it only after the refine succeeds.
+    // If the refine fails, we restore the input so the user doesn't lose their message.
     setRefining(true)
 
     refineAbortRef.current?.abort()
@@ -507,7 +543,9 @@ export default function Home() {
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
-        const events = buffer.split('\n\n')
+        // Normalize \r\n to \n for proxy compatibility, then split on \n\n
+        const normalized = buffer.replace(/\r\n/g, '\n')
+        const events = normalized.split('\n\n')
         buffer = events.pop() ?? ''
 
         for (const eventStr of events) {
@@ -546,8 +584,11 @@ export default function Home() {
         ...currentResult,
         id: newBuildId(),
         html: finalHtml,
+        tokens: finalTokens, // Update tokens so the header shows the refine's token count
+        ms: finalMs,         // Update ms so the header shows the refine's time
       }
       setResult(refinedResult)
+      resultRef.current = refinedResult // Update ref synchronously
       addBuildToHistory(refinedResult)
 
       setChatMessages(prev => [...prev, {
@@ -559,11 +600,14 @@ export default function Home() {
       toast.success(`Refined! ${(finalMs / 1000).toFixed(1)}s · quality: ${finalQuality}`)
       setQualityScore(finalQuality)
       setQualityMetrics(finalMetrics)
+      setChatInput('') // Clear input only after success
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       const failMsg = err instanceof Error ? err.message : 'Network error'
       setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
       toast.error(failMsg)
+      // Restore the user's message so they can edit and retry — don't lose their input on error
+      setChatInput(msg)
     } finally {
       if (refineAbortRef.current === controller) {
         refineAbortRef.current = null
@@ -588,17 +632,19 @@ export default function Home() {
   // Keyboard shortcuts: Esc=cancel build/refine, ⌘S/Ctrl+S=download, ⌘N/Ctrl+N=new
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Esc cancels a build or refine
+      // Esc cancels a build or refine — but NOT when the user is focused in a text field.
+      // In text fields, Esc should clear the field (standard behavior), not cancel the build.
       if (e.key === 'Escape' && (loading || refining)) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (isTextField) return // Let the text field handle Esc (clear input)
+
         e.preventDefault()
         if (loading) {
           cancelBuild()
           toast.info('Build cancelled')
         } else if (refining) {
-          refineAbortRef.current?.abort()
-          refineAbortRef.current = null
-          setRefining(false)
-          setLivePreviewHtml(null)
+          cancelRefine()
           toast.info('Refine cancelled')
         }
         return
@@ -621,7 +667,7 @@ export default function Home() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [loading, refining, result, download, cancelBuild, reset])
+  }, [loading, refining, result, download, cancelBuild, cancelRefine, reset])
 
   // Helper: get current thinking step text (DYNAMIC — from mission or plan)
   const getThinkingText = useCallback(() => {
@@ -719,7 +765,7 @@ export default function Home() {
           </div>
           <Button
             onClick={() => build()}
-            disabled={loading || !mission.trim()}
+            disabled={loading || refining || !mission.trim()}
             className="mt-3 w-full gap-2"
             size="lg"
           >
@@ -738,7 +784,7 @@ export default function Home() {
 
           {/* First-build loading (no prior result) — with StageRail stolen from TFA */}
           {loading && !result && (
-            <div className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
+            <div role="status" aria-live="polite" className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                 <span className="font-medium text-foreground/80">
@@ -875,8 +921,10 @@ export default function Home() {
           )}
         </section>
 
-        {/* Right panel: preview (only when result) */}
-        {result && (
+        {/* Right panel: preview — shown when there's a result OR a build/refine in progress.
+            This is critical for first build: without this, the live-preview iframe (NOVA's
+            breakthrough feature) doesn't render at all until the build completes. */}
+        {(result || loading) && (
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {/* Error banner (rebuild failed, but keep old preview visible) */}
             {error && (
@@ -907,7 +955,7 @@ export default function Home() {
               <div className="flex min-w-0 items-center gap-2">
                 {(loading || refining) && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
                 <p className="truncate text-xs text-muted-foreground">
-                  {loading ? 'Rebuilding...' : refining ? 'Refining...' : result.mission}
+                  {loading && !result ? 'Building...' : loading ? 'Rebuilding...' : refining ? 'Refining...' : result?.mission ?? ''}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -927,17 +975,17 @@ export default function Home() {
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset} title={loading ? 'Cancel build' : 'Start new'}>
-                  {loading ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-                  {loading ? 'Cancel' : 'New'}
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : refining ? cancelRefine : reset} title={loading ? 'Cancel build' : refining ? 'Cancel refine' : 'Start new'}>
+                  {(loading || refining) ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                  {(loading || refining) ? 'Cancel' : 'New'}
                 </Button>
               </div>
             </div>
 
             {/* Chat panel */}
-            <div className="flex shrink-0 flex-col border-b border-border/40" style={{ maxHeight: '200px' }}>
-              {/* Chat messages */}
-              <div ref={chatScrollRef} className="max-h-[120px] overflow-y-auto px-4 py-2">
+            <div className="flex shrink-0 flex-col border-b border-border/40 max-h-[200px]">
+              {/* Chat messages — role=log + aria-live so screen readers announce new messages */}
+              <div ref={chatScrollRef} role="log" aria-live="polite" aria-atomic="false" className="max-h-[120px] overflow-y-auto px-4 py-2">
                 {chatMessages.length === 0 ? (
                   <p className="text-[10px] text-muted-foreground/40">
                     <MessageSquare className="mr-1 inline h-3 w-3" />
@@ -1001,7 +1049,7 @@ export default function Home() {
             <div className="relative min-h-0 flex-1 bg-neutral-950">
               {/* Loading overlay (shown when building/refining and no live preview yet) */}
               {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+                <div role="status" aria-live="polite" className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
                   <div className="flex flex-col items-center gap-3 text-neutral-400">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     <p className="text-xs font-medium text-foreground/80">
@@ -1022,8 +1070,8 @@ export default function Home() {
                 </div>
               )}
               <iframe
-                key={result.id}
-                srcDoc={(loading || refining) && livePreviewHtml ? livePreviewHtml : result.html}
+                key={result?.id ?? 'loading'}
+                srcDoc={(loading || refining) && livePreviewHtml ? livePreviewHtml : (result?.html ?? '')}
                 title="Preview"
                 sandbox="allow-scripts"
                 className="h-full w-full border-0 bg-neutral-950"

@@ -1,0 +1,1052 @@
+     1→'use client'
+     2→
+     3→import { useState, useRef, useEffect, useCallback } from 'react'
+     4→import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink } from 'lucide-react'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Textarea } from '@/components/ui/textarea'
+     7→import { toast } from 'sonner'
+     8→import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
+     9→import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
+    10→import { formatTokens, formatMs, BUILD_STAGES, getCurrentStage } from '@/lib/format'
+    11→
+    12→interface BuildResponse {
+    13→  ok: boolean
+    14→  html?: string
+    15→  tokens?: number
+    16→  ms?: number
+    17→  error?: string
+    18→}
+    19→
+    20→interface ChatMessage {
+    21→  role: 'user' | 'assistant'
+    22→  content: string
+    23→  ts: number
+    24→}
+    25→
+    26→// Quick-start presets — organized by category (stolen from TFA's templates concept,
+    27→// adapted for NOVA's prompt-to-app model).
+    28→// More presets = lower barrier to entry. Users click and build immediately.
+    29→const EXAMPLES: readonly string[] = [
+    30→  'Build a snake game with score and game-over',
+    31→  'Build a todo app with add, complete, and delete',
+    32→  'Build a calculator with keyboard support',
+    33→  'Build a color palette generator with copy-to-clipboard',
+    34→  'Build a pomodoro timer with start/pause/reset',
+    35→  'Build a markdown editor with live preview',
+    36→  'Build a drawing canvas with brush size and color',
+    37→  'Build a quiz app with multiple choice and score',
+    38→]
+    39→
+    40→const REFINE_THINKING_STEPS: readonly string[] = [
+    41→  'Analyzing current code...',
+    42→  'Understanding your request...',
+    43→  'Planning the changes...',
+    44→  'Applying modifications...',
+    45→  'Verifying everything still works...',
+    46→  'Finalizing the update...',
+    47→]
+    48→
+    49→export default function Home() {
+    50→  const [mission, setMission] = useState('')
+    51→  const [loading, setLoading] = useState(false)
+    52→  const [error, setError] = useState<string | null>(null)
+    53→  const [failedMission, setFailedMission] = useState<string | null>(null) // what to retry
+    54→  const [result, setResult] = useState<BuildResult | null>(null)
+    55→  const [history, setHistory] = useState<BuildResult[]>([])
+    56→  const [confirmClear, setConfirmClear] = useState(false)
+    57→  const [elapsed, setElapsed] = useState(0)
+    58→  const [thinkingStep, setThinkingStep] = useState(0)
+    59→  const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
+    60→  const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
+    61→  const [planSummary, setPlanSummary] = useState<string | null>(null)
+    62→  const [qualityScore, setQualityScore] = useState(0)
+    63→  const [qualityMetrics, setQualityMetrics] = useState('')
+    64→  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+    65→  const [chatInput, setChatInput] = useState('')
+    66→  const [refining, setRefining] = useState(false)
+    67→  const chatScrollRef = useRef<HTMLDivElement>(null)
+    68→  const abortRef = useRef<AbortController | null>(null)
+    69→  const refineAbortRef = useRef<AbortController | null>(null)
+    70→  // Ref mirror of `result` so build() doesn't need it in useCallback deps.
+    71→  // This prevents build from being re-created on every result change (every build).
+    72→  // Updated in a useEffect (not during render — that's a side effect).
+    73→  const resultRef = useRef<BuildResult | null>(null)
+    74→  useEffect(() => {
+    75→    resultRef.current = result
+    76→  }, [result])
+    77→
+    78→  // Load history from localStorage on mount
+    79→  useEffect(() => {
+    80→    try {
+    81→      const stored = JSON.parse(localStorage.getItem('nova_history') ?? '[]')
+    82→      setHistory(validateHistory(stored))
+    83→    } catch (err) {
+    84→      console.error('[NOVA] Failed to load history:', err)
+    85→    }
+    86→  }, [])
+    87→
+    88→  // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
+    89→  // to avoid double-firing in React StrictMode.
+    90→  const saveHistoryToStorage = useCallback((items: BuildResult[]) => {
+    91→    let savedCount = items.length
+    92→    try {
+    93→      localStorage.setItem('nova_history', JSON.stringify(items))
+    94→    } catch (quotaErr) {
+    95→      console.error('[NOVA] localStorage quota exceeded:', quotaErr)
+    96→      savedCount = 0
+    97→      for (let i = items.length - 1; i >= 0; i--) {
+    98→        try {
+    99→          localStorage.setItem('nova_history', JSON.stringify(items.slice(0, i + 1)))
+   100→          savedCount = i + 1
+   101→          break
+   102→        } catch {
+   103→          // keep trying smaller
+   104→        }
+   105→      }
+   106→    }
+   107→    if (savedCount < items.length) {
+   108→      toast.error(`localStorage full — only ${savedCount} of ${items.length} builds saved to history`)
+   109→    }
+   110→  }, [])
+   111→
+   112→  // Add a build result to history (dedupe by mission) and persist to localStorage.
+   113→  // Side effects (localStorage, toast) happen here — NOT inside the setState updater.
+   114→  const addBuildToHistory = useCallback((buildResult: BuildResult) => {
+   115→    let newHistory: BuildResult[] = []
+   116→    setHistory(prev => {
+   117→      newHistory = [buildResult, ...prev.filter(h => h.mission !== buildResult.mission)].slice(0, 10)
+   118→      return newHistory
+   119→    })
+   120→    // Persist after state is computed (not inside updater — avoids StrictMode double-fire)
+   121→    saveHistoryToStorage(newHistory)
+   122→  }, [saveHistoryToStorage])
+   123→
+   124→  // Abort any in-flight build AND refine on unmount
+   125→  useEffect(() => {
+   126→    return () => {
+   127→      abortRef.current?.abort()
+   128→      refineAbortRef.current?.abort()
+   129→    }
+   130→  }, [])
+   131→
+   132→  // Elapsed time counter + dynamic thinking step rotation
+   133→  useEffect(() => {
+   134→    if (!loading && !refining) {
+   135→      setElapsed(0)
+   136→      setThinkingStep(0)
+   137→      return
+   138→    }
+   139→    const startTime = Date.now()
+   140→    const steps = loading ? buildSteps : REFINE_THINKING_STEPS
+   141→    let step = 0
+   142→    setThinkingStep(0)
+   143→
+   144→    const timer = setInterval(() => {
+   145→      const sec = Math.floor((Date.now() - startTime) / 1000)
+   146→      setElapsed(sec)
+   147→
+   148→      // Rotate through steps — timing depends on how many steps we have
+   149→      // Allocate ~4 seconds per step, but always keep the last step if we run out
+   150→      const stepDuration = loading ? 4 : 5 // 4s for build (more steps), 5s for refine
+   151→      const nextStep = Math.min(steps.length - 1, Math.floor(sec / stepDuration))
+   152→      if (nextStep !== step) {
+   153→        step = nextStep
+   154→        setThinkingStep(step)
+   155→      }
+   156→    }, 1000)
+   157→    return () => clearInterval(timer)
+   158→  }, [loading, refining, buildSteps])
+   159→
+   160→  // Centralized build function. Aborts any in-flight build first.
+   161→  // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
+   162→  // Uses resultRef instead of result state to avoid being re-created on every build.
+   163→  const build = useCallback(async (explicitMission?: string) => {
+   164→    const m = (explicitMission ?? mission).trim()
+   165→    if (!m) {
+   166→      toast.error('Describe what to build first')
+   167→      return
+   168→    }
+   169→
+   170→    // If an explicit mission was passed, sync the textarea state
+   171→    if (explicitMission && explicitMission !== mission) {
+   172→      setMission(explicitMission)
+   173→    }
+   174→
+   175→    // Abort any in-flight build (covers: rebuild, history-click-during-build, reset-during-build)
+   176→    abortRef.current?.abort()
+   177→    const controller = new AbortController()
+   178→    abortRef.current = controller
+   179→
+   180→    setLoading(true)
+   181→    setError(null)
+   182→    setFailedMission(null)
+   183→    setChatMessages([])
+   184→
+   185→    // Extract dynamic steps from the mission IMMEDIATELY — not pre-canned
+   186→    const steps = extractStepsFromMission(m)
+   187→    setBuildSteps(steps)
+   188→    setPlanSummary(null)
+   189→    setLivePreviewHtml(null)
+   190→
+   191→    // Helper: set error state consistently (replaces 6 repeated blocks)
+   192→    const fail = (msg: string) => {
+   193→      setError(msg)
+   194→      setFailedMission(m)
+   195→      if (!resultRef.current) toast.error(msg)
+   196→    }
+   197→
+   198→    try {
+   199→      // ═══ STAGE 1: ARCHITECT — get the plan first ═══
+   200→      // This is a separate, fast call (~2-3s). The plan lets us show
+   201→      // AUTHENTIC steps to the user before the coder even starts.
+   202→      const archRes = await fetch('/api/build/architect', {
+   203→        method: 'POST',
+   204→        headers: { 'Content-Type': 'application/json' },
+   205→        body: JSON.stringify({ mission: m }),
+   206→        signal: controller.signal,
+   207→      })
+   208→
+   209→      let archData: { ok: boolean; plan?: unknown; error?: string } | null = null
+   210→      const archContentType = archRes.headers.get('content-type') ?? ''
+   211→      if (archContentType.includes('application/json')) {
+   212→        try { archData = await archRes.json() } catch {}
+   213→      }
+   214→
+   215→      // If architect succeeded, update steps with the REAL plan
+   216→      if (archData?.ok && archData.plan) {
+   217→        const planSteps = extractStepsFromPlan(archData.plan, m)
+   218→        const summary = getPlanSummary(archData.plan)
+   219→        setBuildSteps(planSteps)
+   220→        setPlanSummary(summary)
+   221→        console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
+   222→      }
+   223→      // If architect failed, continue with mission-based steps (already set)
+   224→
+   225→      // ═══ STAGE 2: CODER — SSE streaming with keepalive ═══
+   226→      // The route returns Server-Sent Events: progress events while LLM works,
+   227→      // then a result event with the final HTML. No timeout — keepalive prevents it.
+   228→      const codeRes = await fetch('/api/build/code', {
+   229→        method: 'POST',
+   230→        headers: { 'Content-Type': 'application/json' },
+   231→        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
+   232→        signal: controller.signal,
+   233→      })
+   234→
+   235→      if (!codeRes.ok) {
+   236→        // Non-SSE error (400, 429, 413) — parse as JSON
+   237→        let errorMsg = `Server error (${codeRes.status})`
+   238→        try {
+   239→          const errData = await codeRes.json()
+   240→          if (errData?.error) errorMsg = errData.error
+   241→        } catch {}
+   242→        fail(errorMsg)
+   243→        return
+   244→      }
+   245→
+   246→      // Read SSE stream
+   247→      const reader = codeRes.body?.getReader()
+   248→      if (!reader) {
+   249→        fail('No response stream')
+   250→        return
+   251→      }
+   252→
+   253→      const decoder = new TextDecoder()
+   254→      let buffer = ''
+   255→      let finalHtml = ''
+   256→      let finalTokens = 0
+   257→      let finalMs = 0
+   258→      let finalQuality = 0
+   259→      let finalMetrics = ''
+   260→      let streamError: string | null = null
+   261→
+   262→      while (true) {
+   263→        const { done, value } = await reader.read()
+   264→        if (done) break
+   265→
+   266→        buffer += decoder.decode(value, { stream: true })
+   267→
+   268→        // Parse SSE events (separated by \n\n)
+   269→        const events = buffer.split('\n\n')
+   270→        buffer = events.pop() ?? '' // keep incomplete event in buffer
+   271→
+   272→        for (const eventStr of events) {
+   273→          const dataLine = eventStr.trim()
+   274→          if (!dataLine.startsWith('data: ')) continue
+   275→
+   276→          try {
+   277→            const evt = JSON.parse(dataLine.slice(6))
+   278→
+   279→            if (evt.type === 'progress') {
+   280→              // Update thinking steps with real progress from server
+   281→              setBuildSteps(prev => {
+   282→                // Replace with server-provided step, keep last as fallback
+   283→                if (prev.length <= 2) return [evt.step, 'Generating code...', 'Finalizing...']
+   284→                return [prev[0], evt.step, ...prev.slice(2)]
+   285→              })
+   286→            } else if (evt.type === 'token') {
+   287→              // REAL TOKEN STREAMING — accumulate partial HTML for live preview
+   288→              setLivePreviewHtml(prev => (prev ?? '') + (evt.text ?? ''))
+   289→              setBuildSteps(prev => {
+   290→                const last = prev[prev.length - 1]
+   291→                const totalLen = (evt.length ?? 0)
+   292→                const newLast = `Generating: ${totalLen} chars...`
+   293→                if (last && last.startsWith('Generating:')) {
+   294→                  return [...prev.slice(0, -1), newLast]
+   295→                }
+   296→                return [...prev, newLast]
+   297→              })
+   298→            } else if (evt.type === 'result') {
+   299→              finalHtml = evt.html ?? ''
+   300→              finalTokens = evt.tokens ?? 0
+   301→              finalMs = evt.ms ?? 0
+   302→              finalQuality = evt.quality ?? 0
+   303→              finalMetrics = evt.metrics ?? ''
+   304→            } else if (evt.type === 'error') {
+   305→              streamError = evt.error ?? 'Unknown error'
+   306→            }
+   307→          } catch {
+   308→            // Ignore malformed events
+   309→          }
+   310→        }
+   311→      }
+   312→
+   313→      if (streamError) {
+   314→        fail(streamError)
+   315→        return
+   316→      }
+   317→
+   318→      if (!finalHtml) {
+   319→        fail('Server returned empty HTML')
+   320→        return
+   321→      }
+   322→
+   323→      const buildResult: BuildResult = {
+   324→        id: newBuildId(),
+   325→        html: finalHtml,
+   326→        tokens: finalTokens,
+   327→        ms: finalMs,
+   328→        mission: m,
+   329→      }
+   330→
+   331→      setResult(buildResult)
+   332→      addBuildToHistory(buildResult)
+   333→
+   334→      toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
+   335→      setQualityScore(finalQuality)
+   336→      setQualityMetrics(finalMetrics)
+   337→    } catch (err: unknown) {
+   338→      // AbortError = user started a new build, loaded history, or navigated away; silently ignore
+   339→      if (err instanceof DOMException && err.name === 'AbortError') return
+   340→      const msg = err instanceof Error ? err.message : 'Network error'
+   341→      fail(msg)
+   342→    } finally {
+   343→      // Only clear loading if this controller is still the active one
+   344→      if (abortRef.current === controller) {
+   345→        abortRef.current = null
+   346→        setLoading(false)
+   347→      }
+   348→    }
+   349→  }, [mission])
+   350→
+   351→  const loadFromHistory = useCallback((h: BuildResult) => {
+   352→    // Abort any in-flight build or refine
+   353→    abortRef.current?.abort()
+   354→    abortRef.current = null
+   355→    refineAbortRef.current?.abort()
+   356→    refineAbortRef.current = null
+   357→    setLoading(false)
+   358→    setRefining(false)
+   359→    setResult(h)
+   360→    setMission(h.mission)
+   361→    setError(null)
+   362→    setFailedMission(null)
+   363→    setChatMessages([])
+   364→    // Reset all derived state so we don't show the previous build's badges/plan
+   365→    setQualityScore(0)
+   366→    setQualityMetrics('')
+   367→    setPlanSummary(null)
+   368→    setLivePreviewHtml(null)
+   369→    setConfirmClear(false)
+   370→  }, [])
+   371→
+   372→  const cancelBuild = useCallback(() => {
+   373→    // Cancel only aborts the in-flight build — does NOT clear mission or result.
+   374→    // The user keeps their mission text and the old preview (if any).
+   375→    abortRef.current?.abort()
+   376→    abortRef.current = null
+   377→    setLoading(false)
+   378→    setError(null)
+   379→    setFailedMission(null)
+   380→  }, [])
+   381→
+   382→  const reset = useCallback(() => {
+   383→    // Reset clears everything — used by the "New" button.
+   384→    // Abort BOTH in-flight build and refine to prevent phantom state mutations.
+   385→    abortRef.current?.abort()
+   386→    abortRef.current = null
+   387→    refineAbortRef.current?.abort()
+   388→    refineAbortRef.current = null
+   389→    setLoading(false)
+   390→    setRefining(false)
+   391→    setResult(null)
+   392→    setError(null)
+   393→    setFailedMission(null)
+   394→    setMission('')
+   395→    setChatMessages([])
+   396→    setQualityScore(0)
+   397→    setQualityMetrics('')
+   398→    setLivePreviewHtml(null)
+   399→    setPlanSummary(null)
+   400→    setConfirmClear(false)
+   401→  }, [])
+   402→
+   403→  const retryFailed = useCallback(() => {
+   404→    // If the user edited the textarea after the failure, use the edited mission.
+   405→    // Otherwise, use the original failed mission.
+   406→    const currentMission = mission.trim()
+   407→    if (currentMission && currentMission !== failedMission) {
+   408→      build(currentMission)
+   409→    } else if (failedMission) {
+   410→      build(failedMission)
+   411→    }
+   412→  }, [failedMission, build, mission])
+   413→
+   414→  const download = useCallback(() => {
+   415→    if (!result?.html) return
+   416→    const blob = new Blob([result.html], { type: 'text/html' })
+   417→    const url = URL.createObjectURL(blob)
+   418→    const a = document.createElement('a')
+   419→    a.href = url
+   420→    const filename = sanitizeFilename(result.mission)
+   421→    a.download = filename
+   422→    document.body.appendChild(a)
+   423→    a.click()
+   424→    document.body.removeChild(a)
+   425→    URL.revokeObjectURL(url)
+   426→    toast.success(`Downloaded ${filename}`)
+   427→  }, [result])
+   428→
+   429→  // Copy HTML to clipboard
+   430→  const copyHtml = useCallback(async () => {
+   431→    if (!result?.html) return
+   432→    try {
+   433→      await navigator.clipboard.writeText(result.html)
+   434→      toast.success('HTML copied to clipboard')
+   435→    } catch {
+   436→      toast.error('Failed to copy — try downloading instead')
+   437→    }
+   438→  }, [result])
+   439→
+   440→  // Open the HTML in a new browser tab (full-screen preview)
+   441→  const openInNewTab = useCallback(() => {
+   442→    if (!result?.html) return
+   443→    const blob = new Blob([result.html], { type: 'text/html' })
+   444→    const url = URL.createObjectURL(blob)
+   445→    window.open(url, '_blank', 'noopener,noreferrer')
+   446→    // Revoke after 30s — enough time for the tab to load
+   447→    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+   448→    toast.info('Opened in new tab')
+   449→  }, [result])
+   450→
+   451→  // Chat refine: SSE streaming — same pattern as build/code
+   452→  const sendChat = useCallback(async () => {
+   453→    const msg = chatInput.trim()
+   454→    const currentResult = resultRef.current
+   455→    if (!msg || refining) return
+   456→    if (!currentResult) {
+   457→      toast.info('Build something first, then you can refine it')
+   458→      return
+   459→    }
+   460→
+   461→    const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
+   462→    setChatMessages(prev => [...prev, userMsg])
+   463→    setChatInput('')
+   464→    setRefining(true)
+   465→
+   466→    refineAbortRef.current?.abort()
+   467→    const controller = new AbortController()
+   468→    refineAbortRef.current = controller
+   469→
+   470→    // Clear live preview so refine starts fresh
+   471→    setLivePreviewHtml(null)
+   472→
+   473→    try {
+   474→      const res = await fetch('/api/refine', {
+   475→        method: 'POST',
+   476→        headers: { 'Content-Type': 'application/json' },
+   477→        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg }),
+   478→        signal: controller.signal,
+   479→      })
+   480→
+   481→      if (!res.ok) {
+   482→        let errorMsg = `Server error (${res.status})`
+   483→        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+   484→        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMsg}`, ts: Date.now() }])
+   485→        toast.error(errorMsg)
+   486→        return
+   487→      }
+   488→
+   489→      // Read SSE stream
+   490→      const reader = res.body?.getReader()
+   491→      if (!reader) {
+   492→        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: No stream', ts: Date.now() }])
+   493→        return
+   494→      }
+   495→
+   496→      const decoder = new TextDecoder()
+   497→      let buffer = ''
+   498→      let finalHtml = ''
+   499→      let finalTokens = 0
+   500→      let finalMs = 0
+   501→      let finalQuality = 0
+   502→      let finalMetrics = ''
+   503→      let streamError: string | null = null
+   504→
+   505→      while (true) {
+   506→        const { done, value } = await reader.read()
+   507→        if (done) break
+   508→
+   509→        buffer += decoder.decode(value, { stream: true })
+   510→        const events = buffer.split('\n\n')
+   511→        buffer = events.pop() ?? ''
+   512→
+   513→        for (const eventStr of events) {
+   514→          const dataLine = eventStr.trim()
+   515→          if (!dataLine.startsWith('data: ')) continue
+   516→          try {
+   517→            const evt = JSON.parse(dataLine.slice(6))
+   518→            if (evt.type === 'token') {
+   519→              // Live token streaming — show refined HTML appearing in real-time
+   520→              setLivePreviewHtml(prev => (prev ?? '') + (evt.text ?? ''))
+   521→            } else if (evt.type === 'result') {
+   522→              finalHtml = evt.html ?? ''
+   523→              finalTokens = evt.tokens ?? 0
+   524→              finalMs = evt.ms ?? 0
+   525→              finalQuality = evt.quality ?? 0
+   526→              finalMetrics = evt.metrics ?? ''
+   527→            } else if (evt.type === 'error') {
+   528→              streamError = evt.error ?? 'Unknown error'
+   529→            }
+   530→          } catch {}
+   531→        }
+   532→      }
+   533→
+   534→      if (streamError) {
+   535→        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${streamError}`, ts: Date.now() }])
+   536→        toast.error(streamError)
+   537→        return
+   538→      }
+   539→
+   540→      if (!finalHtml) {
+   541→        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: Empty response', ts: Date.now() }])
+   542→        return
+   543→      }
+   544→
+   545→      const refinedResult: BuildResult = {
+   546→        ...currentResult,
+   547→        id: newBuildId(),
+   548→        html: finalHtml,
+   549→      }
+   550→      setResult(refinedResult)
+   551→      addBuildToHistory(refinedResult)
+   552→
+   553→      setChatMessages(prev => [...prev, {
+   554→        role: 'assistant',
+   555→        content: `Updated! ${finalMs ? `${(finalMs / 1000).toFixed(1)}s` : ''} · ${finalTokens} tokens`,
+   556→        ts: Date.now(),
+   557→      }])
+   558→
+   559→      toast.success(`Refined! ${(finalMs / 1000).toFixed(1)}s · quality: ${finalQuality}`)
+   560→      setQualityScore(finalQuality)
+   561→      setQualityMetrics(finalMetrics)
+   562→    } catch (err: unknown) {
+   563→      if (err instanceof DOMException && err.name === 'AbortError') return
+   564→      const failMsg = err instanceof Error ? err.message : 'Network error'
+   565→      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
+   566→      toast.error(failMsg)
+   567→    } finally {
+   568→      if (refineAbortRef.current === controller) {
+   569→        refineAbortRef.current = null
+   570→        setRefining(false)
+   571→        setLivePreviewHtml(null) // clear live preview so final result shows
+   572→      }
+   573→    }
+   574→  }, [chatInput, refining])
+   575→
+   576→  // Auto-scroll chat to bottom on new messages — but only if user is already near the bottom.
+   577→  // Don't yank the scroll position if the user scrolled up to read history.
+   578→  useEffect(() => {
+   579→    const el = chatScrollRef.current
+   580→    if (!el) return
+   581→    // If user is within 40px of the bottom, auto-scroll. Otherwise, leave them where they are.
+   582→    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+   583→    if (isNearBottom) {
+   584→      el.scrollTop = el.scrollHeight
+   585→    }
+   586→  }, [chatMessages, refining])
+   587→
+   588→  // Keyboard shortcuts: Esc=cancel build/refine, ⌘S/Ctrl+S=download, ⌘N/Ctrl+N=new
+   589→  useEffect(() => {
+   590→    const onKey = (e: KeyboardEvent) => {
+   591→      // Esc cancels a build or refine
+   592→      if (e.key === 'Escape' && (loading || refining)) {
+   593→        e.preventDefault()
+   594→        if (loading) {
+   595→          cancelBuild()
+   596→          toast.info('Build cancelled')
+   597→        } else if (refining) {
+   598→          refineAbortRef.current?.abort()
+   599→          refineAbortRef.current = null
+   600→          setRefining(false)
+   601→          setLivePreviewHtml(null)
+   602→          toast.info('Refine cancelled')
+   603→        }
+   604→        return
+   605→      }
+   606→      // ⌘S / Ctrl+S downloads the current result (always preventDefault to stop browser save)
+   607→      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+   608→        e.preventDefault()
+   609→        if (result) {
+   610→          download()
+   611→        }
+   612→        return
+   613→      }
+   614→      // ⌘N / Ctrl+N starts a new build — only preventDefault when we'll actually handle it
+   615→      // (don't block the browser's new-window shortcut during loading/refining)
+   616→      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !loading && !refining) {
+   617→        e.preventDefault()
+   618→        reset()
+   619→        return
+   620→      }
+   621→    }
+   622→    window.addEventListener('keydown', onKey)
+   623→    return () => window.removeEventListener('keydown', onKey)
+   624→  }, [loading, refining, result, download, cancelBuild, reset])
+   625→
+   626→  // Helper: get current thinking step text (DYNAMIC — from mission or plan)
+   627→  const getThinkingText = useCallback(() => {
+   628→    if (loading) {
+   629→      return buildSteps[thinkingStep] ?? buildSteps[buildSteps.length - 1] ?? 'Building...'
+   630→    }
+   631→    if (refining) {
+   632→      return REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'
+   633→    }
+   634→    return ''
+   635→  }, [loading, refining, thinkingStep, buildSteps])
+   636→
+   637→  // Whether to show examples (only when no result, no error, not loading)
+   638→  const showExamples = !result && !loading && !error
+   639→  // Whether to show first-build error panel (no result, has error, not loading)
+   640→  const showFirstError = !result && !!error && !loading
+   641→
+   642→  // Current build stage (stolen from TFA's StageRail concept)
+   643→  const currentStage = loading || refining
+   644→    ? getCurrentStage(elapsed, !!planSummary, !!livePreviewHtml, false)
+   645→    : result
+   646→      ? BUILD_STAGES[6]
+   647→      : BUILD_STAGES[0]
+   648→
+   649→  return (
+   650→    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading || refining}>
+   651→      {/* Header */}
+   652→      <header className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-3">
+   653→        <div className="flex items-center gap-2">
+   654→          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15">
+   655→            <Sparkles className="h-4 w-4 text-primary" />
+   656→          </div>
+   657→          <div>
+   658→            <h1 className="text-sm font-semibold">NOVA</h1>
+   659→            <p className="text-[10px] text-muted-foreground">Describe it. Build it.</p>
+   660→          </div>
+   661→        </div>
+   662→        {(result || loading) && (
+   663→          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+   664→            {loading || !result ? (
+   665→              <>
+   666→                <Loader2 className="h-3 w-3 animate-spin" />
+   667→                <span>
+   668→                  {loading
+   669→                    ? `${getThinkingText()} ${elapsed > 0 && `· ${elapsed}s`}`
+   670→                    : 'Building...'}
+   671→                </span>
+   672→              </>
+   673→            ) : (
+   674→              <>
+   675→                <Zap className="h-3 w-3" />
+   676→                <span>{(result.ms / 1000).toFixed(1)}s · {formatTokens(result.tokens)} tokens</span>
+   677→                {qualityScore > 0 && (
+   678→                  <span className={`ml-1 rounded px-1 ${qualityScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`} title={qualityMetrics}>
+   679→                    Q:{qualityScore}
+   680→                  </span>
+   681→                )}
+   682→              </>
+   683→            )}
+   684→          </div>
+   685→        )}
+   686→      </header>
+   687→
+   688→      {/* Main */}
+   689→      <main className={`flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row ${result ? '' : 'md:justify-center'}`}>
+   690→        {/* Left panel: prompt + examples + history */}
+   691→        <section className={`min-h-0 overflow-y-auto border-b border-border/40 p-4 md:border-b-0 md:border-r ${
+   692→          result ? 'shrink-0 md:w-80' : 'flex-1 md:max-w-2xl'
+   693→        }`}>
+   694→          <label htmlFor="mission-input" className="mb-2 block text-xs font-medium text-muted-foreground">
+   695→            What do you want to build?
+   696→          </label>
+   697→          <Textarea
+   698→            id="mission-input"
+   699→            autoFocus
+   700→            value={mission}
+   701→            maxLength={500}
+   702→            onChange={(e) => setMission(e.target.value)}
+   703→            onKeyDown={(e) => {
+   704→              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+   705→                e.preventDefault()
+   706→                build()
+   707→              }
+   708→            }}
+   709→            placeholder="Build a snake game with score and game-over..."
+   710→            className="min-h-[120px] resize-none font-mono text-sm"
+   711→          />
+   712→          <div className="mt-1 flex items-center justify-between">
+   713→            <span className="text-[10px] text-muted-foreground/40">
+   714→              ⌘+Enter to build
+   715→            </span>
+   716→            <span className={`text-[10px] ${mission.length > 500 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+   717→              {mission.length}/500
+   718→            </span>
+   719→          </div>
+   720→          <Button
+   721→            onClick={() => build()}
+   722→            disabled={loading || !mission.trim()}
+   723→            className="mt-3 w-full gap-2"
+   724→            size="lg"
+   725→          >
+   726→            {loading ? (
+   727→              <>
+   728→                <Loader2 className="h-4 w-4 animate-spin" />
+   729→                Building...
+   730→              </>
+   731→            ) : (
+   732→              <>
+   733→                <Play className="h-4 w-4" />
+   734→                Build
+   735→              </>
+   736→            )}
+   737→          </Button>
+   738→
+   739→          {/* First-build loading (no prior result) — with StageRail stolen from TFA */}
+   740→          {loading && !result && (
+   741→            <div className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
+   742→              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+   743→                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+   744→                <span className="font-medium text-foreground/80">
+   745→                  {getThinkingText()}
+   746→                </span>
+   747→              </div>
+   748→              {/* StageRail — visual progress bar (stolen from TFA Evolution Studio) */}
+   749→              <div className="mt-3 flex items-center">
+   750→                {BUILD_STAGES.map((stage, i) => {
+   751→                  const done = i < BUILD_STAGES.indexOf(currentStage)
+   752→                  const active = stage.key === currentStage.key
+   753→                  const color = done || active ? 'bg-primary' : 'bg-muted-foreground/20'
+   754→                  return (
+   755→                    <div key={stage.key} className="flex flex-1 items-center">
+   756→                      {i > 0 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
+   757→                      <div className={`h-2.5 w-2.5 rounded-full ${color} ${active ? 'ring-2 ring-primary/30' : ''}`} title={stage.label} />
+   758→                      {i < BUILD_STAGES.length - 1 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
+   759→                    </div>
+   760→                  )
+   761→                })}
+   762→              </div>
+   763→              <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground/50">
+   764→                {BUILD_STAGES.map(s => <span key={s.key}>{s.short}</span>)}
+   765→              </div>
+   766→              <div className="mt-2 flex items-center gap-2 pl-0">
+   767→                <span className="text-[10px] text-muted-foreground/50">
+   768→                  {elapsed > 0 && `${elapsed}s`}
+   769→                  {elapsed > 60 && ' · taking longer than expected'}
+   770→                  {planSummary && ` · ${planSummary}`}
+   771→                  {livePreviewHtml && ` · ${livePreviewHtml.length} chars generated`}
+   772→                </span>
+   773→              </div>
+   774→            </div>
+   775→          )}
+   776→
+   777→          {/* First-build error (no prior result) */}
+   778→          {showFirstError && (
+   779→            <div role="alert" className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+   780→              <div className="flex items-start gap-2">
+   781→                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+   782→                <div className="flex-1">
+   783→                  <p className="text-xs text-destructive">{error}</p>
+   784→                  <p className="mt-1 text-[10px] text-muted-foreground/60">
+   785→                    The AI sometimes returns incomplete output. Try again, or simplify your request.
+   786→                  </p>
+   787→                  <Button
+   788→                    onClick={retryFailed}
+   789→                    variant="ghost"
+   790→                    size="sm"
+   791→                    className="mt-2 h-7 gap-1.5 text-xs"
+   792→                  >
+   793→                    <RotateCcw className="h-3 w-3" />
+   794→                    Try again
+   795→                  </Button>
+   796→                </div>
+   797→              </div>
+   798→            </div>
+   799→          )}
+   800→
+   801→          {/* Examples (only when no result, no error, not loading) */}
+   802→          {showExamples && (
+   803→            <div className="mt-4 space-y-1.5">
+   804→              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+   805→                Try one
+   806→              </p>
+   807→              {EXAMPLES.map((ex) => (
+   808→                <button
+   809→                  key={ex}
+   810→                  type="button"
+   811→                  onClick={() => {
+   812→                    setMission(ex)
+   813→                    build(ex)
+   814→                  }}
+   815→                  className="block w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10"
+   816→                >
+   817→                  {ex}
+   818→                </button>
+   819→              ))}
+   820→            </div>
+   821→          )}
+   822→
+   823→          {/* History */}
+   824→          {history.length > 0 && (
+   825→            <div className="mt-4 space-y-1.5">
+   826→              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+   827→                Recent
+   828→              </p>
+   829→              {history.map((h) => (
+   830→                <button
+   831→                  key={h.id}
+   832→                  type="button"
+   833→                  title={h.mission}
+   834→                  onClick={() => loadFromHistory(h)}
+   835→                  disabled={loading}
+   836→                  className="flex w-full items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+   837→                >
+   838→                  <Zap className="h-3 w-3 shrink-0 text-primary/40" />
+   839→                  <span className="truncate">{h.mission}</span>
+   840→                </button>
+   841→              ))}
+   842→              {confirmClear ? (
+   843→                <div className="flex gap-1.5">
+   844→                  <button
+   845→                    type="button"
+   846→                    onClick={() => {
+   847→                      setHistory([])
+   848→                      try { localStorage.removeItem('nova_history') } catch {}
+   849→                      setConfirmClear(false)
+   850→                      toast.success('History cleared')
+   851→                    }}
+   852→                    className="flex-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/20"
+   853→                  >
+   854→                    Confirm
+   855→                  </button>
+   856→                  <button
+   857→                    type="button"
+   858→                    onClick={() => setConfirmClear(false)}
+   859→                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent"
+   860→                  >
+   861→                    Cancel
+   862→                  </button>
+   863→                </div>
+   864→              ) : (
+   865→                <button
+   866→                  type="button"
+   867→                  onClick={() => setConfirmClear(true)}
+   868→                  disabled={loading}
+   869→                  className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
+   870→                >
+   871→                  Clear history
+   872→                </button>
+   873→              )}
+   874→            </div>
+   875→          )}
+   876→        </section>
+   877→
+   878→        {/* Right panel: preview (only when result) */}
+   879→        {result && (
+   880→          <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+   881→            {/* Error banner (rebuild failed, but keep old preview visible) */}
+   882→            {error && (
+   883→              <div role="alert" className="flex shrink-0 items-center justify-between gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
+   884→                <div className="flex min-w-0 items-center gap-2">
+   885→                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+   886→                  <span className="truncate text-xs text-destructive">Rebuild failed: {error}</span>
+   887→                </div>
+   888→                <div className="flex shrink-0 items-center gap-1">
+   889→                  <Button size="sm" variant="ghost" className="h-6 gap-1 text-[11px] text-destructive" onClick={retryFailed}>
+   890→                    <RotateCcw className="h-3 w-3" />
+   891→                    Retry
+   892→                  </Button>
+   893→                  <button
+   894→                    type="button"
+   895→                    onClick={() => setError(null)}
+   896→                    className="text-destructive/60 transition-colors hover:text-destructive"
+   897→                    aria-label="Dismiss error"
+   898→                  >
+   899→                    <X className="h-3.5 w-3.5" />
+   900→                  </button>
+   901→                </div>
+   902→              </div>
+   903→            )}
+   904→
+   905→            {/* Toolbar */}
+   906→            <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-2">
+   907→              <div className="flex min-w-0 items-center gap-2">
+   908→                {(loading || refining) && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
+   909→                <p className="truncate text-xs text-muted-foreground">
+   910→                  {loading ? 'Rebuilding...' : refining ? 'Refining...' : result.mission}
+   911→                </p>
+   912→              </div>
+   913→              <div className="flex shrink-0 items-center gap-1">
+   914→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
+   915→                  <Copy className="h-3.5 w-3.5" />
+   916→                  Copy
+   917→                </Button>
+   918→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={openInNewTab} disabled={!result || loading} title="Open in new tab">
+   919→                  <ExternalLink className="h-3.5 w-3.5" />
+   920→                  Open
+   921→                </Button>
+   922→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result} title="Download HTML file">
+   923→                  <Download className="h-3.5 w-3.5" />
+   924→                  Download
+   925→                </Button>
+   926→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining} title="Rebuild from scratch">
+   927→                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+   928→                  Rebuild
+   929→                </Button>
+   930→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset} title={loading ? 'Cancel build' : 'Start new'}>
+   931→                  {loading ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+   932→                  {loading ? 'Cancel' : 'New'}
+   933→                </Button>
+   934→              </div>
+   935→            </div>
+   936→
+   937→            {/* Chat panel */}
+   938→            <div className="flex shrink-0 flex-col border-b border-border/40" style={{ maxHeight: '200px' }}>
+   939→              {/* Chat messages */}
+   940→              <div ref={chatScrollRef} className="max-h-[120px] overflow-y-auto px-4 py-2">
+   941→                {chatMessages.length === 0 ? (
+   942→                  <p className="text-[10px] text-muted-foreground/40">
+   943→                    <MessageSquare className="mr-1 inline h-3 w-3" />
+   944→                    Ask NOVA to change something — "make it blue", "add dark mode", "add a high score"
+   945→                  </p>
+   946→                ) : (
+   947→                  <div className="space-y-1.5">
+   948→                    {chatMessages.map((m, i) => (
+   949→                      <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+   950→                        <div className={`max-w-[80%] rounded-md px-2 py-1 text-[11px] ${
+   951→                          m.role === 'user'
+   952→                            ? 'bg-primary/15 text-foreground'
+   953→                            : m.content.startsWith('Error:')
+   954→                              ? 'bg-destructive/10 text-destructive'
+   955→                              : 'bg-muted/40 text-muted-foreground'
+   956→                        }`}>
+   957→                          {m.content}
+   958→                        </div>
+   959→                      </div>
+   960→                    ))}
+   961→                    {refining && (
+   962→                      <div className="flex items-center gap-2">
+   963→                        <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
+   964→                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+   965→                          <span className="text-[11px] text-muted-foreground">
+   966→                            {getThinkingText()}
+   967→                          </span>
+   968→                        </div>
+   969→                      </div>
+   970→                    )}
+   971→                  </div>
+   972→                )}
+   973→              </div>
+   974→              {/* Chat input */}
+   975→              <div className="flex items-center gap-1.5 border-t border-border/40 p-2">
+   976→                <input
+   977→                  type="text"
+   978→                  value={chatInput}
+   979→                  onChange={(e) => setChatInput(e.target.value)}
+   980→                  onKeyDown={(e) => {
+   981→                    if (e.key === 'Enter' && !e.shiftKey) {
+   982→                      e.preventDefault()
+   983→                      sendChat()
+   984→                    }
+   985→                  }}
+   986→                  placeholder="Ask NOVA to change something..."
+   987→                  disabled={refining || loading}
+   988→                  maxLength={500}
+   989→                  className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none disabled:opacity-50"
+   990→                />
+   991→                <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={sendChat} disabled={refining || loading || !chatInput.trim()}>
+   992→                  {refining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+   993→                </Button>
+   994→              </div>
+   995→            </div>
+   996→
+   997→            {/* Preview iframe — single iframe handles both live preview and final result.
+   998→                During build/refine, srcDoc shows livePreviewHtml (partial HTML as tokens arrive).
+   999→                When idle, srcDoc shows the final result.html.
+  1000→                bg-neutral-950 prevents white flash before the LLM's CSS loads. */}
+  1001→            <div className="relative min-h-0 flex-1 bg-neutral-950">
+  1002→              {/* Loading overlay (shown when building/refining and no live preview yet) */}
+  1003→              {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
+  1004→                <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+  1005→                  <div className="flex flex-col items-center gap-3 text-neutral-400">
+  1006→                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  1007→                    <p className="text-xs font-medium text-foreground/80">
+  1008→                      {getThinkingText()}
+  1009→                    </p>
+  1010→                    <div className="flex gap-1">
+  1011→                      {buildSteps.map((_, i) => (
+  1012→                        <div
+  1013→                          key={i}
+  1014→                          className={`h-1 rounded-full transition-all ${
+  1015→                            i <= thinkingStep ? 'w-3 bg-primary' : 'w-1 bg-muted-foreground/20'
+  1016→                          }`}
+  1017→                        />
+  1018→                      ))}
+  1019→                    </div>
+  1020→                    {elapsed > 0 && <p className="text-[10px] text-muted-foreground/50">{elapsed}s</p>}
+  1021→                  </div>
+  1022→                </div>
+  1023→              )}
+  1024→              <iframe
+  1025→                key={result.id}
+  1026→                srcDoc={(loading || refining) && livePreviewHtml ? livePreviewHtml : result.html}
+  1027→                title="Preview"
+  1028→                sandbox="allow-scripts"
+  1029→                className="h-full w-full border-0 bg-neutral-950"
+  1030→              />
+  1031→            </div>
+  1032→          </section>
+  1033→        )}
+  1034→      </main>
+  1035→
+  1036→      {/* Footer */}
+  1037→      <footer className="mt-auto shrink-0 border-t border-border/40 px-4 py-2">
+  1038→        <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
+  1039→          <span>NOVA · prompt-to-app</span>
+  1040→          <span className="hidden sm:inline">
+  1041→            <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
+  1042→            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
+  1043→            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+N</kbd> new ·
+  1044→            <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel
+  1045→          </span>
+  1046→          <span className="sm:hidden">⌘+Enter to build</span>
+  1047→        </div>
+  1048→      </footer>
+  1049→    </div>
+  1050→  )
+  1051→}
+  1052→

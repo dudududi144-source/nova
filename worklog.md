@@ -2030,3 +2030,92 @@ Stage Summary:
 - The codebase is more robust: no phantom state mutations, no StrictMode double-fires,
   accurate CSS metrics, crash-proof logger, consistent validation across all routes,
   proper cleanup on disconnect/unmount
+
+---
+Task ID: 40
+Agent: main (Z.ai Code)
+Task: Deep roast cycle #3 + fix everything. Sub-agent found 30 new issues.
+
+ROAST FINDINGS (top priority):
+CRITICAL:
+1. Race condition: Build button was enabled during refine (only disabled loading, not refining).
+   User could click Build while a refine was in-flight → both run simultaneously → both call
+   setResult/setHistory → state corruption, potential history wipe.
+2. Elapsed-time counter was DEAD during streaming. buildSteps was in the useEffect deps,
+   and setBuildSteps is called on every token event → effect re-runs on every token →
+   startTime resets to Date.now() → interval cleared before it fires → elapsed stays at 0.
+   The thinking step was also stuck at 0 ("Analyzing your request..." for the entire build).
+
+HIGH:
+3. Live-preview iframe never shown on first build! Right panel was wrapped in {result && ...}.
+   On first build, result is null → right panel doesn't render → NOVA's breakthrough live-preview
+   feature literally didn't work on the most common user flow (first build).
+4. injectCsp regex /<head[^>]*>/i matched <header> too → CSP injected inside <header> →
+   browsers ignore it → iframe runs without CSP (security hole).
+5. resultRef was stale after loadFromHistory (updated in useEffect, not synchronously) →
+   rapid refine after loading history could send the wrong HTML to the refine API.
+6. refinedResult didn't update tokens/ms → header showed stale build time/token count
+   after a refine (misleading).
+7. cancelBuild didn't clear livePreviewHtml → stale partial HTML could flash back later.
+
+MEDIUM:
+8. SSE parser didn't handle \r\n\r\n (some proxies normalize to \r\n) → build hangs forever.
+9. Chat input cleared before refine completed → user loses message on error.
+10. Cancel button only appeared during loading, not refining → no mouse way to cancel refine.
+11. Esc key inside chat input cancelled the build instead of clearing the field.
+12. download() revoked blob URL synchronously → Safari <16 can produce 0-byte files.
+13. Chat log had no ARIA live region → screen readers don't announce new messages.
+14. Loading overlays had no role="status" → screen readers don't know something is happening.
+
+LOW:
+15. looksLikeHtml didn't strip UTF-8 BOM → build errors if LLM/proxy prepends BOM.
+16. validateHistory didn't dedupe by id → React key warnings if localStorage has dups.
+17. enrichMission "card" exclusion was too greedy (excluded "scoreboard", "flashcard", etc.).
+
+FIXES APPLIED (17 fixes):
+1. Build button now disabled during refining: disabled={loading || refining || !mission.trim()}
+   build() now aborts refineAbortRef before starting → no race condition.
+2. Elapsed-time effect: removed buildSteps from deps, use buildStepsRef instead. Effect now
+   only depends on [loading, refining]. Elapsed counter and thinking step work during streaming.
+3. Right panel: changed {result && ...} to {(result || loading) && ...}. First build now shows
+   the live-preview iframe. All null-unsafe references (result.html, result.mission, result.id)
+   replaced with optional chaining (result?.html, result?.mission, result?.id).
+4. injectCsp: regex changed to /<head(?=[\s>])[^>]*>/i (lookahead ensures next char is
+   whitespace or >, not 'e' for <header>).
+5. resultRef updated synchronously in build(), sendChat(), loadFromHistory() — not just in
+   useEffect. sendChat now sees the correct result immediately.
+6. refinedResult now includes tokens: finalTokens, ms: finalMs — header shows accurate info.
+7. cancelBuild now clears livePreviewHtml.
+8. SSE parser: normalize \r\n to \n before splitting on \n\n (both build and refine parsers).
+9. Chat input: clear only on success, restore on error (setChatInput(msg) in catch block).
+10. Added cancelRefine() function. Toolbar Cancel button now shows during both loading and refining.
+11. Esc handler: check if target is a text field (INPUT/TEXTAREA/contentEditable) → skip cancel.
+12. download(): setTimeout(() => URL.revokeObjectURL(url), 1000) — delayed revocation for Safari.
+13. Chat log: added role="log" aria-live="polite" aria-atomic="false".
+14. Loading overlays: added role="status" aria-live="polite".
+15. looksLikeHtml: strip \uFEFF BOM before checking.
+16. validateHistory: dedupe by id using Set.
+17. enrichMission: removed !lower.includes('card') exclusion (was too greedy).
+
+NEW TESTS:
+- tests/roast-cycle-3.test.ts: 9 tests for CSP <header> fix, BOM stripping, history dedup
+
+BROWSER VERIFICATION:
+- FIRST BUILD (critical fix #3): Right panel with iframe now appears during first build!
+  Previously: user stared at left panel for 50s. Now: live preview shows as tokens stream.
+- ELAPSED COUNTER (critical fix #2): Shows "19s" and updates during streaming!
+  Previously: stuck at 0s the entire build. Now: accurate elapsed time + dynamic thinking steps.
+- CANCEL DURING REFINE (fix #10): "Cancel" button appears during refine, clicking it works.
+  Previously: only "New" appeared, no way to cancel refine with mouse. Now: Cancel works.
+- CHAT INPUT PRESERVED (fix #9): After cancelling refine, chat input still has "make the snake red".
+  Previously: input was cleared immediately, lost on error/cancel. Now: restored on failure.
+- Build: 35s, quality 100, 15 CSS rules (accurate). Zero console errors. Zero page errors.
+
+Stage Summary:
+- Tests: 358 pass, 0 fail, 629 expect() calls (up from 349)
+- Lint: 0 errors, 1 intentional warning
+- TypeScript: clean
+- The two CRITICAL fixes (race condition + dead elapsed counter) were the most impactful
+  bugs found in any roast cycle — they affected every single build the user did.
+- The first-build live preview fix is the biggest UX improvement: NOVA's breakthrough feature
+  now actually works on the most common user flow.

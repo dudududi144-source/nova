@@ -24,7 +24,10 @@ export function enrichMission(mission: string): EnrichedMission {
   const hints: string[] = []
   let detectedType = 'app'
 
-  if (lower.includes('snake') || (lower.includes('game') && !lower.includes('card'))) {
+  if (lower.includes('snake') || lower.includes('game')) {
+    // Note: card games, word games, text adventures also match 'game' — that's fine.
+    // The snake-specific hints (canvas, grid movement) may not apply to all games,
+    // but the architect LLM adapts based on the mission text.
     detectedType = 'game'
     hints.push('Use HTML5 Canvas for rendering')
     hints.push('Game loop with requestAnimationFrame at 10-15 FPS')
