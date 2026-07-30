@@ -1621,3 +1621,41 @@ Stage Summary:
   timeouts. The sweet spot is v30: enough quality requirements to produce a
   good app, but not so many that the LLM takes 96 seconds and times out.
   The balance is: dark theme ✓, game loop ✓, aria-labels ✓, but NOT "300 lines minimum".
+
+---
+Task ID: 31
+Agent: main (Z.ai Code)
+Task: Fix 502 — build completes but client sees error every time.
+
+ROOT CAUSE (finally found!):
+The server was completing builds successfully (200, 13-15KB HTML) but the browser
+or Caddy proxy was disconnecting before the response arrived. The build took 64-96s,
+but the proxy/browser timeout is ~60s. The server finished the work and logged
+code.completed with 200 status, but the client already gave up and saw a disconnect.
+
+Evidence from logs:
+  code.started: plan=true  → code.completed: 64s, 15KB (200 OK!)
+  code.started: plan=false → code.completed: 59s, 13KB (RETRY — unnecessary!)
+  The first call SUCCEEDED on the server, but the client didn't receive it.
+
+FIXES:
+1. Reduced code timeout: 110s → 75s (forces LLM to finish under proxy timeout)
+2. Reduced maxTokens: 16000 → 12000 (less work, faster completion)
+3. Reduced maxDuration: 120s → 90s
+4. Fixed retry logic:
+   - try/catch around fetch (catches browser disconnect separately)
+   - Only retry if fetch threw OR server returned error status
+   - Separate handling for abort vs network error vs server error
+
+Results:
+  Architect: 6.4s, 551 tokens, 7 features
+  Coder: 52s, 3481 tokens, 13.5KB HTML
+  Total: ~58s — UNDER the 60s proxy timeout!
+  No retry triggered — single code call succeeded
+  Snake game rendered with "Restart Game" button
+  Zero console errors, zero 502
+
+Lesson: The 502 was never an LLM error. The LLM was doing its job correctly.
+The problem was infrastructure: the proxy/browser has a ~60s timeout, and the
+build took 64-96s. The fix was to make the build faster (75s timeout forces
+the LLM to finish quicker, 12000 maxTokens instead of 16000 means less work).
