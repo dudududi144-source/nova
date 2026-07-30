@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -13,6 +13,12 @@ interface BuildResponse {
   tokens?: number
   ms?: number
   error?: string
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  ts: number
 }
 
 const EXAMPLES: readonly string[] = [
@@ -31,6 +37,10 @@ export default function Home() {
   const [history, setHistory] = useState<BuildResult[]>([])
   const [confirmClear, setConfirmClear] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [refining, setRefining] = useState(false)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
   // This prevents build from being re-created on every result change (every build).
@@ -220,10 +230,12 @@ export default function Home() {
     abortRef.current?.abort()
     abortRef.current = null
     setLoading(false)
+    setRefining(false)
     setResult(null)
     setError(null)
     setFailedMission(null)
     setMission('')
+    setChatMessages([])
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -251,6 +263,91 @@ export default function Home() {
     URL.revokeObjectURL(url)
     toast.success(`Downloaded ${filename}`)
   }, [result])
+
+  // Chat refine: send message + current HTML to LLM, get back updated HTML
+  const sendChat = useCallback(async () => {
+    const msg = chatInput.trim()
+    if (!msg || refining || !result) return
+
+    const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
+    setChatMessages(prev => [...prev, userMsg])
+    setChatInput('')
+    setRefining(true)
+
+    // Abort any in-flight refine
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission: result.mission, html: result.html, message: msg }),
+        signal: controller.signal,
+      })
+
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('application/json')) {
+        const failMsg = `Server error (${res.status})`
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
+        toast.error(failMsg)
+        return
+      }
+
+      let data: BuildResponse
+      try {
+        data = (await res.json()) as BuildResponse
+      } catch {
+        const failMsg = `Server error (${res.status})`
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
+        toast.error(failMsg)
+        return
+      }
+
+      if (!res.ok || !data.ok) {
+        const failMsg = typeof data?.error === 'string' ? data.error : `Server error (${res.status})`
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
+        toast.error(failMsg)
+        return
+      }
+
+      // Update the result with the refined HTML
+      const refinedResult: BuildResult = {
+        ...result,
+        id: newBuildId(),
+        html: data.html ?? '',
+        tokens: (result.tokens ?? 0) + (data.tokens ?? 0),
+        ms: (result.ms ?? 0) + (data.ms ?? 0),
+      }
+      setResult(refinedResult)
+
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Updated! ${data.ms ? `${(data.ms / 1000).toFixed(1)}s` : ''} · ${data.tokens ?? 0} tokens`,
+        ts: Date.now(),
+      }])
+
+      toast.success('Refined!')
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      const failMsg = err instanceof Error ? err.message : 'Network error'
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
+      toast.error(failMsg)
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setRefining(false)
+      }
+    }
+  }, [chatInput, refining, result])
+
+  // Auto-scroll chat to bottom on new messages
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    }
+  }, [chatMessages, refining])
 
   // Keyboard shortcuts: Esc=cancel build, ⌘S/Ctrl+S=download
   // These are window-level so they work even when the textarea is focused.
@@ -504,9 +601,9 @@ export default function Home() {
             {/* Toolbar */}
             <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-2">
               <div className="flex min-w-0 items-center gap-2">
-                {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
+                {(loading || refining) && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
                 <p className="truncate text-xs text-muted-foreground">
-                  {loading ? 'Rebuilding...' : result.mission}
+                  {loading ? 'Rebuilding...' : refining ? 'Refining...' : result.mission}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -514,13 +611,70 @@ export default function Home() {
                   <Download className="h-3.5 w-3.5" />
                   Download
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading}>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining}>
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : reset}>
                   {loading ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                   {loading ? 'Cancel' : 'New'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Chat panel */}
+            <div className="flex shrink-0 flex-col border-b border-border/40" style={{ maxHeight: '200px' }}>
+              {/* Chat messages */}
+              <div ref={chatScrollRef} className="max-h-[120px] overflow-y-auto px-4 py-2">
+                {chatMessages.length === 0 ? (
+                  <p className="text-[10px] text-muted-foreground/40">
+                    <MessageSquare className="mr-1 inline h-3 w-3" />
+                    Ask NOVA to change something — "make it blue", "add dark mode", "add a high score"
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {chatMessages.map((m, i) => (
+                      <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-md px-2 py-1 text-[11px] ${
+                          m.role === 'user'
+                            ? 'bg-primary/15 text-foreground'
+                            : m.content.startsWith('Error:')
+                              ? 'bg-destructive/10 text-destructive'
+                              : 'bg-muted/40 text-muted-foreground'
+                        }`}>
+                          {m.content}
+                        </div>
+                      </div>
+                    ))}
+                    {refining && (
+                      <div className="flex justify-start">
+                        <div className="rounded-md bg-muted/40 px-2 py-1">
+                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Chat input */}
+              <div className="flex items-center gap-1.5 border-t border-border/40 p-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      sendChat()
+                    }
+                  }}
+                  placeholder="Ask NOVA to change something..."
+                  disabled={refining || loading}
+                  maxLength={500}
+                  className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none disabled:opacity-50"
+                />
+                <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={sendChat} disabled={refining || loading || !chatInput.trim()}>
+                  {refining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
