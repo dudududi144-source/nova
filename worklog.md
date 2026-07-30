@@ -1246,3 +1246,59 @@ Stage Summary:
 - **Lesson**: I built the feature, then immediately found 10 bugs in it by roasting.
   The most critical (shared abortRef) would have caused a frozen UI — loading state
   never clears. The lesson: ALWAYS roast your own new code before declaring it done.
+
+---
+Task ID: 24
+Agent: main (Z.ai Code)
+Task: Fix 502 error UX + add thinking display during build/refine.
+
+Work Log:
+- User reported 502 error on build. Investigated: caused by build.invalid_html
+  (LLM returns truncated output for complex missions like markdown editor).
+  The 502 was working correctly — the issue was UX: the error message didn't
+  explain WHAT went wrong or WHAT to do about it.
+
+- Added thinking display: 10 rotating status messages during build that give
+  users a sense of progress while waiting 30-60 seconds:
+  1. "Understanding your request..." (0-5s)
+  2. "Planning the architecture..." (5-10s)
+  3. "Designing the UI layout..." (10-15s)
+  4. "Writing HTML structure..." (15-20s)
+  5. "Styling with CSS..." (20-25s)
+  6. "Adding JavaScript logic..." (25-30s)
+  7. "Implementing interactivity..." (30-35s)
+  8. "Checking for edge cases..." (35-40s)
+  9. "Optimizing performance..." (40-45s)
+  10. "Finalizing the code..." (45s+)
+  Plus a progress bar (dots that fill as steps advance) and elapsed time.
+  Steps rotate every 5 seconds. They're illustrative, not literal LLM steps.
+
+- 6 separate steps for refine: "Analyzing current code...", "Understanding
+  your request...", "Planning the changes...", "Applying modifications...",
+  "Verifying everything still works...", "Finalizing the update..."
+
+- Thinking display shown in 4 locations:
+  1. Sidebar loading panel (first build, no prior result)
+  2. Header (compact: step name + elapsed time)
+  3. Rebuild overlay (full: spinner + step + progress bar + time)
+  4. Chat refine bubble (compact: spinner + step name)
+
+- Better 502 error: added explanation text below the error:
+  "The AI sometimes returns incomplete output. Try again, or simplify your request."
+
+- Verified with Agent Browser:
+  1. Build started → after 5s: "Planning the architecture... · 5s"
+  2. After 10s: "Designing the UI layout... · 10s"
+  3. Progress bar dots filling
+  4. Build completed (47s), zero console errors
+
+Stage Summary:
+- **Thinking display**: 10 build steps + 6 refine steps + progress bar + elapsed time
+- **502 error improvement**: explanation text helps users understand and recover
+- **4 display locations**: sidebar, header, rebuild overlay, chat bubble
+- **Lesson**: The 502 error was always "working" — the server correctly returned an
+  error. But the UX was broken: the user saw "The model did not return valid HTML"
+  with no explanation of why or what to do. The fix wasn't technical (the error handling
+  was correct) — it was communicative (explaining what happened and what to try).
+  The thinking display solves a different problem: the 30-60s wait felt broken because
+  nothing was happening. Now the user sees progress, which makes the wait bearable.
