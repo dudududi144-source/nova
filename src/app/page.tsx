@@ -234,6 +234,16 @@ export default function Home() {
                 if (prev.length <= 2) return [evt.step, 'Generating code...', 'Finalizing...']
                 return [prev[0], evt.step, ...prev.slice(2)]
               })
+            } else if (evt.type === 'token') {
+              // REAL TOKEN STREAMING — show partial HTML being generated
+              setBuildSteps(prev => {
+                const last = prev[prev.length - 1]
+                const newLast = `Generating: ${evt.length} chars...`
+                if (last && last.startsWith('Generating:')) {
+                  return [...prev.slice(0, -1), newLast]
+                }
+                return [...prev, newLast]
+              })
             } else if (evt.type === 'result') {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0

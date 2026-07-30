@@ -9,8 +9,16 @@ const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => Promi
   ms: 3000,
 }))
 
+// Mock streaming: yields full text in one chunk, then done
+let mockStreamFn = async function* (_sys: string, _user: string, _opts?: unknown) {
+  const fullText = '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>'
+  yield { text: fullText, fullText, done: false, tokens: 0, ms: 0 }
+  yield { text: '', fullText, done: true, tokens: 500, ms: 3000 }
+}
+
 mock.module('@/lib/llm', () => ({
   llmChat: (sys: string, user: string, opts?: unknown) => mockLlmChat(sys, user, opts),
+  llmChatStream: (sys: string, user: string, opts?: unknown) => mockStreamFn(sys, user, opts),
   validateMission: (m: string) => m && m.trim().length >= 3 ? { ok: true } : { ok: false, error: 'Too short' },
   stripCodeFences: (t: string) => {
     const f = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
@@ -74,6 +82,12 @@ describe('POST /api/build/code (SSE streaming)', () => {
       tokens: 500,
       ms: 3000,
     })
+    // Reset streaming mock to default
+    mockStreamFn = async function* (_sys: string, _user: string, _opts?: unknown) {
+      const fullText = '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>'
+      yield { text: fullText, fullText, done: false, tokens: 0, ms: 0 }
+      yield { text: '', fullText, done: true, tokens: 500, ms: 3000 }
+    }
     logSpy = spyOn(console, 'log').mockImplementation(() => {})
     errorSpy = spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -111,9 +125,9 @@ describe('POST /api/build/code (SSE streaming)', () => {
   })
 
   it('streams error event when LLM fails', async () => {
-    mockLlmChat.mockImplementation(async () => ({
-      ok: false, text: '', tokens: 0, ms: 100, error: 'LLM failed',
-    }))
+    mockStreamFn = async function* () {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: 100, error: 'LLM failed' }
+    }
     const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
     const events = await readSSE(res)
     const errorEvents = events.filter(e => e.type === 'error')
@@ -122,9 +136,11 @@ describe('POST /api/build/code (SSE streaming)', () => {
   })
 
   it('streams error event when LLM returns non-HTML', async () => {
-    mockLlmChat.mockImplementation(async () => ({
-      ok: true, text: 'not html', tokens: 50, ms: 100,
-    }))
+    mockStreamFn = async function* () {
+      const bad = 'not html at all'
+      yield { text: bad, fullText: bad, done: false, tokens: 0, ms: 0 }
+      yield { text: '', fullText: bad, done: true, tokens: 50, ms: 100 }
+    }
     const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
     const events = await readSSE(res)
     const errorEvents = events.filter(e => e.type === 'error')

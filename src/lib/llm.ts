@@ -1,6 +1,6 @@
 // LLM wrapper — server-side only.
 // Thin wrapper around z-ai-web-dev-sdk.
-// One job: take a system + user prompt, return text or a structured error.
+// Supports both non-streaming (llmChat) and real token streaming (llmChatStream).
 
 import ZAI from 'z-ai-web-dev-sdk'
 
@@ -231,4 +231,124 @@ export function injectCsp(html: string): string {
     return html.replace(/<html[^>]*>/i, `${htmlTagMatch[0]}<head>${cspMeta}</head>`)
   }
   return `${cspMeta}\n${html}`
+}
+
+/**
+ * Stream LLM tokens in real-time via the SDK's streaming mode.
+ * Returns an async generator that yields text chunks as they arrive.
+ *
+ * Usage:
+ *   for await (const chunk of llmChatStream(sys, user, opts)) {
+ *     // chunk.text = partial text
+ *     // chunk.done = true when stream is complete
+ *     // chunk.tokens = total tokens (on done)
+ *   }
+ */
+export interface StreamChunk {
+  text: string      // new text since last chunk
+  fullText: string  // accumulated text so far
+  done: boolean
+  tokens: number
+  ms: number
+  error?: string
+}
+
+export async function* llmChatStream(
+  systemPrompt: string,
+  userPrompt: string,
+  opts: LlmOptions = {}
+): AsyncGenerator<StreamChunk> {
+  const t0 = Date.now()
+  const maxTokens = opts.maxTokens ?? 16000
+  const temperature = opts.temperature ?? 0.4
+  const timeoutMs = opts.timeoutMs ?? 150_000
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  // Link external signal
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      controller.abort()
+    } else {
+      opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
+    }
+  }
+
+  try {
+    const zai = await getZai()
+
+    // Enable streaming — SDK returns response.body (ReadableStream)
+    const streamBody = await zai.chat.completions.create({
+      messages: [
+        { role: 'assistant', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+      thinking: { type: 'disabled' },
+      stream: true,
+      signal: controller.signal,
+    } as any)
+
+    // streamBody is a ReadableStream — read it chunk by chunk
+    const reader = (streamBody as unknown as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let fullText = ''
+    let totalTokens = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Parse SSE lines: data: {...}\n\n
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data: ')) continue
+
+        const jsonStr = trimmed.slice(6)
+        if (jsonStr === '[DONE]') {
+          clearTimeout(timer)
+          yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
+          return
+        }
+
+        try {
+          const data = JSON.parse(jsonStr)
+          const content = data?.choices?.[0]?.delta?.content ?? ''
+          if (content) {
+            fullText += content
+            yield { text: content, fullText, done: false, tokens: 0, ms: 0 }
+          }
+          // Track usage if present
+          if (data?.usage?.completion_tokens) {
+            totalTokens = (data.usage.prompt_tokens ?? 0) + (data.usage.completion_tokens ?? 0)
+          }
+        } catch {
+          // Skip malformed JSON
+        }
+      }
+    }
+
+    // Stream ended without [DONE]
+    clearTimeout(timer)
+    yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
+  } catch (err: unknown) {
+    clearTimeout(timer)
+    const msg = err instanceof Error ? err.message : String(err)
+
+    if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: Date.now() - t0, error: 'The AI service is busy. Try again in a minute.' }
+    } else if (controller.signal.aborted) {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: Date.now() - t0, error: `Build timed out after ${Math.round(timeoutMs / 1000)}s.` }
+    } else {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: Date.now() - t0, error: 'The AI service encountered an error. Try again.' }
+    }
+  }
 }

@@ -9,7 +9,7 @@
 // No arbitrary maxTokens limit — LLM generates until it's naturally done.
 
 import type { NextRequest } from 'next/server'
-import { llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
+import { llmChatStream, llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
@@ -113,33 +113,60 @@ export async function POST(request: NextRequest): Promise<Response> {
       }, 3000)
 
       try {
-        // Adaptive token budget — estimate from plan complexity
+        // Adaptive token budget
         const tokenBudget = estimateTokenBudget(plan)
         logger.info('code.budget', { ip, maxTokens: tokenBudget, hasPlan: !!plan })
 
-        // Call LLM with adaptive budget (not arbitrary)
-        const result = await llmChat(CODER_PROMPT, planContext, {
+        // ═══ REAL STREAMING ═══
+        // Stream tokens from LLM → client in real-time via SSE
+        // User sees HTML appearing character by character
+        let fullText = ''
+        let totalTokens = 0
+        let llmMs = 0
+        let streamError: string | null = null
+
+        for await (const chunk of llmChatStream(CODER_PROMPT, planContext, {
           maxTokens: tokenBudget,
           temperature: 0.4,
           timeoutMs: 150_000,
           signal: request.signal,
-        })
+        })) {
+          if (chunk.error) {
+            streamError = chunk.error
+            break
+          }
+          if (chunk.done) {
+            totalTokens = chunk.tokens
+            llmMs = chunk.ms
+            break
+          }
+          // Send each token chunk to client immediately
+          if (chunk.text) {
+            fullText = chunk.fullText
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`))
+            } catch {
+              // stream closed by client
+              break
+            }
+          }
+        }
 
         // Stop keepalive
         if (keepAliveInterval) clearInterval(keepAliveInterval)
 
-        if (!result.ok) {
-          logger.error('code.failed', { ip, error: result.error, ms: result.ms })
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: result.error ?? 'Coder failed' })}\n\n`))
+        if (streamError) {
+          logger.error('code.failed', { ip, error: streamError, ms: llmMs })
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: streamError })}\n\n`))
           controller.close()
           return
         }
 
-        let rawHtml = stripCodeFences(result.text)
+        let rawHtml = stripCodeFences(fullText)
 
         // Truncation detection + continuation retry
         if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
-          logger.warn('code.truncated', { ip, ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
+          logger.warn('code.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
           // Send progress event
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`))
 
@@ -156,7 +183,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         if (!looksLikeHtml(rawHtml)) {
-          logger.warn('code.invalid_html', { ip, ms: result.ms, tokens: result.tokens, previewLen: rawHtml.length })
+          logger.warn('code.invalid_html', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'The AI generated invalid output. Try again or simplify your request.' })}\n\n`))
           controller.close()
           return
@@ -191,8 +218,8 @@ export async function POST(request: NextRequest): Promise<Response> {
                 // Use the improved version
                 const finalHtml = injectCsp(retryHtml)
                 const metrics = analyzeQuality(finalHtml)
-                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: result.tokens + retryResult.tokens, htmlBytes: finalHtml.length, score: retryValidation.score, metrics: metrics.summary })
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: result.tokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`))
+                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: finalHtml.length, score: retryValidation.score, metrics: metrics.summary })
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`))
                 controller.close()
                 return
               }
@@ -203,10 +230,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         // ── INTELLIGENCE: Quality metrics ──
         const metrics = analyzeQuality(html)
-        logger.info('code.completed', { ip, ms: totalMs, tokens: result.tokens, htmlBytes: html.length, score: validation.score, metrics: metrics.summary })
+        logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: html.length, score: validation.score, metrics: metrics.summary })
 
         // Send the final result with quality score and metrics
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html, tokens: result.tokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
         controller.close()
       } catch (err: unknown) {
         if (keepAliveInterval) clearInterval(keepAliveInterval)
