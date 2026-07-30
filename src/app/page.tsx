@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
+import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 
 interface BuildResponse {
   ok: boolean
@@ -28,31 +29,6 @@ const EXAMPLES: readonly string[] = [
   'Build a color palette generator with copy-to-clipboard',
 ]
 
-// Thinking steps shown during build — gives users a sense of progress.
-// Two phases: architect (planning) and coder (building).
-const THINKING_STEPS: readonly string[] = [
-  'Analyzing your request...',
-  'Planning the architecture...',
-  'Designing the UI layout...',
-  'Writing HTML structure...',
-  'Styling with CSS...',
-  'Adding JavaScript logic...',
-  'Implementing interactivity...',
-  'Checking for edge cases...',
-  'Optimizing performance...',
-  'Finalizing the code...',
-]
-
-// After 15 seconds, show a different message (architect done, coder working)
-const THINKING_LATE_STEPS: readonly string[] = [
-  'Writing the code...',
-  'Adding styles and colors...',
-  'Implementing game logic...',
-  'Adding interactivity...',
-  'Polishing the details...',
-  'Almost done...',
-]
-
 const REFINE_THINKING_STEPS: readonly string[] = [
   'Analyzing current code...',
   'Understanding your request...',
@@ -72,6 +48,8 @@ export default function Home() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [thinkingStep, setThinkingStep] = useState(0)
+  const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
+  const [planSummary, setPlanSummary] = useState<string | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [refining, setRefining] = useState(false)
@@ -101,7 +79,7 @@ export default function Home() {
     return () => abortRef.current?.abort()
   }, [])
 
-  // Elapsed time counter + thinking step rotation during build/refine
+  // Elapsed time counter + dynamic thinking step rotation
   useEffect(() => {
     if (!loading && !refining) {
       setElapsed(0)
@@ -109,7 +87,7 @@ export default function Home() {
       return
     }
     const startTime = Date.now()
-    const steps = loading ? THINKING_STEPS : REFINE_THINKING_STEPS
+    const steps = loading ? buildSteps : REFINE_THINKING_STEPS
     let step = 0
     setThinkingStep(0)
 
@@ -117,21 +95,17 @@ export default function Home() {
       const sec = Math.floor((Date.now() - startTime) / 1000)
       setElapsed(sec)
 
-      // After 15s, switch to "late" steps (coder phase)
-      if (loading && sec >= 15) {
-        const lateSteps = THINKING_LATE_STEPS
-        const lateStep = Math.min(lateSteps.length - 1, Math.floor((sec - 15) / 5))
-        setThinkingStep(lateStep + 100) // offset to distinguish
-      } else {
-        const nextStep = Math.min(steps.length - 1, Math.floor(sec / 5))
-        if (nextStep !== step) {
-          step = nextStep
-          setThinkingStep(step)
-        }
+      // Rotate through steps — timing depends on how many steps we have
+      // Allocate ~4 seconds per step, but always keep the last step if we run out
+      const stepDuration = loading ? 4 : 5 // 4s for build (more steps), 5s for refine
+      const nextStep = Math.min(steps.length - 1, Math.floor(sec / stepDuration))
+      if (nextStep !== step) {
+        step = nextStep
+        setThinkingStep(step)
       }
     }, 1000)
     return () => clearInterval(timer)
-  }, [loading, refining])
+  }, [loading, refining, buildSteps])
 
   // Centralized build function. Aborts any in-flight build first.
   // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
@@ -157,6 +131,11 @@ export default function Home() {
     setError(null)
     setFailedMission(null)
     setChatMessages([])
+
+    // Extract dynamic steps from the mission IMMEDIATELY — not pre-canned
+    const steps = extractStepsFromMission(m)
+    setBuildSteps(steps)
+    setPlanSummary(null)
 
     // Helper: set error state consistently (replaces 6 repeated blocks)
     const fail = (msg: string) => {
@@ -216,6 +195,15 @@ export default function Home() {
       }
 
       setResult(buildResult)
+
+      // Update thinking steps with the ACTUAL plan from the architect
+      const planData = (data as unknown as Record<string, unknown>).plan
+      if (planData) {
+        const planSteps = extractStepsFromPlan(planData, m)
+        const summary = getPlanSummary(planData)
+        setPlanSummary(summary)
+        console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
+      }
 
       // Functional setState — avoids stale closure on rapid successive builds
       setHistory(prev => {
@@ -445,19 +433,16 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey)
   }, [loading, refining, result, download, cancelBuild])
 
-  // Helper: get current thinking step text
+  // Helper: get current thinking step text (DYNAMIC — from mission or plan)
   const getThinkingText = useCallback(() => {
     if (loading) {
-      if (thinkingStep >= 100) {
-        return THINKING_LATE_STEPS[thinkingStep - 100] ?? 'Writing code...'
-      }
-      return THINKING_STEPS[thinkingStep] ?? 'Building...'
+      return buildSteps[thinkingStep] ?? buildSteps[buildSteps.length - 1] ?? 'Building...'
     }
     if (refining) {
       return REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'
     }
     return ''
-  }, [loading, refining, thinkingStep])
+  }, [loading, refining, thinkingStep, buildSteps])
 
   // Whether to show examples (only when no result, no error, not loading)
   const showExamples = !result && !loading && !error
@@ -560,7 +545,7 @@ export default function Home() {
               </div>
               <div className="mt-2 flex items-center gap-2 pl-5">
                 <div className="flex gap-1">
-                  {THINKING_STEPS.map((_, i) => (
+                  {buildSteps.map((_, i) => (
                     <div
                       key={i}
                       className={`h-1 rounded-full transition-all ${
@@ -802,7 +787,7 @@ export default function Home() {
                       {getThinkingText()}
                     </p>
                     <div className="flex gap-1">
-                      {THINKING_STEPS.map((_, i) => (
+                      {buildSteps.map((_, i) => (
                         <div
                           key={i}
                           className={`h-1 rounded-full transition-all ${
