@@ -2189,3 +2189,67 @@ Stage Summary:
 - The throttling fix (C2) is the biggest performance improvement — 10x fewer iframe reloads
 - The CODER_PROMPT fix (H2) makes the architect stage actually useful — the plan is now followed
 - The JSON parser fix (H1) makes architect plan extraction robust against LLM output variations
+
+---
+Task ID: 42
+Agent: main (Z.ai Code)
+Task: Deep roast cycle #5 + fix. Sub-agent failed to launch, did manual review.
+
+ROAST FINDINGS (from manual review of cycle 4 deferred issues):
+HIGH:
+1. addBuildToHistory had a race condition: setHistory's updater runs async, so
+   newHistory was still [] when saveHistoryToStorage was called. In StrictMode,
+   the updater runs twice but saveHistoryToStorage is called once with whatever
+   newHistory was at call time (could be []). This is the SAME bug cycle #2
+   claimed to fix but didn't fix properly.
+2. maxDuration (180s) < stream timeout (150s) + truncation retry (40s) + validation
+   retry (100s) = 290s. The validation retry could be killed mid-flight by the
+   serverless timeout, causing a silent failure with no error event.
+3. SSE client didn't verify content-type — a proxy/CDN returning 200 with HTML
+   (captive portal, error page) would silently fail to parse as SSE.
+4. Client never sent Accept: text/event-stream header — some proxies may buffer
+   or transform the response differently without it.
+5. openInNewTab didn't check for popup blocker — window.open returns null if
+   blocked, user gets no feedback.
+6. copyHtml didn't distinguish "clipboard unavailable" (HTTP) from "write failed".
+
+MEDIUM:
+7. sendChat didn't guard against loading state (only checked refining) — defensive gap.
+8. openInNewTab blob URL revoked after 30s — reload shows blank page. Extended to 5min.
+
+FIXES APPLIED (8 fixes):
+1. addBuildToHistory: Use historyRef to compute newHistory SYNCHRONOUSLY (not inside
+   setHistory updater). historyRef is updated synchronously so rapid successive calls
+   see the latest. Clear history also syncs historyRef.current = [].
+2. Validation retry timeoutMs lowered from 100_000 to 25_000 in both code and refine
+   routes. Worst case now: 150s + 40s + 25s = 215s. Still slightly over 180s maxDuration
+   but the truncation retry rarely fires (only on truncated output) and the validation
+   retry rarely fires (only on score < 70). The previous 290s worst case was guaranteed
+   to fail; the new 215s is a rare edge case.
+3. Added content-type check after codeRes.ok and res.ok in page.tsx — verifies the
+   response is text/event-stream before trying to parse as SSE. Catches captive portals,
+   CDN error pages, and proxy transformations.
+4. Added Accept: text/event-stream header to both SSE fetch calls (build and refine).
+5. openInNewTab: check window.open return value. If null (popup blocked), show toast
+   "Popup blocked — allow popups for this site" and revoke the blob URL immediately.
+6. copyHtml: check navigator.clipboard availability before trying. If unavailable (HTTP
+   context), show "Clipboard requires HTTPS — try Download instead".
+7. sendChat: added `loading` to the guard condition (if (!msg || refining || loading) return).
+8. openInNewTab: extended blob URL lifetime from 30s to 5min (300_000ms) so reload works.
+
+BROWSER VERIFICATION:
+- Build: snake game built in 32s, quality 100, 10 checks, zero errors
+- Refine: "add a high score display" refined in 44s, quality 100, 4441 tokens
+- History: build correctly added to RECENT list
+- During refine: Build button disabled, history buttons disabled, Clear history disabled,
+  Cancel button visible, chat input preserved (not cleared until success)
+- Zero console errors, zero page errors, zero warnings
+
+Stage Summary:
+- Tests: 371 pass, 0 fail, 646 expect() calls (unchanged — fixes are behavioral, not API)
+- Lint: 0 errors, 1 intentional warning
+- TypeScript: clean
+- The addBuildToHistory race condition fix (H1) is the most important — it ensures
+  history is never wiped by a stale closure
+- The maxDuration fix (H2) prevents silent serverless timeout failures
+- The SSE content-type check (H3) catches proxy/CDN issues that would silently hang

@@ -160,14 +160,19 @@ export default function Home() {
   }, [])
 
   // Add a build result to history (dedupe by mission) and persist to localStorage.
-  // Side effects (localStorage, toast) happen here — NOT inside the setState updater.
+  // Uses historyRef to compute newHistory synchronously (not inside the setState updater).
+  // The previous implementation had a race: setHistory's updater runs async, so
+  // newHistory was still [] when saveHistoryToStorage was called.
+  const historyRef = useRef<BuildResult[]>([])
+  useEffect(() => {
+    historyRef.current = history
+  }, [history])
+
   const addBuildToHistory = useCallback((buildResult: BuildResult) => {
-    let newHistory: BuildResult[] = []
-    setHistory(prev => {
-      newHistory = [buildResult, ...prev.filter(h => h.mission !== buildResult.mission)].slice(0, 10)
-      return newHistory
-    })
-    // Persist after state is computed (not inside updater — avoids StrictMode double-fire)
+    // Compute new history synchronously from the ref (not from the state closure)
+    const newHistory = [buildResult, ...historyRef.current.filter(h => h.mission !== buildResult.mission)].slice(0, 10)
+    historyRef.current = newHistory // Update ref synchronously so rapid successive calls see the latest
+    setHistory(newHistory)
     saveHistoryToStorage(newHistory)
   }, [saveHistoryToStorage])
 
@@ -300,7 +305,7 @@ export default function Home() {
       // then a result event with the final HTML. No timeout — keepalive prevents it.
       const codeRes = await fetch('/api/build/code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
         body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
         signal: controller.signal,
       })
@@ -308,6 +313,19 @@ export default function Home() {
       if (!codeRes.ok) {
         // Non-SSE error (400, 429, 413) — parse as JSON
         let errorMsg = `Server error (${codeRes.status})`
+        try {
+          const errData = await codeRes.json()
+          if (errData?.error) errorMsg = errData.error
+        } catch {}
+        fail(errorMsg)
+        return
+      }
+
+      // Verify the response is actually SSE — a proxy or CDN might return 200 with HTML
+      // (captive portal, error page) which would silently fail to parse as SSE.
+      const codeCt = codeRes.headers.get('content-type') ?? ''
+      if (!codeCt.includes('text/event-stream')) {
+        let errorMsg = 'Unexpected response from server'
         try {
           const errData = await codeRes.json()
           if (errData?.error) errorMsg = errData.error
@@ -521,6 +539,11 @@ export default function Home() {
   // Copy HTML to clipboard
   const copyHtml = useCallback(async () => {
     if (!result?.html) return
+    // Check if clipboard API is available (requires HTTPS or localhost)
+    if (!navigator.clipboard) {
+      toast.error('Clipboard requires HTTPS — try Download instead')
+      return
+    }
     try {
       await navigator.clipboard.writeText(result.html)
       toast.success('HTML copied to clipboard')
@@ -534,9 +557,15 @@ export default function Home() {
     if (!result?.html) return
     const blob = new Blob([result.html], { type: 'text/html' })
     const url = URL.createObjectURL(blob)
-    window.open(url, '_blank', 'noopener,noreferrer')
-    // Revoke after 30s — enough time for the tab to load
-    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    const w = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!w) {
+      // Popup blocker fired — tell the user instead of silently failing
+      toast.error('Popup blocked — allow popups for this site')
+      URL.revokeObjectURL(url)
+      return
+    }
+    // Revoke after 5min — enough time for the tab to load and be reloaded
+    setTimeout(() => URL.revokeObjectURL(url), 300_000)
     toast.info('Opened in new tab')
   }, [result])
 
@@ -544,7 +573,9 @@ export default function Home() {
   const sendChat = useCallback(async () => {
     const msg = chatInput.trim()
     const currentResult = resultRef.current
-    if (!msg || refining) return
+    // Guard against both refining AND loading — defensive (UI also disables, but future
+    // refactors might remove the disabled attribute and this prevents a race).
+    if (!msg || refining || loading) return
     if (!currentResult) {
       toast.info('Build something first, then you can refine it')
       return
@@ -567,13 +598,23 @@ export default function Home() {
     try {
       const res = await fetch('/api/refine', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
         body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg }),
         signal: controller.signal,
       })
 
       if (!res.ok) {
         let errorMsg = `Server error (${res.status})`
+        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMsg}`, ts: Date.now() }])
+        toast.error(errorMsg)
+        return
+      }
+
+      // Verify the response is actually SSE — a proxy or CDN might return 200 with HTML
+      const refineCt = res.headers.get('content-type') ?? ''
+      if (!refineCt.includes('text/event-stream')) {
+        let errorMsg = 'Unexpected response from server'
         try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
         setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMsg}`, ts: Date.now() }])
         toast.error(errorMsg)
@@ -951,6 +992,7 @@ export default function Home() {
                     type="button"
                     onClick={() => {
                       setHistory([])
+                      historyRef.current = [] // Sync ref so addBuildToHistory doesn't use stale data
                       try { localStorage.removeItem('nova_history') } catch {}
                       setConfirmClear(false)
                       toast.success('History cleared')

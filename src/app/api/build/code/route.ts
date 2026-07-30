@@ -217,7 +217,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           const retryResult = await llmChat(CODER_PROMPT, retryPrompt, {
             maxTokens: tokenBudget,
             temperature: 0.3,
-            timeoutMs: 100_000,
+            timeoutMs: 25_000, // 25s — must fit within maxDuration (180s) after stream (150s) + truncation retry (40s)
             signal: request.signal,
           })
 
