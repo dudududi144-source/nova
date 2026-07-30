@@ -1468,3 +1468,57 @@ Stage Summary:
   steps regardless of what was being built. The new one tells the truth: snake games
   show snake-specific steps, calculators show calculator-specific steps. This is what
   "authentic" means — the UI reflects reality.
+
+---
+Task ID: 28
+Agent: main (Z.ai Code)
+Task: Split build into 2 API calls — show architect plan DURING build.
+
+Work Log:
+- The problem: In v27, the architect's plan arrived at the END of the build
+  (single /api/build call). The thinking steps were based on mission text
+  analysis, not the real plan. The user saw generic steps, not the architect's
+  actual decisions.
+
+- Solution: Split into 2 separate API calls from the client:
+
+  1. POST /api/build/architect (3.2s, 319 tokens)
+     - Returns JSON plan immediately
+     - Client updates buildSteps with REAL plan features
+     - User sees "Architect decided: Snake Game" at 3 seconds
+
+  2. POST /api/build/code (48s, ~2200 tokens)
+     - Accepts the plan as context
+     - Generates HTML using the plan
+     - User sees real feature-based steps while waiting
+
+- Timeline from browser test:
+  0s: "Analyzing your request... · 1s" (mission-based, immediate)
+  3s: [NOVA] Architect plan: Snake Game · game · 4 features 11 steps
+       Steps update to: "Architect decided: Snake Game", "Building: game board...",
+       "Building: snake movement...", "Building: scoring...", etc.
+  3-51s: Coder working, real steps showing
+  51s: Build complete, snake game rendered
+
+- The old /api/build route is kept as fallback (backward compat).
+- New routes: /api/build/architect (maxDuration 30s) + /api/build/code (maxDuration 120s)
+
+- All tests pass (266), lint clean, tsc clean.
+
+- How I verify each improvement:
+  1. Run `bun test --parallel` — 266 tests must pass
+  2. Run `bun run lint` — must be clean
+  3. Run `npx tsc --noEmit` — must be clean
+  4. Open in Agent Browser — build must succeed, zero console errors
+  5. Check dev.log — structured logging must show architect + code stages
+  6. Check console — architect plan must appear DURING build (not after)
+  7. Create backup zip + git commit
+
+Stage Summary:
+- **Real-time plan display**: architect plan shows at 3s, not at end
+- **2 new routes**: /api/build/architect + /api/build/code
+- **Authentic steps**: user sees REAL features from the plan while coder works
+- **Lesson**: The user said "אותנטי ולא סתם מציג את אותה שרשרת" (authentic, not
+  just showing the same chain). Now it IS authentic — the steps change based on
+  what the architect actually decided, in real-time, while the coder works.
+  This is the difference between "showing progress" and "showing truth".
