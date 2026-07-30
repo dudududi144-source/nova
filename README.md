@@ -62,7 +62,7 @@ tests/
 |---|---|
 | `bun run dev` | Start dev server on port 3000 |
 | `bun run lint` | Run ESLint |
-| `bun run test` | Run unit tests (163 tests) |
+| `bun run test` | Run unit tests (235 tests) |
 | `npx tsc --noEmit` | Type check |
 
 ## Security

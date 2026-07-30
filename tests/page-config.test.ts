@@ -96,4 +96,10 @@ describe('page.tsx (characterization)', () => {
     expect(source).toContain('sanitizeFilename')
     expect(source).toContain('validateHistory')
   })
+
+  it('does NOT duplicate BuildResult interface (imports from helpers)', () => {
+    // BuildResult should be imported, not redefined
+    expect(source).toContain('type BuildResult')
+    expect(source).not.toMatch(/^interface BuildResult\b/m)
+  })
 })

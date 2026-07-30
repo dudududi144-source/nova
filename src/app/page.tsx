@@ -5,15 +5,7 @@ import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, Refr
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import { newBuildId, sanitizeFilename, validateHistory } from '@/lib/helpers'
-
-interface BuildResult {
-  id: string          // unique per build (not per mission)
-  html: string
-  tokens: number
-  ms: number
-  mission: string
-}
+import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
 
 interface BuildResponse {
   ok: boolean
