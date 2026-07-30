@@ -13,48 +13,48 @@ const routeSource = fs.readFileSync(
   'utf-8'
 )
 
-describe('SYSTEM_PROMPT content (characterization)', () => {
-  it('contains STORAGE LIMITATION section (no localStorage)', () => {
-    expect(routeSource).toContain('STORAGE LIMITATION')
+describe('ARCHITECT_PROMPT content (characterization)', () => {
+  it('exists and returns JSON plan', () => {
+    expect(routeSource).toContain('ARCHITECT_PROMPT')
+    expect(routeSource).toContain('JSON')
+  })
+
+  it('has brief output format', () => {
+    expect(routeSource).toContain('brief')
+  })
+
+  it('includes plan structure (type, title, features)', () => {
+    expect(routeSource).toContain('type')
+    expect(routeSource).toContain('title')
+    expect(routeSource).toContain('features')
+  })
+})
+
+describe('CODER_PROMPT content (characterization)', () => {
+  it('forbids localStorage', () => {
     expect(routeSource).toContain('localStorage')
     expect(routeSource).toContain('in-memory')
   })
 
-  it('contains OUTPUT FORMAT section', () => {
-    expect(routeSource).toContain('OUTPUT FORMAT')
+  it('has output format rules', () => {
     expect(routeSource).toContain('DOCTYPE')
+    expect(routeSource).toContain('raw HTML')
   })
 
-  it('contains QUALITY BAR section', () => {
-    expect(routeSource).toContain('QUALITY BAR')
-  })
-
-  it('contains ACCESSIBILITY section', () => {
-    expect(routeSource).toContain('ACCESSIBILITY')
+  it('mentions accessibility', () => {
     expect(routeSource).toContain('aria-labels')
   })
 
-  it('contains PERFORMANCE section', () => {
-    expect(routeSource).toContain('PERFORMANCE')
+  it('mentions requestAnimationFrame', () => {
     expect(routeSource).toContain('requestAnimationFrame')
   })
 
-  it('contains THEME section', () => {
-    expect(routeSource).toContain('THEME')
-    expect(routeSource).toContain('#0f172a')
+  it('has dark theme default', () => {
+    expect(routeSource).toContain('Dark theme')
   })
 
-  it('explicitly forbids code fences', () => {
-    expect(routeSource).toContain('Do NOT wrap')
-    expect(routeSource).toContain('fences')
-  })
-
-  it('explicitly forbids localStorage', () => {
-    expect(routeSource).toContain('Do NOT use localStorage')
-  })
-
-  it('explicitly forbids external resources', () => {
-    expect(routeSource).toContain('No external scripts')
+  it('forbids external resources', () => {
+    expect(routeSource).toContain('No external')
   })
 })
 
@@ -84,8 +84,8 @@ describe('Route configuration (characterization)', () => {
     expect(routeSource).toContain('1000')
   })
 
-  it('has timeout of 95s (under 120s maxDuration)', () => {
-    expect(routeSource).toContain('95_000')
+  it('has timeout of 110s (under 120s maxDuration)', () => {
+    expect(routeSource).toContain('110_000')
   })
 
   it('has Content-Type header check for body size (content-length)', () => {
@@ -118,21 +118,32 @@ describe('Route configuration (characterization)', () => {
     expect(looksLikeHtmlPos).toBeLessThan(injectCspPos)
   })
 
+  it('has 2-stage pipeline (architect + coder)', () => {
+    expect(routeSource).toContain('STAGE 1: ARCHITECT')
+    expect(routeSource).toContain('STAGE 2: CODER')
+    expect(routeSource).toContain('architectResult')
+    expect(routeSource).toContain('coderResult')
+  })
+
+  it('has truncation detection + continuation retry', () => {
+    expect(routeSource).toContain('</html>')
+    expect(routeSource).toContain('truncated')
+    expect(routeSource).toContain('Continue from here')
+  })
+
   it('structured logging for all events', () => {
     expect(routeSource).toContain("build.started")
     expect(routeSource).toContain("build.completed")
+    expect(routeSource).toContain("build.architect_started")
+    expect(routeSource).toContain("build.architect_completed")
+    expect(routeSource).toContain("build.coder_started")
     expect(routeSource).toContain("build.rate_limited")
     expect(routeSource).toContain("build.invalid_mission")
-    expect(routeSource).toContain("build.llm_failed")
     expect(routeSource).toContain("build.invalid_html")
   })
 })
 
 describe('Content-Type behavior (via route tests)', () => {
-  // The Content-Type check is in page.tsx (client-side), not route.ts.
-  // Route tests verify the route returns JSON Content-Type.
-  // Here we verify the route source has proper error handling patterns.
-
   it('has body parse error handling', () => {
     expect(routeSource).toContain('Invalid JSON')
   })

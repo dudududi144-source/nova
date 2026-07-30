@@ -29,9 +29,9 @@ const EXAMPLES: readonly string[] = [
 ]
 
 // Thinking steps shown during build — gives users a sense of progress.
-// These rotate every 4-6 seconds. They're illustrative, not literal LLM steps.
+// Two phases: architect (planning) and coder (building).
 const THINKING_STEPS: readonly string[] = [
-  'Understanding your request...',
+  'Analyzing your request...',
   'Planning the architecture...',
   'Designing the UI layout...',
   'Writing HTML structure...',
@@ -41,6 +41,16 @@ const THINKING_STEPS: readonly string[] = [
   'Checking for edge cases...',
   'Optimizing performance...',
   'Finalizing the code...',
+]
+
+// After 15 seconds, show a different message (architect done, coder working)
+const THINKING_LATE_STEPS: readonly string[] = [
+  'Writing the code...',
+  'Adding styles and colors...',
+  'Implementing game logic...',
+  'Adding interactivity...',
+  'Polishing the details...',
+  'Almost done...',
 ]
 
 const REFINE_THINKING_STEPS: readonly string[] = [
@@ -103,15 +113,21 @@ export default function Home() {
     let step = 0
     setThinkingStep(0)
 
-    // Update elapsed every second
     const timer = setInterval(() => {
       const sec = Math.floor((Date.now() - startTime) / 1000)
       setElapsed(sec)
-      // Rotate thinking step every 5 seconds (or when elapsed exceeds steps * 5)
-      const nextStep = Math.min(steps.length - 1, Math.floor(sec / 5))
-      if (nextStep !== step) {
-        step = nextStep
-        setThinkingStep(step)
+
+      // After 15s, switch to "late" steps (coder phase)
+      if (loading && sec >= 15) {
+        const lateSteps = THINKING_LATE_STEPS
+        const lateStep = Math.min(lateSteps.length - 1, Math.floor((sec - 15) / 5))
+        setThinkingStep(lateStep + 100) // offset to distinguish
+      } else {
+        const nextStep = Math.min(steps.length - 1, Math.floor(sec / 5))
+        if (nextStep !== step) {
+          step = nextStep
+          setThinkingStep(step)
+        }
       }
     }, 1000)
     return () => clearInterval(timer)
@@ -429,6 +445,20 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey)
   }, [loading, refining, result, download, cancelBuild])
 
+  // Helper: get current thinking step text
+  const getThinkingText = useCallback(() => {
+    if (loading) {
+      if (thinkingStep >= 100) {
+        return THINKING_LATE_STEPS[thinkingStep - 100] ?? 'Writing code...'
+      }
+      return THINKING_STEPS[thinkingStep] ?? 'Building...'
+    }
+    if (refining) {
+      return REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'
+    }
+    return ''
+  }, [loading, refining, thinkingStep])
+
   // Whether to show examples (only when no result, no error, not loading)
   const showExamples = !result && !loading && !error
   // Whether to show first-build error panel (no result, has error, not loading)
@@ -454,7 +484,7 @@ export default function Home() {
                 <Loader2 className="h-3 w-3 animate-spin" />
                 <span>
                   {loading
-                    ? `${THINKING_STEPS[thinkingStep] ?? 'Building...'} ${elapsed > 0 && `· ${elapsed}s`}`
+                    ? `${getThinkingText()} ${elapsed > 0 && `· ${elapsed}s`}`
                     : 'Building...'}
                 </span>
               </>
@@ -525,7 +555,7 @@ export default function Home() {
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                 <span className="font-medium text-foreground/80">
-                  {THINKING_STEPS[thinkingStep] ?? THINKING_STEPS[0]}
+                  {getThinkingText()}
                 </span>
               </div>
               <div className="mt-2 flex items-center gap-2 pl-5">
@@ -728,7 +758,7 @@ export default function Home() {
                         <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
                           <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                           <span className="text-[11px] text-muted-foreground">
-                            {REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'}
+                            {getThinkingText()}
                           </span>
                         </div>
                       </div>
@@ -769,7 +799,7 @@ export default function Home() {
                   <div className="flex flex-col items-center gap-3 text-neutral-400">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     <p className="text-xs font-medium text-foreground/80">
-                      {THINKING_STEPS[thinkingStep] ?? 'Rebuilding...'}
+                      {getThinkingText()}
                     </p>
                     <div className="flex gap-1">
                       {THINKING_STEPS.map((_, i) => (

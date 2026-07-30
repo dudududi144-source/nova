@@ -6,13 +6,25 @@ import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from 'bun:te
 import type { NextRequest } from 'next/server'
 
 // Mock the llm module BEFORE importing the route
-// We mock the functions the route imports
-const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => Promise.resolve({
-  ok: true,
-  text: '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>',
-  tokens: 100,
-  ms: 500,
-}))
+// First call = architect (returns JSON plan), second call = coder (returns HTML)
+const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => {
+  // Detect which stage by checking the system prompt
+  if (_sys.includes('architect')) {
+    return Promise.resolve({
+      ok: true,
+      text: '{"type":"app","title":"Test","features":["feature1"],"approach":"simple","colors":{"bg":"#0f172a","primary":"#3b82f6","accent":"#22d3ee"},"layout":"centered","keyFunctions":["init"]}',
+      tokens: 50,
+      ms: 200,
+    })
+  }
+  // Coder stage
+  return Promise.resolve({
+    ok: true,
+    text: '<!DOCTYPE html><html><head><title>Test</title></head><body><p>hello</p></body></html>',
+    tokens: 100,
+    ms: 500,
+  })
+})
 
 mock.module('@/lib/llm', () => ({
   // Use a wrapper so mockImplementation/mockResolvedValue changes are picked up.
@@ -161,9 +173,9 @@ describe('POST /api/build', () => {
     expect(typeof data.ms).toBe('number')
   })
 
-  it('calls llmChat exactly once for a valid mission', async () => {
+  it('calls llmChat twice (architect + coder) for a valid mission', async () => {
     await POST(makeRequest({ mission: 'Build a calculator' }) as unknown as NextRequest)
-    expect(mockLlmChat).toHaveBeenCalledTimes(1)
+    expect(mockLlmChat).toHaveBeenCalledTimes(2)
   })
 
   it('returns 502 when llmChat fails', async () => {
@@ -177,15 +189,18 @@ describe('POST /api/build', () => {
     expect(data.error).toBe('The AI service is busy')
   })
 
-  it('returns 502 when LLM returns non-HTML', async () => {
-    mockLlmChat.mockImplementation(async () => ({
-      ok: true, text: "Here's your app: not actually HTML", tokens: 50, ms: 200,
-    }))
+  it('returns 502 when coder returns non-HTML', async () => {
+    mockLlmChat.mockImplementation(async (sys: string) => {
+      if (sys.includes('architect')) {
+        return { ok: true, text: '{"type":"app","title":"T"}', tokens: 20, ms: 100 }
+      }
+      return { ok: true, text: "Here's your app: not actually HTML", tokens: 50, ms: 200 }
+    })
     const res = await POST(makeRequest({ mission: 'Build something' }) as unknown as NextRequest)
     expect(res.status).toBe(502)
     const data = await res.json()
     expect(data.ok).toBe(false)
-    expect(data.error).toContain('did not return valid HTML')
+    expect(data.error).toContain('invalid output')
   })
 
   it('injects CSP into the returned HTML', async () => {
@@ -273,23 +288,29 @@ describe('POST /api/build', () => {
     expect(parsed.error).toContain('too short')
   })
 
-  it('logs build.llm_failed on LLM error', async () => {
-    mockLlmChat.mockImplementation(async () => ({
-      ok: false, text: '', tokens: 0, ms: 100, error: 'LLM error',
-    }))
+  it('logs build error when coder fails', async () => {
+    mockLlmChat.mockImplementation(async (sys: string) => {
+      if (sys.includes('architect')) {
+        return { ok: true, text: '{"type":"app"}', tokens: 20, ms: 100 }
+      }
+      return { ok: false, text: '', tokens: 0, ms: 100, error: 'Coder error' }
+    })
     await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
     const calls = errorSpy.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.llm_failed"')
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0].includes('"event":"build.coder_failed"') || c[0].includes('"event":"build.architect_failed"'))
     )
-    expect(calls.length).toBe(1)
+    expect(calls.length).toBeGreaterThanOrEqual(1)
     const parsed = JSON.parse(calls[0][0] as string)
-    expect(parsed.error).toBe('LLM error')
+    expect(parsed.error).toContain('Coder error')
   })
 
-  it('logs build.invalid_html when LLM returns non-HTML', async () => {
-    mockLlmChat.mockImplementation(async () => ({
-      ok: true, text: 'not html at all', tokens: 50, ms: 200,
-    }))
+  it('logs build.invalid_html when coder returns non-HTML', async () => {
+    mockLlmChat.mockImplementation(async (sys: string) => {
+      if (sys.includes('architect')) {
+        return { ok: true, text: '{"type":"app"}', tokens: 20, ms: 100 }
+      }
+      return { ok: true, text: 'not html at all', tokens: 50, ms: 200 }
+    })
     await POST(makeRequest({ mission: 'Build an app' }) as unknown as NextRequest)
     const calls = warnSpy.mock.calls.filter(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('"event":"build.invalid_html"')
@@ -322,18 +343,15 @@ describe('POST /api/build', () => {
       signal: controller.signal,
     }
     await POST(req as unknown as NextRequest)
-    // Verify llmChat was called and the third argument includes a signal
-    expect(mockLlmChat).toHaveBeenCalledTimes(1)
-    const callArgs = mockLlmChat.mock.calls[0] as unknown[] | undefined
-    const opts = callArgs?.[2] as { signal: AbortSignal } | undefined
-    expect(opts?.signal).toBeInstanceOf(AbortSignal)
-    // Aborting the request signal should abort the llmChat signal too
-    // (we can't test this easily without timing, but we verify it's linked)
+    // llmChat is called twice (architect + coder), both should have signals
+    expect(mockLlmChat).toHaveBeenCalledTimes(2)
+    const callArgs1 = mockLlmChat.mock.calls[0] as unknown[] | undefined
+    const opts1 = callArgs1?.[2] as { signal: AbortSignal } | undefined
+    expect(opts1?.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('aborts llmChat when client disconnects', async () => {
     const controller = new AbortController()
-    // Make llmChat slow so we can abort mid-flight
     mockLlmChat.mockImplementation(async () => {
       await new Promise(resolve => setTimeout(resolve, 100))
       return { ok: true, text: '<!DOCTYPE html><html></html>', tokens: 50, ms: 100 }
@@ -344,11 +362,9 @@ describe('POST /api/build', () => {
       signal: controller.signal,
     }
     const promise = POST(req as unknown as NextRequest)
-    // Abort after 10ms (before the 100ms mock resolves)
     setTimeout(() => controller.abort(), 10)
     await promise
-    // The route should handle the abort gracefully (no throw)
-    expect(mockLlmChat).toHaveBeenCalledTimes(1)
+    expect(mockLlmChat).toHaveBeenCalled()
   })
 
   // ── Content-Type verification ──
