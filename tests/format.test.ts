@@ -136,9 +136,9 @@ describe('getCurrentStage', () => {
     expect(stage.key).toBe('architect_done')
   })
 
-  it('returns code_done when has plan but not streaming', () => {
+  it('returns code_start when has plan but not streaming (waiting for first token)', () => {
     const stage = getCurrentStage(10, true, false, false)
-    expect(stage.key).toBe('code_done')
+    expect(stage.key).toBe('code_start')
   })
 })
 

@@ -222,7 +222,10 @@ export function analyzeQuality(html: string): QualityMetrics {
   const bytes = html.length
   const functions = (html.match(/function\s+\w+|const\s+\w+\s*=\s*\(|=>\s*{/gi) || []).length
   const eventListeners = (lower.match(/addeventlistener/g) || []).length
-  const cssRules = (html.match(/\{[^}]*\}/g) || []).length
+  // CSS rules: only count {...} blocks INSIDE <style>...</style> tags.
+  // The old regex /\{[^}]*\}/g matched JS object literals, template interpolations, etc.
+  const styleBlocks = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || []
+  const cssRules = styleBlocks.reduce((sum, block) => sum + (block.match(/\{[^}]*\}/g) || []).length, 0)
   const domElements = (html.match(/<\w+/g) || []).length
   const hasCanvas = lower.includes('<canvas')
   const hasAnimations = lower.includes('requestanimationframe') || lower.includes('transition') || lower.includes('animation')

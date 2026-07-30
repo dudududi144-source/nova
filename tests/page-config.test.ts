@@ -27,8 +27,8 @@ describe('page.tsx (characterization)', () => {
     expect(source).not.toContain('createObjectURL.*iframe')
   })
 
-  it('has aria-busy on root container', () => {
-    expect(source).toContain('aria-busy={loading}')
+  it('has aria-busy on root container (includes refining)', () => {
+    expect(source).toContain('aria-busy={loading || refining}')
   })
 
   it('has Content-Type check before res.json() call', () => {

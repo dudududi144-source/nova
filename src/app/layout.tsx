@@ -38,6 +38,12 @@ export default function RootLayout({
       >
         <ErrorBoundary>{children}</ErrorBoundary>
         <Toaster theme="dark" position="bottom-right" />
+        <noscript>
+          <div style={{ padding: '2rem', textAlign: 'center', color: '#e2e8f0', fontFamily: 'monospace' }}>
+            <h1>NOVA requires JavaScript</h1>
+            <p>NOVA is an AI app builder that needs JavaScript to run. Please enable JavaScript in your browser.</p>
+          </div>
+        </noscript>
       </body>
     </html>
   );

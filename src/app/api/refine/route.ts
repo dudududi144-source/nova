@@ -10,6 +10,7 @@
 import type { NextRequest } from 'next/server'
 import { llmChatStream, llmChat } from '@/lib/llm'
 import { stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/html-utils'
+import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
@@ -74,10 +75,14 @@ export async function POST(request: NextRequest): Promise<Response> {
   const html = typeof body?.html === 'string' ? body.html : ''
   const message = typeof body?.message === 'string' ? body.message.trim() : ''
 
-  if (!mission) return Response.json({ ok: false, error: 'Missing mission' }, { status: 400 })
-  if (!html) return Response.json({ ok: false, error: 'Missing current HTML' }, { status: 400 })
-  if (!message) return Response.json({ ok: false, error: 'Missing message' }, { status: 400 })
-  if (message.length > 500) return Response.json({ ok: false, error: 'Message too long (max 500 chars)' }, { status: 400 })
+  // Validate mission (control chars, length, etc. — same as architect and code routes)
+  const missionCheck = validateMission(mission)
+  if (!missionCheck.ok) return Response.json({ ok: false, error: missionCheck.error ?? 'Invalid mission' }, { status: 400 })
+  // Validate message (reuse validateMission — same rules: 3-500 chars, no control chars)
+  const messageCheck = validateMission(message)
+  if (!messageCheck.ok) return Response.json({ ok: false, error: messageCheck.error ?? 'Invalid message' }, { status: 400 })
+  // Validate HTML — must look like a complete HTML document
+  if (!looksLikeHtml(html)) return Response.json({ ok: false, error: 'Invalid HTML' }, { status: 400 })
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip') || 'unknown'
@@ -103,7 +108,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         const step = REFINE_PROGRESS_STEPS[Math.min(stepIndex, REFINE_PROGRESS_STEPS.length - 1)]
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step, elapsed })}\n\n`))
-        } catch {}
+        } catch {
+          // Stream closed by client — stop the keepalive to prevent silent interval spam
+          if (keepAliveInterval) clearInterval(keepAliveInterval)
+          keepAliveInterval = null
+        }
         if (elapsed > (stepIndex + 1) * 8) stepIndex++
       }, 3000)
 
@@ -190,6 +199,38 @@ export async function POST(request: NextRequest): Promise<Response> {
         const validation = validateOutput(finalHtml, mission)
         logger.info('refine.validated', { ip, score: validation.score, passed: validation.passed })
 
+        // If validation failed (score < 70), try ONE retry with targeted hint (same as code route)
+        if (!validation.passed && validation.retryHint) {
+          logger.warn('refine.validation_failed', { ip, score: validation.score, retrying: true })
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step: 'Improving output quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`))
+
+          const retryPrompt = `${userPrompt}\n\n${validation.retryHint}\n\nOutput the complete corrected HTML:`
+          const retryResult = await llmChat(REFINE_PROMPT, retryPrompt, {
+            maxTokens: tokenBudget,
+            temperature: 0.3,
+            timeoutMs: 100_000,
+            signal: request.signal,
+          })
+
+          if (retryResult.ok) {
+            const retryHtml = stripCodeFences(retryResult.text)
+            if (looksLikeHtml(retryHtml)) {
+              const retryValidation = validateOutput(injectCsp(retryHtml), mission)
+              logger.info('refine.retry_validated', { ip, score: retryValidation.score, improved: retryValidation.score > validation.score })
+              if (retryValidation.score > validation.score) {
+                // Use the improved version
+                const improvedHtml = injectCsp(retryHtml)
+                const metrics = analyzeQuality(improvedHtml)
+                logger.info('refine.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: improvedHtml.length, score: retryValidation.score, metrics: metrics.summary })
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: improvedHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`))
+                controller.close()
+                return
+              }
+            }
+          }
+          // Retry didn't help — use original
+        }
+
         // ── INTELLIGENCE: Quality metrics ──
         const metrics = analyzeQuality(finalHtml)
         logger.info('refine.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: finalHtml.length, score: validation.score, metrics: metrics.summary })
@@ -213,6 +254,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // Disable nginx buffering — critical for SSE streaming
     },
   })
 }

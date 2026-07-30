@@ -53,11 +53,11 @@ export const BUILD_STAGES: readonly BuildStage[] = [
 ]
 
 export function getCurrentStage(elapsed: number, hasPlan: boolean, isStreaming: boolean, isComplete: boolean): BuildStage {
-  if (isComplete) return BUILD_STAGES[6]
-  if (isStreaming) return BUILD_STAGES[3]
-  if (hasPlan) return BUILD_STAGES[4] // plan done, code started but not streaming yet
-  if (elapsed > 3) return BUILD_STAGES[1] // architect probably done
-  return BUILD_STAGES[0]
+  if (isComplete) return BUILD_STAGES[6]    // Done
+  if (isStreaming) return BUILD_STAGES[3]   // Stream (tokens arriving)
+  if (hasPlan) return BUILD_STAGES[2]       // Code (plan done, waiting for first token)
+  if (elapsed > 3) return BUILD_STAGES[1]   // Plan (architect probably done)
+  return BUILD_STAGES[0]                    // Architect analyzing
 }
 
 export function getStageProgress(elapsed: number, hasPlan: boolean, isStreaming: boolean, isComplete: boolean): number {

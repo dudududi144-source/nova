@@ -1952,3 +1952,81 @@ Stage Summary:
 - TypeScript: clean (tsc --noEmit passes)
 - Architecture: clean separation of concerns (LLM client vs HTML utils vs mission validation)
 - The mock.module pollution bug is fixed at the ARCHITECTURE level, not just patched
+
+---
+Task ID: 39
+Agent: main (Z.ai Code)
+Task: Continue roast/fix/improve cycle. Deep roast via sub-agent found 100 issues across 13 files.
+
+ROAST FINDINGS (top priority):
+CRITICAL:
+1. reset() didn't abort refineAbortRef — phantom refine could mutate state after reset
+HIGH:
+2. setHistory updater had side effects (localStorage, toast) — double-fires in StrictMode
+3. loadFromHistory didn't reset derived state (qualityScore, metrics, planSummary, livePreviewHtml)
+4. StageRail skipped stages 2 (code_start) and 5 (validating) — getCurrentStage returned stage 4
+   (code_done) when it should return stage 2 (code_start, waiting for first token)
+5. iframe srcDoc reloaded on every token (noted but deferred — needs throttling)
+MEDIUM:
+6. Code route missing validateMission (only checked non-empty)
+7. Refine route missing validateMission and looksLikeHtml validation
+8. Refine route didn't retry on validation failure (inconsistent with code route)
+9. Keepalive interval not cleared on client disconnect — kept firing silently every 3s
+10. CSS rule counting matched JS object literals (/\{[^}]*\}/g) — massively over-counted
+11. Logger could crash on circular references or BigInt values (JSON.stringify throws)
+12. Auto-scroll yanked user back to bottom even if they scrolled up to read history
+13. aria-busy only included loading, not refining
+14. Unmount cleanup only aborted build, not refine
+15. Ctrl+N preventDefault fired even during loading/refining (blocked browser shortcut for nothing)
+16. sendChat silently returned with no feedback when no result existed
+17. No X-Accel-Buffering: no header (nginx may buffer SSE)
+18. No <noscript> fallback in layout
+19. confirmClear state not reset by reset/loadFromHistory
+
+FIXES APPLIED (19 fixes):
+1. reset() now aborts both abortRef and refineAbortRef, clears all derived state
+2. Extracted saveHistoryToStorage() and addBuildToHistory() helpers — side effects moved
+   OUT of setHistory updater (prevents StrictMode double-fire)
+3. loadFromHistory resets qualityScore, qualityMetrics, planSummary, livePreviewHtml, confirmClear
+4. getCurrentStage: hasPlan && !isStreaming → stage 2 (code_start), not stage 4 (code_done)
+5. Added validateMission to code route (was only checking non-empty)
+6. Added validateMission + looksLikeHtml to refine route
+7. Added validation retry to refine route (same pattern as code route — score < 70 → retry with hint)
+8. Keepalive interval now cleared in catch block when controller.enqueue fails
+9. CSS rule counting: extract <style> blocks first, then count {...} inside them only
+10. Logger wrapped in try-catch with fallback string on serialization failure
+11. Auto-scroll: only scroll if user is within 40px of bottom (don't yank if scrolled up)
+12. aria-busy={loading || refining}
+13. Unmount cleanup aborts both abortRef and refineAbortRef
+14. Ctrl+N only preventDefault when !loading && !refining
+15. sendChat shows toast "Build something first" when no result exists
+16. Added X-Accel-Buffering: no to both SSE routes (code and refine)
+17. Added <noscript> fallback in layout.tsx
+18. confirmClear reset in reset() and loadFromHistory()
+19. Unmount effect aborts both refs
+
+NOTE on system prompt role:
+- Sub-agent flagged role: 'assistant' for system prompt as a bug (#45, HIGH severity)
+- This is INTENTIONAL: z-ai-web-dev-sdk uses 'assistant' role for system prompts
+  (documented in worklog Task ID: 1 from project start)
+- Changing to 'system' would break the SDK integration — left as-is
+
+NEW TESTS:
+- tests/roast-cycle-2.test.ts: 7 tests for CSS counting fix + logger crash protection
+- Updated format.test.ts: stage 2 (code_start) test instead of stage 4 (code_done)
+- Updated page-config.test.ts: aria-busy includes refining
+
+BROWSER VERIFICATION:
+- Build: snake game built in 44s, quality score 89, 20 CSS rules (was 47 — accurate now)
+- StageRail shows correct progression (architect → plan → code → stream → done)
+- "New" button correctly resets all state
+- Too-short mission "hi" → 400 from both architect and code routes (validateMission works)
+- Zero console errors, zero page errors
+
+Stage Summary:
+- Tests: 349 pass, 0 fail, 614 expect() calls (up from 342)
+- Lint: 0 errors, 1 intentional warning (SDK type cast)
+- TypeScript: clean
+- The codebase is more robust: no phantom state mutations, no StrictMode double-fires,
+  accurate CSS metrics, crash-proof logger, consistent validation across all routes,
+  proper cleanup on disconnect/unmount

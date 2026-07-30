@@ -11,6 +11,7 @@
 import type { NextRequest } from 'next/server'
 import { llmChatStream, llmChat } from '@/lib/llm'
 import { stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/html-utils'
+import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
@@ -71,8 +72,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
   const plan = body?.plan
 
-  if (!mission) {
-    return Response.json({ ok: false, error: 'Missing mission' }, { status: 400 })
+  // Validate mission (same validation as architect route — control chars, length, etc.)
+  const missionCheck = validateMission(mission)
+  if (!missionCheck.ok) {
+    return Response.json({ ok: false, error: missionCheck.error ?? 'Invalid mission' }, { status: 400 })
   }
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -105,7 +108,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step, elapsed })}\n\n`))
         } catch {
-          // stream closed
+          // Stream closed by client — stop the keepalive to prevent silent interval spam
+          if (keepAliveInterval) clearInterval(keepAliveInterval)
+          keepAliveInterval = null
         }
         // Advance step every 8 seconds
         if (elapsed > (stepIndex + 1) * 8) {
@@ -253,6 +258,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // Disable nginx buffering — critical for SSE streaming
     },
   })
 }

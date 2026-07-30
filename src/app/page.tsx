@@ -85,9 +85,48 @@ export default function Home() {
     }
   }, [])
 
-  // Abort any in-flight build on unmount
+  // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
+  // to avoid double-firing in React StrictMode.
+  const saveHistoryToStorage = useCallback((items: BuildResult[]) => {
+    let savedCount = items.length
+    try {
+      localStorage.setItem('nova_history', JSON.stringify(items))
+    } catch (quotaErr) {
+      console.error('[NOVA] localStorage quota exceeded:', quotaErr)
+      savedCount = 0
+      for (let i = items.length - 1; i >= 0; i--) {
+        try {
+          localStorage.setItem('nova_history', JSON.stringify(items.slice(0, i + 1)))
+          savedCount = i + 1
+          break
+        } catch {
+          // keep trying smaller
+        }
+      }
+    }
+    if (savedCount < items.length) {
+      toast.error(`localStorage full — only ${savedCount} of ${items.length} builds saved to history`)
+    }
+  }, [])
+
+  // Add a build result to history (dedupe by mission) and persist to localStorage.
+  // Side effects (localStorage, toast) happen here — NOT inside the setState updater.
+  const addBuildToHistory = useCallback((buildResult: BuildResult) => {
+    let newHistory: BuildResult[] = []
+    setHistory(prev => {
+      newHistory = [buildResult, ...prev.filter(h => h.mission !== buildResult.mission)].slice(0, 10)
+      return newHistory
+    })
+    // Persist after state is computed (not inside updater — avoids StrictMode double-fire)
+    saveHistoryToStorage(newHistory)
+  }, [saveHistoryToStorage])
+
+  // Abort any in-flight build AND refine on unmount
   useEffect(() => {
-    return () => abortRef.current?.abort()
+    return () => {
+      abortRef.current?.abort()
+      refineAbortRef.current?.abort()
+    }
   }, [])
 
   // Elapsed time counter + dynamic thinking step rotation
@@ -290,34 +329,7 @@ export default function Home() {
       }
 
       setResult(buildResult)
-
-      // Functional setState — avoids stale closure on rapid successive builds
-      setHistory(prev => {
-        // Dedupe by mission (keep only the latest build per mission)
-        const next = [buildResult, ...prev.filter(h => h.mission !== m)].slice(0, 10)
-        // Best-effort localStorage; shrink if quota exceeded
-        let savedCount = next.length
-        try {
-          localStorage.setItem('nova_history', JSON.stringify(next))
-        } catch (quotaErr) {
-          console.error('[NOVA] localStorage quota exceeded:', quotaErr)
-          savedCount = 0
-          for (let i = next.length - 1; i >= 0; i--) {
-            try {
-              localStorage.setItem('nova_history', JSON.stringify(next.slice(0, i + 1)))
-              savedCount = i + 1
-              break
-            } catch {
-              // keep trying smaller
-            }
-          }
-        }
-        // Warn if we couldn't save everything
-        if (savedCount < next.length) {
-          toast.error(`localStorage full — only ${savedCount} of ${next.length} builds saved to history`)
-        }
-        return next
-      })
+      addBuildToHistory(buildResult)
 
       toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
       setQualityScore(finalQuality)
@@ -349,6 +361,12 @@ export default function Home() {
     setError(null)
     setFailedMission(null)
     setChatMessages([])
+    // Reset all derived state so we don't show the previous build's badges/plan
+    setQualityScore(0)
+    setQualityMetrics('')
+    setPlanSummary(null)
+    setLivePreviewHtml(null)
+    setConfirmClear(false)
   }, [])
 
   const cancelBuild = useCallback(() => {
@@ -363,8 +381,11 @@ export default function Home() {
 
   const reset = useCallback(() => {
     // Reset clears everything — used by the "New" button.
+    // Abort BOTH in-flight build and refine to prevent phantom state mutations.
     abortRef.current?.abort()
     abortRef.current = null
+    refineAbortRef.current?.abort()
+    refineAbortRef.current = null
     setLoading(false)
     setRefining(false)
     setResult(null)
@@ -375,6 +396,8 @@ export default function Home() {
     setQualityScore(0)
     setQualityMetrics('')
     setLivePreviewHtml(null)
+    setPlanSummary(null)
+    setConfirmClear(false)
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -429,7 +452,11 @@ export default function Home() {
   const sendChat = useCallback(async () => {
     const msg = chatInput.trim()
     const currentResult = resultRef.current
-    if (!msg || refining || !currentResult) return
+    if (!msg || refining) return
+    if (!currentResult) {
+      toast.info('Build something first, then you can refine it')
+      return
+    }
 
     const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
     setChatMessages(prev => [...prev, userMsg])
@@ -521,12 +548,7 @@ export default function Home() {
         html: finalHtml,
       }
       setResult(refinedResult)
-
-      setHistory(prev => {
-        const next = [refinedResult, ...prev.filter(h => h.mission !== currentResult.mission)].slice(0, 10)
-        try { localStorage.setItem('nova_history', JSON.stringify(next)) } catch {}
-        return next
-      })
+      addBuildToHistory(refinedResult)
 
       setChatMessages(prev => [...prev, {
         role: 'assistant',
@@ -551,10 +573,15 @@ export default function Home() {
     }
   }, [chatInput, refining])
 
-  // Auto-scroll chat to bottom on new messages
+  // Auto-scroll chat to bottom on new messages — but only if user is already near the bottom.
+  // Don't yank the scroll position if the user scrolled up to read history.
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    const el = chatScrollRef.current
+    if (!el) return
+    // If user is within 40px of the bottom, auto-scroll. Otherwise, leave them where they are.
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight
     }
   }, [chatMessages, refining])
 
@@ -584,12 +611,11 @@ export default function Home() {
         }
         return
       }
-      // ⌘N / Ctrl+N starts a new build (preventDefault to stop browser new window)
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+      // ⌘N / Ctrl+N starts a new build — only preventDefault when we'll actually handle it
+      // (don't block the browser's new-window shortcut during loading/refining)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !loading && !refining) {
         e.preventDefault()
-        if (!loading && !refining) {
-          reset()
-        }
+        reset()
         return
       }
     }
@@ -621,7 +647,7 @@ export default function Home() {
       : BUILD_STAGES[0]
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading}>
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading || refining}>
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-3">
         <div className="flex items-center gap-2">

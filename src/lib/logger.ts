@@ -43,7 +43,20 @@ function log(level: LogLevel, event: string, ctx: LogContext = {}): void {
     event,
     ...ctx,
   }
-  const line = JSON.stringify(entry)
+  // Wrap in try-catch — JSON.stringify can throw on circular references or BigInt values.
+  // If it throws, the error would propagate up and crash the route handler.
+  // Fall back to a safe string representation.
+  let line: string
+  try {
+    line = JSON.stringify(entry)
+  } catch {
+    line = JSON.stringify({
+      ts: entry.ts,
+      level: entry.level,
+      event: entry.event,
+      error: 'log serialization failed (circular ref or BigInt)',
+    })
+  }
   if (level === 'error') console.error(line)
   else if (level === 'warn') console.warn(line)
   else console.log(line)
