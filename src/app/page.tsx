@@ -171,90 +171,93 @@ export default function Home() {
       }
       // If architect failed, continue with mission-based steps (already set)
 
-      // ═══ STAGE 2: CODER — generate HTML using the plan ═══
-      // Try with plan first. If the SERVER returns an error (502), retry without plan.
-      let codeRes: Response | null = null
-      try {
-        codeRes = await fetch('/api/build/code', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
-          signal: controller.signal,
-        })
-      } catch (fetchErr) {
-        // Fetch itself threw (network error, abort, or browser timeout)
-        if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') return
-        console.log('[NOVA] Code fetch failed, retrying without plan...', fetchErr)
-        setBuildSteps(['Retrying with simpler approach...', 'Generating code...', 'Finalizing...'])
+      // ═══ STAGE 2: CODER — SSE streaming with keepalive ═══
+      // The route returns Server-Sent Events: progress events while LLM works,
+      // then a result event with the final HTML. No timeout — keepalive prevents it.
+      const codeRes = await fetch('/api/build/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
+        signal: controller.signal,
+      })
+
+      if (!codeRes.ok) {
+        // Non-SSE error (400, 429, 413) — parse as JSON
+        let errorMsg = `Server error (${codeRes.status})`
         try {
-          codeRes = await fetch('/api/build/code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: m, plan: null }),
-            signal: controller.signal,
-          })
-        } catch (retryErr) {
-          if (retryErr instanceof DOMException && retryErr.name === 'AbortError') return
-          fail('Network error during build. Please try again.')
-          return
+          const errData = await codeRes.json()
+          if (errData?.error) errorMsg = errData.error
+        } catch {}
+        fail(errorMsg)
+        return
+      }
+
+      // Read SSE stream
+      const reader = codeRes.body?.getReader()
+      if (!reader) {
+        fail('No response stream')
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalHtml = ''
+      let finalTokens = 0
+      let finalMs = 0
+      let streamError: string | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse SSE events (separated by \n\n)
+        const events = buffer.split('\n\n')
+        buffer = events.pop() ?? '' // keep incomplete event in buffer
+
+        for (const eventStr of events) {
+          const dataLine = eventStr.trim()
+          if (!dataLine.startsWith('data: ')) continue
+
+          try {
+            const evt = JSON.parse(dataLine.slice(6))
+
+            if (evt.type === 'progress') {
+              // Update thinking steps with real progress from server
+              setBuildSteps(prev => {
+                // Replace with server-provided step, keep last as fallback
+                if (prev.length <= 2) return [evt.step, 'Generating code...', 'Finalizing...']
+                return [prev[0], evt.step, ...prev.slice(2)]
+              })
+            } else if (evt.type === 'result') {
+              finalHtml = evt.html ?? ''
+              finalTokens = evt.tokens ?? 0
+              finalMs = evt.ms ?? 0
+            } else if (evt.type === 'error') {
+              streamError = evt.error ?? 'Unknown error'
+            }
+          } catch {
+            // Ignore malformed events
+          }
         }
       }
 
-      // If server returned error status, retry without plan
-      if (codeRes && !codeRes.ok) {
-        console.log('[NOVA] Code returned', codeRes.status, ', retrying without plan...')
-        setBuildSteps(['Retrying with simpler approach...', 'Generating code...', 'Finalizing...'])
-        try {
-          codeRes = await fetch('/api/build/code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mission: m, plan: null }),
-            signal: controller.signal,
-          })
-        } catch (retryErr) {
-          if (retryErr instanceof DOMException && retryErr.name === 'AbortError') return
-          fail('Build failed. Please try again.')
-          return
-        }
-      }
-
-      if (!codeRes) {
-        fail('Build failed. Please try again.')
+      if (streamError) {
+        fail(streamError)
         return
       }
 
-      const contentType = codeRes.headers.get('content-type') ?? ''
-      if (!contentType.includes('application/json')) {
-        fail(`Server error (${codeRes.status})`)
-        return
-      }
-
-      let data: BuildResponse
-      try {
-        data = (await codeRes.json()) as BuildResponse
-      } catch (err) {
-        console.error('[NOVA] Failed to parse build response:', err)
-        fail(`Server error (${codeRes.status})`)
-        return
-      }
-
-      if (!codeRes.ok || !data.ok) {
-        const msg = typeof data?.error === 'string' ? data.error : `Server error (${codeRes.status})`
-        fail(msg)
-        return
-      }
-
-      const { html = '', tokens = 0, ms = 0 } = data
-      if (!html) {
+      if (!finalHtml) {
         fail('Server returned empty HTML')
         return
       }
 
       const buildResult: BuildResult = {
         id: newBuildId(),
-        html,
-        tokens,
-        ms,
+        html: finalHtml,
+        tokens: finalTokens,
+        ms: finalMs,
         mission: m,
       }
 
@@ -288,7 +291,7 @@ export default function Home() {
         return next
       })
 
-      toast.success(`Built in ${(ms / 1000).toFixed(1)}s · ${tokens} tokens`)
+      toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens`)
     } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
