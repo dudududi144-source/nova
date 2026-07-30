@@ -1302,3 +1302,47 @@ Stage Summary:
   was correct) — it was communicative (explaining what happened and what to try).
   The thinking display solves a different problem: the 30-60s wait felt broken because
   nothing was happening. Now the user sees progress, which makes the wait bearable.
+
+---
+Task ID: 25
+Agent: main (Z.ai Code)
+Task: Fix recurring 502 error. User hit it again.
+
+Work Log:
+- Root cause: maxTokens was 8000 — not enough for complex apps.
+  A snake game generates ~14KB of HTML (~4000 tokens of output).
+  With 8000 max tokens, the LLM has ~4000 for the system prompt + user prompt
+  + output. Complex missions (markdown editor, games with lots of CSS) hit the
+  token limit mid-output. The HTML gets truncated (no </html>), looksLikeHtml
+  fails, server returns 502.
+
+  Previous 502 failures in the log:
+  - previewLen: 97 (almost nothing — LLM used all tokens on prompt + thinking)
+  - previewLen: 8 (literally 8 chars — complete truncation)
+
+- Fix 1: Increased maxTokens from 8000 → 16000 for both build and refine routes.
+  This gives the LLM ~8000 tokens for output (~32KB of HTML — enough for any
+  single-file app).
+
+- Fix 2: Added automatic truncation detection + continuation retry:
+  If output > 100 chars but doesn't contain </html>, the LLM was truncated.
+  Instead of failing, the route:
+  1. Takes the last 500 chars of the truncated output
+  2. Sends a continuation prompt: "Continue from here and complete the HTML"
+  3. Appends the continuation to the original output
+  4. Logs build.truncated (warn) + build.retry_completed (info)
+  This gives complex apps a second chance to complete.
+
+- Same logic applied to /api/refine route.
+
+- All tests pass (247), lint clean, tsc clean.
+- Browser verified: snake build (63s, 200, 13.7KB), zero console errors.
+
+Stage Summary:
+- **Root cause identified**: maxTokens 8000 too low for complex HTML
+- **Fix 1**: maxTokens 8000 → 16000 (both routes)
+- **Fix 2**: automatic continuation retry on truncated output
+- **Lesson**: The 502 was not random — it was systematic. Complex missions
+  always failed because 8000 tokens wasn't enough. The fix is simple (increase
+  the limit) but the diagnosis required reading the log and noticing that
+  previewLen was always tiny (8-97 chars) on failures. The log data told the story.
