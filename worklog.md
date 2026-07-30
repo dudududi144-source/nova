@@ -1695,3 +1695,37 @@ Results: 48s total, 11.4KB, zero errors, zero 502. Fastest yet!
 This is what the user asked for: intelligence, not limitations. The LLM
 generates as much as it needs. The proxy doesn't timeout because data flows.
 The client sees real progress. No arbitrary limits.
+
+---
+Task ID: 33
+Agent: main (Z.ai Code)
+Task: Brutal roast + tests on everything + fix SSE on refine + delete dead code.
+
+ROAST FINDINGS (14 bugs):
+1. CRITICAL: Old /api/build/route.ts still existed — unused but conflicts with /api/build/code.
+   DELETED.
+2. CRITICAL: /api/refine used non-SSE (timeout-prone, same 502 bug as build).
+   FIXED: SSE streaming with keepalive, same pattern as /api/build/code.
+3. CRITICAL: Client refine code used JSON parsing (expected JSON response).
+   FIXED: SSE stream reading (same pattern as build code).
+4-6. HIGH: No tests for /api/build/architect, /api/build/code SSE, /api/refine SSE.
+   ADDED: 7 + 8 + 9 = 24 new tests.
+7-8. MEDIUM: Old tests tested deleted routes (build-route.test.ts, refine-route.test.ts).
+   DELETED.
+9. MEDIUM: prompt-config.test.ts tried to read deleted /api/build/route.ts.
+   FIXED: now reads architect + code + refine sources.
+10-14. Various mock.module interference issues. Resolved by --parallel.
+
+NEW SSE TEST PATTERN:
+Tests now verify:
+- SSE content-type (text/event-stream)
+- Progress events are sent
+- Result event contains HTML
+- Error events are sent on LLM failure
+- Call count (exactly once)
+- Structured logging (started + completed events)
+- Validation (400 for missing fields)
+- Rate limiting (429)
+
+All tests: 251 pass, 0 fail, 431 expect() calls
+Lint: clean. tsc: clean.
