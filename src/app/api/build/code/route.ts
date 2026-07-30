@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
-const CODER_PROMPT = `You are a senior front-end engineer. You receive a plan and must output the complete HTML.
+const CODER_PROMPT = `You are an expert front-end engineer who builds polished, production-quality HTML apps.
 
 OUTPUT FORMAT:
 - Output ONLY raw HTML. No explanation, no markdown, no code fences.
@@ -20,13 +20,28 @@ OUTPUT FORMAT:
 - Do NOT use localStorage, sessionStorage, or cookies. Use in-memory variables.
 - No external resources (scripts, fonts, images, fetch).
 
-QUALITY:
-- The app MUST work. Implement every feature in the plan.
-- Use semantic HTML, aria-labels, keyboard accessibility.
-- Use requestAnimationFrame for animations. No infinite loops.
-- Dark theme by default (use the colors from the plan).
+QUALITY REQUIREMENTS — ALL MANDATORY:
+- The app MUST be fully functional. Every button, every input, every interaction works.
+- Minimum 300 lines of code (HTML + CSS + JS combined). Small apps are unacceptable.
+- Games MUST have: working game loop, score display, game-over state, restart button,
+  responsive controls (keyboard + touch), visual feedback (colors, animations).
+- Tools MUST have: clear input fields, validation, output display, error handling.
+- The UI MUST look professional: gradients, shadows, rounded corners, transitions,
+  proper spacing, responsive layout. Not a basic HTML page — a polished product.
+- Use CSS Grid or Flexbox for layout. Add hover effects on interactive elements.
+- Add a header with the app title. Add a footer or instructions section.
+- Use semantic HTML (<main>, <header>, <section>, <button>).
+- Add aria-labels for accessibility.
+- Dark theme: background #0f172a, cards #1e293b, text #e2e8f0, primary accent from plan.
 
-Follow the plan precisely. Output the complete HTML now:`
+CODE QUALITY:
+- Use requestAnimationFrame for game loops. Clean up on game-over.
+- Use CSS custom properties (variables) for colors.
+- Add CSS transitions for smooth interactions.
+- Handle edge cases: empty input, division by zero, game-over state.
+- Add keyboard shortcuts where appropriate (e.g., arrow keys for games).
+
+Follow the plan precisely. Implement EVERY feature listed. Output the complete HTML now:`
 
 const codeLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
 const MAX_BODY_BYTES = 50_000
