@@ -139,9 +139,11 @@ describe('POST /api/build/code (SSE streaming)', () => {
     expect(result).toBeTruthy()
   })
 
-  it('calls llmChat exactly once for valid request', async () => {
+  it('calls llmChat 1 or 2 times (2 if validation triggers retry)', async () => {
     await readSSE(await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest))
-    expect(mockLlmChat).toHaveBeenCalledTimes(1)
+    // 1 call = normal, 2 calls = validation detected missing game features and retried
+    expect(mockLlmChat.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(mockLlmChat.mock.calls.length).toBeLessThanOrEqual(2)
   })
 
   it('logs code.started and code.completed', async () => {

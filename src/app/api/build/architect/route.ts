@@ -6,6 +6,7 @@ import type { NextRequest } from 'next/server'
 import { llmChat, validateMission } from '@/lib/llm'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
+import { enrichMission } from '@/lib/build-intelligence'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -52,7 +53,11 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('architect.started', { ip, mission: mission.slice(0, 80) })
 
-  const result = await llmChat(ARCHITECT_PROMPT, `Mission: ${mission}`, {
+  // Enrich the mission with implementation hints before sending to architect
+  const enriched = enrichMission(mission)
+  logger.info('architect.enriched', { ip, type: enriched.detectedType, hints: enriched.hints.length })
+
+  const result = await llmChat(ARCHITECT_PROMPT, `Mission: ${enriched.enriched}`, {
     maxTokens: 1000,
     temperature: 0.5,
     timeoutMs: 20_000,

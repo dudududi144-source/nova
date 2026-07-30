@@ -12,6 +12,7 @@ import type { NextRequest } from 'next/server'
 import { llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
+import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -112,12 +113,15 @@ export async function POST(request: NextRequest): Promise<Response> {
       }, 3000)
 
       try {
-        // Call LLM — no arbitrary token limit, let it finish naturally
-        // High maxTokens (32000) but LLM stops when it's done
+        // Adaptive token budget — estimate from plan complexity
+        const tokenBudget = estimateTokenBudget(plan)
+        logger.info('code.budget', { ip, maxTokens: tokenBudget, hasPlan: !!plan })
+
+        // Call LLM with adaptive budget (not arbitrary)
         const result = await llmChat(CODER_PROMPT, planContext, {
-          maxTokens: 32000,
+          maxTokens: tokenBudget,
           temperature: 0.4,
-          timeoutMs: 150_000, // 2.5 min — generous, keepalive prevents timeout
+          timeoutMs: 150_000,
           signal: request.signal,
         })
 
@@ -160,10 +164,49 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         const html = injectCsp(rawHtml)
         const totalMs = Date.now() - startTime
-        logger.info('code.completed', { ip, ms: totalMs, tokens: result.tokens, htmlBytes: html.length })
 
-        // Send the final result
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html, tokens: result.tokens, ms: totalMs })}\n\n`))
+        // ── INTELLIGENCE: Validate output quality ──
+        const validation = validateOutput(html, mission)
+        logger.info('code.validated', { ip, score: validation.score, passed: validation.passed, checks: validation.checks.length })
+
+        // If validation failed (score < 70), try ONE retry with targeted hint
+        if (!validation.passed && validation.retryHint) {
+          logger.warn('code.validation_failed', { ip, score: validation.score, retrying: true })
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', step: 'Improving output quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`))
+
+          const retryPrompt = `${planContext}\n\n${validation.retryHint}\n\nOutput the complete corrected HTML:`
+          const retryResult = await llmChat(CODER_PROMPT, retryPrompt, {
+            maxTokens: tokenBudget,
+            temperature: 0.3,
+            timeoutMs: 100_000,
+            signal: request.signal,
+          })
+
+          if (retryResult.ok) {
+            const retryHtml = stripCodeFences(retryResult.text)
+            if (looksLikeHtml(retryHtml)) {
+              const retryValidation = validateOutput(injectCsp(retryHtml), mission)
+              logger.info('code.retry_validated', { ip, score: retryValidation.score, improved: retryValidation.score > validation.score })
+              if (retryValidation.score > validation.score) {
+                // Use the improved version
+                const finalHtml = injectCsp(retryHtml)
+                const metrics = analyzeQuality(finalHtml)
+                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: result.tokens + retryResult.tokens, htmlBytes: finalHtml.length, score: retryValidation.score, metrics: metrics.summary })
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: result.tokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`))
+                controller.close()
+                return
+              }
+            }
+          }
+          // Retry didn't help — use original
+        }
+
+        // ── INTELLIGENCE: Quality metrics ──
+        const metrics = analyzeQuality(html)
+        logger.info('code.completed', { ip, ms: totalMs, tokens: result.tokens, htmlBytes: html.length, score: validation.score, metrics: metrics.summary })
+
+        // Send the final result with quality score and metrics
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'result', html, tokens: result.tokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`))
         controller.close()
       } catch (err: unknown) {
         if (keepAliveInterval) clearInterval(keepAliveInterval)

@@ -65,7 +65,7 @@ describe('Code route characterization (SSE)', () => {
   })
 
   it('has no arbitrary maxTokens limit (32000 = generous)', () => {
-    expect(codeSource).toContain('maxTokens: 32000')
+    expect(codeSource).toContain('estimateTokenBudget')
   })
 
   it('has maxDuration of 180', () => {
