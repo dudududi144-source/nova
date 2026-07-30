@@ -49,6 +49,7 @@ export default function Home() {
   const [elapsed, setElapsed] = useState(0)
   const [thinkingStep, setThinkingStep] = useState(0)
   const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
+  const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
   const [planSummary, setPlanSummary] = useState<string | null>(null)
   const [qualityScore, setQualityScore] = useState(0)
   const [qualityMetrics, setQualityMetrics] = useState('')
@@ -138,6 +139,7 @@ export default function Home() {
     const steps = extractStepsFromMission(m)
     setBuildSteps(steps)
     setPlanSummary(null)
+    setLivePreviewHtml(null)
 
     // Helper: set error state consistently (replaces 6 repeated blocks)
     const fail = (msg: string) => {
@@ -235,10 +237,12 @@ export default function Home() {
                 return [prev[0], evt.step, ...prev.slice(2)]
               })
             } else if (evt.type === 'token') {
-              // REAL TOKEN STREAMING — show partial HTML being generated
+              // REAL TOKEN STREAMING — accumulate partial HTML for live preview
+              setLivePreviewHtml(prev => (prev ?? '') + (evt.text ?? ''))
               setBuildSteps(prev => {
                 const last = prev[prev.length - 1]
-                const newLast = `Generating: ${evt.length} chars...`
+                const totalLen = (evt.length ?? 0)
+                const newLast = `Generating: ${totalLen} chars...`
                 if (last && last.startsWith('Generating:')) {
                   return [...prev.slice(0, -1), newLast]
                 }
@@ -362,6 +366,7 @@ export default function Home() {
     setChatMessages([])
     setQualityScore(0)
     setQualityMetrics('')
+    setLivePreviewHtml(null)
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -897,7 +902,17 @@ export default function Home() {
                 During rebuild, show a loading overlay so the user doesn't think
                 the old preview is the new one. */}
             <div className="relative min-h-0 flex-1 bg-neutral-950">
-              {loading && (
+              {/* Live preview during streaming — show partial HTML as it arrives */}
+              {loading && livePreviewHtml && livePreviewHtml.length > 50 && (
+                <iframe
+                  srcDoc={livePreviewHtml}
+                  title="Live Preview"
+                  sandbox="allow-scripts"
+                  className="absolute inset-0 h-full w-full border-0 bg-neutral-950 z-20"
+                />
+              )}
+              {/* Loading overlay (shown when no live preview yet) */}
+              {loading && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
                   <div className="flex flex-col items-center gap-3 text-neutral-400">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -920,7 +935,7 @@ export default function Home() {
               )}
               <iframe
                 key={result.id}
-                srcDoc={result.html}
+                srcDoc={livePreviewHtml && loading ? livePreviewHtml : result.html}
                 title="Preview"
                 sandbox="allow-scripts"
                 className="h-full w-full border-0 bg-neutral-950"

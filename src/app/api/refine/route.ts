@@ -7,7 +7,7 @@
 //   data: {"type":"error","error":"message"}
 
 import type { NextRequest } from 'next/server'
-import { llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
+import { llmChatStream, llmChat, stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/llm'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
