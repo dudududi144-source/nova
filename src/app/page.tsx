@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
+import { formatTokens, formatMs, BUILD_STAGES, getCurrentStage } from '@/lib/format'
 
 interface BuildResponse {
   ok: boolean
@@ -567,6 +568,13 @@ export default function Home() {
   // Whether to show first-build error panel (no result, has error, not loading)
   const showFirstError = !result && !!error && !loading
 
+  // Current build stage (stolen from TFA's StageRail concept)
+  const currentStage = loading || refining
+    ? getCurrentStage(elapsed, !!planSummary, !!livePreviewHtml, false)
+    : result
+      ? BUILD_STAGES[6]
+      : BUILD_STAGES[0]
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading}>
       {/* Header */}
@@ -594,7 +602,7 @@ export default function Home() {
             ) : (
               <>
                 <Zap className="h-3 w-3" />
-                <span>{(result.ms / 1000).toFixed(1)}s · {result.tokens} tokens</span>
+                <span>{(result.ms / 1000).toFixed(1)}s · {formatTokens(result.tokens)} tokens</span>
                 {qualityScore > 0 && (
                   <span className={`ml-1 rounded px-1 ${qualityScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`} title={qualityMetrics}>
                     Q:{qualityScore}
@@ -657,7 +665,7 @@ export default function Home() {
             )}
           </Button>
 
-          {/* First-build loading (no prior result) */}
+          {/* First-build loading (no prior result) — with StageRail stolen from TFA */}
           {loading && !result && (
             <div className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -666,20 +674,30 @@ export default function Home() {
                   {getThinkingText()}
                 </span>
               </div>
-              <div className="mt-2 flex items-center gap-2 pl-5">
-                <div className="flex gap-1">
-                  {buildSteps.map((_, i) => (
-                    <div
-                      key={i}
-                      className={`h-1 rounded-full transition-all ${
-                        i <= thinkingStep ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/20'
-                      }`}
-                    />
-                  ))}
-                </div>
+              {/* StageRail — visual progress bar (stolen from TFA Evolution Studio) */}
+              <div className="mt-3 flex items-center">
+                {BUILD_STAGES.map((stage, i) => {
+                  const done = i < BUILD_STAGES.indexOf(currentStage)
+                  const active = stage.key === currentStage.key
+                  const color = done || active ? 'bg-primary' : 'bg-muted-foreground/20'
+                  return (
+                    <div key={stage.key} className="flex flex-1 items-center">
+                      {i > 0 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
+                      <div className={`h-2.5 w-2.5 rounded-full ${color} ${active ? 'ring-2 ring-primary/30' : ''}`} title={stage.label} />
+                      {i < BUILD_STAGES.length - 1 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground/50">
+                {BUILD_STAGES.map(s => <span key={s.key}>{s.short}</span>)}
+              </div>
+              <div className="mt-2 flex items-center gap-2 pl-0">
                 <span className="text-[10px] text-muted-foreground/50">
                   {elapsed > 0 && `${elapsed}s`}
                   {elapsed > 60 && ' · taking longer than expected'}
+                  {planSummary && ` · ${planSummary}`}
+                  {livePreviewHtml && ` · ${livePreviewHtml.length} chars generated`}
                 </span>
               </div>
             </div>
