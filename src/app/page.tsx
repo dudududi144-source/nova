@@ -145,41 +145,61 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch('/api/build', {
+      // ═══ STAGE 1: ARCHITECT — get the plan first ═══
+      // This is a separate, fast call (~2-3s). The plan lets us show
+      // AUTHENTIC steps to the user before the coder even starts.
+      const archRes = await fetch('/api/build/architect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mission: m }),
         signal: controller.signal,
       })
 
-      // Check Content-Type BEFORE parsing — if the server returns HTML
-      // (e.g., Next.js dev compilation page, 500 error page, proxy error),
-      // res.json() would throw a SyntaxError that logs to the console
-      // even when caught. Checking the header avoids the parse entirely.
-      const contentType = res.headers.get('content-type') ?? ''
+      let archData: { ok: boolean; plan?: unknown; error?: string } | null = null
+      const archContentType = archRes.headers.get('content-type') ?? ''
+      if (archContentType.includes('application/json')) {
+        try { archData = await archRes.json() } catch {}
+      }
+
+      // If architect succeeded, update steps with the REAL plan
+      if (archData?.ok && archData.plan) {
+        const planSteps = extractStepsFromPlan(archData.plan, m)
+        const summary = getPlanSummary(archData.plan)
+        setBuildSteps(planSteps)
+        setPlanSummary(summary)
+        console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
+      }
+      // If architect failed, continue with mission-based steps (already set)
+
+      // ═══ STAGE 2: CODER — generate HTML using the plan ═══
+      const codeRes = await fetch('/api/build/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
+        signal: controller.signal,
+      })
+
+      const contentType = codeRes.headers.get('content-type') ?? ''
       if (!contentType.includes('application/json')) {
-        fail(`Server error (${res.status})`)
+        fail(`Server error (${codeRes.status})`)
         return
       }
 
-      // Safe to parse as JSON — Content-Type confirmed
       let data: BuildResponse
       try {
-        data = (await res.json()) as BuildResponse
+        data = (await codeRes.json()) as BuildResponse
       } catch (err) {
-        // Fallback: Content-Type said JSON but body was malformed
         console.error('[NOVA] Failed to parse build response:', err)
-        fail(`Server error (${res.status})`)
+        fail(`Server error (${codeRes.status})`)
         return
       }
 
-      if (!res.ok || !data.ok) {
-        const msg = typeof data?.error === 'string' ? data.error : `Server error (${res.status})`
+      if (!codeRes.ok || !data.ok) {
+        const msg = typeof data?.error === 'string' ? data.error : `Server error (${codeRes.status})`
         fail(msg)
         return
       }
 
-      // Safe destructuring — we've verified data.ok is true, so html/tokens/ms must exist
       const { html = '', tokens = 0, ms = 0 } = data
       if (!html) {
         fail('Server returned empty HTML')
@@ -195,15 +215,6 @@ export default function Home() {
       }
 
       setResult(buildResult)
-
-      // Update thinking steps with the ACTUAL plan from the architect
-      const planData = (data as unknown as Record<string, unknown>).plan
-      if (planData) {
-        const planSteps = extractStepsFromPlan(planData, m)
-        const summary = getPlanSummary(planData)
-        setPlanSummary(summary)
-        console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
-      }
 
       // Functional setState — avoids stale closure on rapid successive builds
       setHistory(prev => {
