@@ -2295,3 +2295,56 @@ Stage Summary:
 - TypeScript: clean
 - The decoder flush fix ensures no data loss at the end of SSE streams
 - The setBuildSteps throttling reduces re-renders by ~100x during token streaming
+
+---
+Task ID: 44
+Agent: main (Z.ai Code)
+Task: Continue roast/fix cycle. Fixed remaining issues from previous cycles that were reported but never addressed.
+
+ROAST FINDINGS (previously reported but never fixed):
+MEDIUM:
+1. enrichMission silently dropped general hints when no specific hints matched.
+   hints.length > 3 check meant that when only the 3 general hints existed (no specific
+   hints), the enriched text was just the original mission — the general hints (dark theme,
+   responsive, transitions) were silently dropped. Reported in cycle 3 (#56).
+2. Dead code: formatBytes and getStageProgress were never used in the codebase but still
+   exported and tested. Reported in cycle 3 (#71, #72).
+3. build-steps.ts: features/keyFunctions items could be non-string (objects/numbers) —
+   would stringify as [object Object]. No type guard. Reported in cycle 3 (#62).
+4. build-steps.ts: layout slice(0, 60) had no ellipsis — truncated text just ended
+   abruptly. Reported in cycle 3 (#64).
+5. timeAgo returned "NaNd ago" for invalid dates. No input validation. Reported in
+   cycle 3 (#74).
+6. estimateTokenBudget had two different defaults: 16000 for null/non-object, 18000 for
+   object missing fields. Confusing. Reported in cycle 3 (#60).
+
+FIXES APPLIED (6 fixes):
+1. enrichMission: Always include general hints in enriched text. Removed the
+   hints.length > 3 condition — now always formats with the hints list.
+2. Removed dead code: formatBytes and getStageProgress removed from format.ts.
+   Updated format.test.ts to remove tests for removed functions.
+3. build-steps.ts: Added type guard for features and keyFunctions items
+   (typeof f === 'string' ? f : String(f)).
+4. build-steps.ts: Added ellipsis to truncated layout (layoutStr.length > 60 ? '...' : '').
+5. timeAgo: Added isNaN check — returns 'unknown' for invalid dates.
+6. estimateTokenBudget: Unified defaults — now always returns 18000 for null/non-object
+   (same as the "has plan but missing fields" case).
+
+NEW/UPDATED TESTS:
+- Added test: "ALWAYS includes general hints in enriched text, even for unknown missions"
+- Added test: timeAgo returns 'unknown' for invalid dates
+- Updated tests: estimateTokenBudget default is now 18000 (was 16000)
+- Removed tests: formatBytes and getStageProgress (dead code removed)
+
+BROWSER VERIFICATION:
+- Build: snake game built in 28s, quality 90, 10 checks, 12 CSS rules
+- Zero console errors, zero page errors
+
+Stage Summary:
+- Tests: 367 pass, 0 fail, 641 expect() calls (4 fewer — removed dead code tests)
+- Lint: 0 errors, 1 intentional warning
+- TypeScript: clean
+- The enrichMission fix is the most impactful — every "unknown" mission now gets
+  the general quality hints (dark theme, responsive, transitions) in the enriched
+  text sent to the architect. Previously these were silently dropped.
+- Dead code removal keeps the codebase clean and maintainable.

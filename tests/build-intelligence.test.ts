@@ -66,6 +66,14 @@ describe('enrichMission', () => {
     expect(result.enriched).toContain('Implementation hints')
   })
 
+  it('ALWAYS includes general hints in enriched text, even for unknown missions (roast #7 fix)', () => {
+    const result = enrichMission('Build a quantum physics simulator')
+    expect(result.enriched).toContain('Build a quantum physics simulator')
+    expect(result.enriched).toContain('Dark theme: #0f172a')
+    expect(result.enriched).toContain('Responsive layout')
+    expect(result.enriched).toContain('CSS transitions')
+  })
+
   it('preserves original mission', () => {
     const result = enrichMission('Build a calculator')
     expect(result.original).toBe('Build a calculator')
@@ -179,12 +187,12 @@ init();
 })
 
 describe('estimateTokenBudget', () => {
-  it('returns default 16000 for null plan', () => {
-    expect(estimateTokenBudget(null)).toBe(16000)
+  it('returns default 18000 for null plan (unified with missing-fields default)', () => {
+    expect(estimateTokenBudget(null)).toBe(18000)
   })
 
-  it('returns default 16000 for non-object plan', () => {
-    expect(estimateTokenBudget('not an object')).toBe(16000)
+  it('returns default 18000 for non-object plan', () => {
+    expect(estimateTokenBudget('not an object')).toBe(18000)
   })
 
   it('estimates based on features and functions', () => {

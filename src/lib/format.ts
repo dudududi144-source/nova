@@ -14,14 +14,10 @@ export function formatMs(ms: number | null | undefined): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
-export function formatBytes(b: number): string {
-  if (b < 1024) return `${b}B`
-  if (b < 1048576) return `${(b / 1024).toFixed(1)}KB`
-  return `${(b / 1048576).toFixed(1)}MB`
-}
-
 export function timeAgo(iso: string | number): string {
-  const diff = Date.now() - new Date(iso).getTime()
+  const time = new Date(iso).getTime()
+  if (isNaN(time)) return 'unknown'
+  const diff = Date.now() - time
   const s = Math.floor(diff / 1000)
   if (s < 60) return 'just now'
   const m = Math.floor(s / 60)
@@ -58,8 +54,4 @@ export function getCurrentStage(elapsed: number, hasPlan: boolean, isStreaming: 
   if (hasPlan) return BUILD_STAGES[2]       // Code (plan done, waiting for first token)
   if (elapsed > 3) return BUILD_STAGES[1]   // Plan (architect probably done)
   return BUILD_STAGES[0]                    // Architect analyzing
-}
-
-export function getStageProgress(elapsed: number, hasPlan: boolean, isStreaming: boolean, isComplete: boolean): number {
-  return getCurrentStage(elapsed, hasPlan, isStreaming, isComplete).progress
 }

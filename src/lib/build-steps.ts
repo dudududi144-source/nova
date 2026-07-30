@@ -112,13 +112,15 @@ export function extractStepsFromPlan(plan: unknown, mission: string): string[] {
   }
 
   if (p.layout) {
-    steps.push(`Layout: ${p.layout.slice(0, 60)}`)
+    const layoutStr = String(p.layout)
+    const truncated = layoutStr.slice(0, 60)
+    steps.push(`Layout: ${truncated}${layoutStr.length > 60 ? '...' : ''}`)
   }
 
-  // Add feature-based steps
+  // Add feature-based steps (with type guard — features could contain non-strings)
   if (p.features && Array.isArray(p.features) && p.features.length > 0) {
     for (const f of p.features.slice(0, 5)) {
-      steps.push(`Building: ${f}...`)
+      steps.push(`Building: ${typeof f === 'string' ? f : String(f)}...`)
     }
   } else {
     // Fall back to mission-based feature steps
@@ -127,10 +129,10 @@ export function extractStepsFromPlan(plan: unknown, mission: string): string[] {
     }
   }
 
-  // Key functions
+  // Key functions (with type guard)
   if (p.keyFunctions && Array.isArray(p.keyFunctions) && p.keyFunctions.length > 0) {
     for (const f of p.keyFunctions.slice(0, 3)) {
-      steps.push(`Implementing: ${f}...`)
+      steps.push(`Implementing: ${typeof f === 'string' ? f : String(f)}...`)
     }
   }
 

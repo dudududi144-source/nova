@@ -81,9 +81,9 @@ export function enrichMission(mission: string): EnrichedMission {
   hints.push('Responsive layout with CSS Flexbox or Grid')
   hints.push('Add CSS transitions on interactive elements')
 
-  const enriched = hints.length > 3
-    ? `${mission}\n\nImplementation hints:\n${hints.map(h => `- ${h}`).join('\n')}`
-    : mission
+  // Always include the general hints (previously: only included if hints.length > 3,
+  // which meant when no specific hints matched, the 3 general hints were silently dropped).
+  const enriched = `${mission}\n\nImplementation hints:\n${hints.map(h => `- ${h}`).join('\n')}`
 
   return { original: mission, enriched, detectedType, hints }
 }
@@ -201,7 +201,10 @@ export function validateOutput(html: string, mission: string): ValidationResult 
 // Instead of fixed maxTokens, estimate based on plan complexity.
 
 export function estimateTokenBudget(plan: unknown): number {
-  if (!plan || typeof plan !== 'object') return 16000 // default
+  // No plan or invalid plan — use the same default as the "has plan but missing fields" case
+  // (3 features + 2 functions = 18000). Previously returned 16000 here but 18000 for
+  // objects missing fields — two different defaults was confusing.
+  if (!plan || typeof plan !== 'object') return 18000
 
   const p = plan as Record<string, unknown>
   const features = Array.isArray(p.features) ? p.features.length : 3

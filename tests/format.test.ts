@@ -1,6 +1,6 @@
 // Tests for format utilities (stolen from TFA Evolution Studio, improved)
 import { describe, it, expect } from 'bun:test'
-import { formatTokens, formatMs, formatBytes, timeAgo, BUILD_STAGES, getCurrentStage, getStageProgress } from '../src/lib/format'
+import { formatTokens, formatMs, timeAgo, BUILD_STAGES, getCurrentStage } from '../src/lib/format'
 
 describe('formatTokens', () => {
   it('formats small numbers as-is', () => {
@@ -41,25 +41,6 @@ describe('formatMs', () => {
   })
 })
 
-describe('formatBytes', () => {
-  it('formats bytes', () => {
-    expect(formatBytes(0)).toBe('0B')
-    expect(formatBytes(512)).toBe('512B')
-    expect(formatBytes(1023)).toBe('1023B')
-  })
-
-  it('formats kilobytes', () => {
-    expect(formatBytes(1024)).toBe('1.0KB')
-    expect(formatBytes(5120)).toBe('5.0KB')
-    expect(formatBytes(1048575)).toBe('1024.0KB')
-  })
-
-  it('formats megabytes', () => {
-    expect(formatBytes(1048576)).toBe('1.0MB')
-    expect(formatBytes(5242880)).toBe('5.0MB')
-  })
-})
-
 describe('timeAgo', () => {
   it('returns "just now" for recent times', () => {
     const now = Date.now()
@@ -83,6 +64,11 @@ describe('timeAgo', () => {
     const now = Date.now()
     expect(timeAgo(new Date(now - 86400000).toISOString())).toBe('1d ago')
     expect(timeAgo(new Date(now - 172800000).toISOString())).toBe('2d ago')
+  })
+
+  it('returns "unknown" for invalid dates (roast #7 fix)', () => {
+    expect(timeAgo('not a date')).toBe('unknown')
+    expect(timeAgo('')).toBe('unknown')
   })
 })
 
@@ -139,19 +125,5 @@ describe('getCurrentStage', () => {
   it('returns code_start when has plan but not streaming (waiting for first token)', () => {
     const stage = getCurrentStage(10, true, false, false)
     expect(stage.key).toBe('code_start')
-  })
-})
-
-describe('getStageProgress', () => {
-  it('returns 100 when complete', () => {
-    expect(getStageProgress(60, true, false, true)).toBe(100)
-  })
-
-  it('returns 10 at start', () => {
-    expect(getStageProgress(0, false, false, false)).toBe(10)
-  })
-
-  it('returns 60 when streaming', () => {
-    expect(getStageProgress(20, true, true, false)).toBe(60)
   })
 })
