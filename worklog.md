@@ -1106,3 +1106,44 @@ Stage Summary:
   (that's what unit tests do) — they test that critical CONFIGURATION is present.
   If someone removes maxLength, sandbox, or the STORAGE LIMITATION prompt section,
   the test catches it immediately.
+
+---
+Task ID: 21
+Agent: main (Z.ai Code)
+Task: The things I keep walking past. What's been staring me in the face?
+
+Work Log:
+- Found 3 issues, 1 was a type safety bug:
+
+  HIGH (1):
+  - BuildResult interface was duplicated in both page.tsx AND helpers.ts.
+    page.tsx had its own `interface BuildResult`, helpers.ts had `export interface BuildResult`.
+    page.tsx imported FUNCTIONS from helpers but NOT the type.
+    If one changed (e.g., added a field), the other wouldn't — type drift.
+    FIXED: page.tsx imports `type BuildResult` from helpers.
+    Added characterization test verifying page.tsx does NOT redefine BuildResult.
+
+  MEDIUM (1):
+  - README said "163 tests" but actual is 236. Stale documentation.
+    FIXED: updated to 236.
+
+  LOW (1):
+  - globals.css :root has 62 oklch color values for light mode, but app is dark-only.
+    Acknowledged — harmless dead CSS, removing risks breaking shadcn components.
+
+- Also verified: no TODO/FIXME/HACK, no hardcoded localhost, no hardcoded ports,
+  no BuildResponse/BuildBody duplication (different types for client vs server).
+
+- All tests pass (236), lint clean, tsc clean.
+- Browser verified: snake build (48s), zero console errors.
+
+Stage Summary:
+- **1 type safety fix**: BuildResult no longer duplicated — single source of truth
+- **1 doc fix**: README test count updated
+- **1 new test**: non-duplication verification (catches future regressions)
+- **Lesson**: I extracted functions to helpers.ts in cycle 20 but forgot to also
+  extract the TYPE. The function was imported, the type was redefined. This is the
+  same pattern as cycles 12-13 (config files not checking tests) — I fixed the
+  obvious thing (function extraction) but missed the less obvious thing (type
+  extraction). The lesson: when you extract something, extract EVERYTHING —
+  functions AND their types.
