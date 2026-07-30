@@ -1764,3 +1764,53 @@ Task: Make the process intelligent and professional — not just blind LLM calls
    Only retries once. Only uses retry if score improved.
 
 31 new tests covering all 5 capabilities. 282 total, 500 assertions.
+
+---
+Task ID: 35
+Agent: main (Z.ai Code)
+Task: Comprehensive process audit — check score, fix, improve, propose what's next.
+
+AUDIT FINDINGS (6 gaps in the process):
+1. Refine route had NO validation — broken output could reach user unchecked
+2. Refine route had NO quality metrics — user blind to refine quality
+3. Refine route had NO adaptive budget — fixed 32000 for tiny changes
+4. Client ignored quality score from SSE events — data was sent but not used
+5. Client ignored metrics from SSE events — same
+6. No quality display in UI — user couldn't see quality score
+
+ALL 6 FIXED:
+
+Refine route:
+- Added validateOutput() after HTML generation
+- Added analyzeQuality() for metrics
+- Added estimateTokenBudget() for adaptive tokens
+- Sends quality + metrics in SSE result event
+
+Client (build flow):
+- Extracts quality + metrics from SSE result
+- Toast: 'Built in 45s · 2000 tokens · quality: 85'
+- Header: Q:85 badge (green if >=70, amber if <70)
+- Hover on badge: shows metrics
+
+Client (refine flow):
+- Extracts quality + metrics from SSE result
+- Toast: 'Refined! 30s · quality: 90'
+- Updates quality badge in header
+
+State management:
+- qualityScore and qualityMetrics as state variables
+- Reset on New/reset
+- Updated on build complete and refine complete
+
+WHAT TO IMPROVE NEXT (proposed):
+1. Show quality metrics in a expandable panel below the toolbar
+2. Show validation checks (which passed, which failed) as a checklist
+3. Add quality trend: compare current score to previous build
+4. Auto-suggest refinement if quality < 70 ("Quality is low. Try: 'add score display'")
+5. Show architect plan details in a collapsible card
+6. Add build history with quality scores (visual graph)
+7. Token/cost estimation before build (preview)
+8. A/B comparison: rebuild same mission, compare quality scores
+
+All tests: 282 pass, 0 fail, 500 expect() calls
+Lint: clean. tsc: clean.
