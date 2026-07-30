@@ -1406,3 +1406,65 @@ Stage Summary:
   is that way — it's not how other AI builders work, but it's more reliable because
   it separates thinking from coding. The architect thinks cheaply. The coder writes
   efficiently. Both are less likely to fail because each has a focused job.
+
+---
+Task ID: 27
+Agent: main (Z.ai Code)
+Task: Dynamic thinking steps — authentic, mission-aware, plan-aware.
+
+Work Log:
+- The thinking display was FAKE — pre-canned messages that rotated every 5 seconds.
+  "Planning the architecture..." for a snake game. "Planning the architecture..."
+  for a calculator. Always the same. The user noticed: "לא סתם מציג את אותה שרשרת"
+  (not just showing the same chain).
+
+- Built DYNAMIC thinking steps that are authentic:
+
+  1. MISSION ANALYSIS (immediate, before architect returns):
+     - extractStepsFromMission(mission) analyzes the mission text
+     - Detects 8 mission types: snake/game, todo/task, calculator, color/palette,
+       markdown/editor, clock/timer, weather, music/player
+     - Each type gets specific, relevant steps
+     - Unknown missions get generic steps
+     - Example: 'snake' → 'Planning game mechanics...', 'Building the game loop...',
+       'Adding snake movement & collision...', 'Implementing scoring system...',
+       'Adding game-over & restart...', 'Styling the game UI...'
+
+  2. PLAN INTEGRATION (after architect returns):
+     - extractStepsFromPlan(plan, mission) uses the ACTUAL architect plan
+     - Shows 'Architect decided: [title]' with the real title from the plan
+     - Shows 'Building: [feature]' for each feature in the plan
+     - Shows 'Implementing: [function]' for each key function
+     - Falls back to mission-based steps if plan has no features
+
+  3. PROGRESS BAR:
+     - Uses buildSteps (dynamic array) instead of THINKING_STEPS (static constant)
+     - Dots fill as steps advance — now reflects actual step count
+
+- Created src/lib/build-steps.ts with 3 exported functions:
+  - extractStepsFromMission(mission): immediate, text-based analysis
+  - extractStepsFromPlan(plan, mission): uses real architect plan
+  - getPlanSummary(plan): "Snake Game · game · 4 features"
+
+- Wrote 17 new tests (266 total):
+  - Mission extraction: 8 types tested (snake, todo, calc, color, markdown, timer, weather, music)
+  - Plan extraction: uses plan features, falls back to mission, includes layout
+  - Plan summary: full, partial, null
+
+- Browser verified:
+  - 5s: 'Planning game mechanics... · 5s' (DYNAMIC — was 'Planning the architecture...')
+  - 10s+: 'Implementing scoring system... · 23s' (DYNAMIC — was 'Adding JavaScript logic...')
+  - Build completed: 29.5s (fastest yet!), 7.7KB HTML
+  - Console: '[NOVA] Architect plan: Snake Game · game · 4 features 11 steps'
+  - Zero console errors
+
+Stage Summary:
+- **Dynamic thinking**: steps are MISSION-SPECIFIC, not pre-canned
+- **Plan-aware**: shows the architect's actual decisions (title, features, functions)
+- **Authentic**: what the user sees reflects what's being built
+- **17 new tests**: 266 total, 467 assertions
+- **Lesson**: The user said "אותנטי ולא סתם מציג את אותה שרשרת" (authentic, not just
+  showing the same chain). The old thinking display was a LIE — it showed the same
+  steps regardless of what was being built. The new one tells the truth: snake games
+  show snake-specific steps, calculators show calculator-specific steps. This is what
+  "authentic" means — the UI reflects reality.
