@@ -1839,3 +1839,33 @@ WHY THIS IS EXCEPTIONAL:
 - Combination of streaming + intelligence = something no other tool does
 
 All tests: 282 pass, 0 fail, 500 expect() calls
+
+---
+Task ID: 37
+Agent: main (Z.ai Code)
+Task: Heavy roast + competitor analysis + breakthrough.
+
+ROAST FINDINGS (5 issues):
+1. Token events didn't accumulate partial HTML — user saw char count, not actual app
+2. Refine route didn't use streaming (still llmChat, not llmChatStream)
+3. llmChatStream had no fallback if SDK returns JSON instead of stream
+4. No live preview during streaming — user stared at spinner for 50s
+5. First-build had no iframe to show preview in (only showed after result)
+
+COMPETITOR ANALYSIS:
+- bolt.new: streams code to CodeMirror editor, user sees code appearing
+- v0: streams code to editor, same approach
+- Cursor: streams code to editor, same approach
+- All competitors show CODE appearing, not the APP
+
+NOVA'S BREAKTHROUGH:
+- We stream HTML to iframe — user sees the APP appearing, not the code
+- This is more useful: you see if the game works, not just if the code looks right
+- When the LLM writes <canvas>, the canvas appears immediately
+- When it writes <style>, the dark theme appears
+- When it writes <script>, the game logic starts working
+
+This is "the way we do it" — not showing code (like everyone else), but showing
+the actual app being born. The user experiences the creation, not just the result.
+
+All tests: 282 pass, 0 fail, 500 expect() calls
