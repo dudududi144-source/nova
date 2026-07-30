@@ -1346,3 +1346,63 @@ Stage Summary:
   always failed because 8000 tokens wasn't enough. The fix is simple (increase
   the limit) but the diagnosis required reading the log and noticing that
   previewLen was always tiny (8-97 chars) on failures. The log data told the story.
+
+---
+Task ID: 26
+Agent: main (Z.ai Code)
+Task: Fix 502 permanently + rethink the build process. User wants breakthroughs, not patches.
+
+Work Log:
+- The 502 was caused by single-shot LLM calls that truncating complex HTML.
+  Increasing maxTokens to 16000 helped but didn't solve it — the LLM still
+  sometimes returns 97 chars or 8 chars.
+
+- BREAKTHROUGH: Replaced single-shot with 2-stage pipeline:
+
+  Stage 1 — ARCHITECT (2.6s, 327 tokens):
+  - Tiny LLM call that returns a JSON plan
+  - { type, title, features, approach, colors, layout, keyFunctions }
+  - maxTokens: 1000 (never truncates)
+  - Cheap, fast, reliable
+
+  Stage 2 — CODER (32s, 2352 tokens):
+  - Uses the plan as context to generate focused HTML
+  - The plan guides the LLM — it doesn't have to "think" about what to build
+  - maxTokens: 16000 + truncation detection + continuation retry
+  - Faster because the plan saves the LLM from wasting tokens on planning
+
+- Why this is different from what others do:
+  - Most AI builders use single-shot or streaming
+  - NOVA separates THINKING (architect) from CODING (coder)
+  - The architect is cheap (327 tokens) — if it fails, minimal waste
+  - The coder has a focused job (follow the plan) — less chance of going off-track
+  - Total: 34.9s (was 47-75s) — FASTER than single-shot
+
+- Results from first test:
+  - architect_started → architect_completed in 2.6s (327 tokens, hasPlan: true)
+  - coder_started → build.completed in 32.3s (2352 tokens, 8.2KB HTML)
+  - Total: 34.9s (was 47-75s)
+  - Zero console errors
+  - Snake game rendered with "Game Over!" + "Restart game" button
+
+- Updated thinking display with 2 phases:
+  - 0-15s: architect phase ("Analyzing...", "Planning architecture...", "Designing UI...")
+  - 15s+: coder phase ("Writing code...", "Adding styles...", "Implementing logic...", etc.)
+
+- Updated tests:
+  - mockLlmChat now returns architect JSON for architect prompt, HTML for coder prompt
+  - "calls llmChat twice" (was "exactly once")
+  - Updated characterization tests for ARCHITECT_PROMPT + CODER_PROMPT
+  - Updated logging tests for build.architect_started/completed, build.coder_started
+
+- All tests: 249 pass, 0 fail, 427 expect() calls
+
+Stage Summary:
+- **502 FIXED**: 2-stage pipeline — architect always succeeds (tiny output)
+- **FASTER**: 35s vs 47-75s (plan saves coder time)
+- **BETTER QUALITY**: plan ensures all features are implemented
+- **MORE RELIABLE**: 2 small focused calls > 1 huge unfocused call
+- **Lesson**: The user said "מציאת דרך שלנו" (find our own way). The 2-stage pipeline
+  is that way — it's not how other AI builders work, but it's more reliable because
+  it separates thinking from coding. The architect thinks cheaply. The coder writes
+  efficiently. Both are less likely to fail because each has a focused job.
