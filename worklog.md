@@ -1574,3 +1574,50 @@ Stage Summary:
   too basic — a snake game in 8KB is a toy, not a product. The fix was to demand
   quality in the prompt: "Minimum 300 lines", "Professional UI", "gradients, shadows,
   transitions". The LLM was capable of better — it just wasn't asked.
+
+---
+Task ID: 30
+Agent: main (Z.ai Code)
+Task: Fix 502 — user can't complete build process.
+
+Work Log:
+- The 502 was caused by the LLM taking too long (96s for coder, 70s for architect).
+  The v29 prompt changes made the LLM generate more (4225 tokens, 15KB) which took
+  longer, hitting the 120s maxDuration limit.
+
+- Fix 1: Simplified ARCHITECT_PROMPT
+  Before: verbose, demanded "EVERY feature, EVERY function, EVERY UI element"
+  After: concise JSON template with short fields
+  Result: 9.3s (was 24-70s), 442 tokens (was 739)
+
+- Fix 2: Simplified CODER_PROMPT
+  Before: "Minimum 300 lines", 15 rules, verbose
+  After: kept quality requirements (dark theme, gradients, game loop, aria-labels)
+  but removed line-count minimum and verbose rules
+  Result: 2865 tokens (was 3572-4225), 10.7KB (was 12-15KB), 52s (was 56-96s)
+
+- Fix 3: Added client-side auto-retry
+  If code stage returns non-200, automatically retries without the plan
+  (simpler prompt = faster = less likely to timeout).
+  Shows "Retrying with simpler approach..." in thinking steps.
+
+- Results from browser test:
+  Architect: 9.3s, 442 tokens, 6 features ✓
+  Coder: 52s, 2865 tokens, 10.7KB ✓
+  Total: ~61s — within acceptable range
+  Output: Snake game with Game Over + Play Again ✓
+  Console: zero errors ✓
+
+- Balance: speed vs quality
+  v27: 8KB, 59s — too small (below criticism)
+  v29: 15KB, 96s — too slow (502 timeout)
+  v30: 10.7KB, 61s — balanced (good quality, completes reliably)
+
+Stage Summary:
+- **502 FIXED**: simplified prompts + auto-retry
+- **Balanced**: 10.7KB output in 61s (was 8KB/59s or 15KB/96s)
+- **Auto-retry**: if build fails, retries with simpler approach
+- **Lesson**: I overcorrected in v29 — demanded too much quality, which caused
+  timeouts. The sweet spot is v30: enough quality requirements to produce a
+  good app, but not so many that the LLM takes 96 seconds and times out.
+  The balance is: dark theme ✓, game loop ✓, aria-labels ✓, but NOT "300 lines minimum".
