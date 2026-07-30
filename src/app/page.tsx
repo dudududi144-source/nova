@@ -28,6 +28,30 @@ const EXAMPLES: readonly string[] = [
   'Build a color palette generator with copy-to-clipboard',
 ]
 
+// Thinking steps shown during build — gives users a sense of progress.
+// These rotate every 4-6 seconds. They're illustrative, not literal LLM steps.
+const THINKING_STEPS: readonly string[] = [
+  'Understanding your request...',
+  'Planning the architecture...',
+  'Designing the UI layout...',
+  'Writing HTML structure...',
+  'Styling with CSS...',
+  'Adding JavaScript logic...',
+  'Implementing interactivity...',
+  'Checking for edge cases...',
+  'Optimizing performance...',
+  'Finalizing the code...',
+]
+
+const REFINE_THINKING_STEPS: readonly string[] = [
+  'Analyzing current code...',
+  'Understanding your request...',
+  'Planning the changes...',
+  'Applying modifications...',
+  'Verifying everything still works...',
+  'Finalizing the update...',
+]
+
 export default function Home() {
   const [mission, setMission] = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,6 +61,7 @@ export default function Home() {
   const [history, setHistory] = useState<BuildResult[]>([])
   const [confirmClear, setConfirmClear] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [thinkingStep, setThinkingStep] = useState(0)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [refining, setRefining] = useState(false)
@@ -66,18 +91,31 @@ export default function Home() {
     return () => abortRef.current?.abort()
   }, [])
 
-  // Elapsed time counter during build
+  // Elapsed time counter + thinking step rotation during build/refine
   useEffect(() => {
-    if (!loading) {
+    if (!loading && !refining) {
       setElapsed(0)
+      setThinkingStep(0)
       return
     }
     const startTime = Date.now()
+    const steps = loading ? THINKING_STEPS : REFINE_THINKING_STEPS
+    let step = 0
+    setThinkingStep(0)
+
+    // Update elapsed every second
     const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000))
+      const sec = Math.floor((Date.now() - startTime) / 1000)
+      setElapsed(sec)
+      // Rotate thinking step every 5 seconds (or when elapsed exceeds steps * 5)
+      const nextStep = Math.min(steps.length - 1, Math.floor(sec / 5))
+      if (nextStep !== step) {
+        step = nextStep
+        setThinkingStep(step)
+      }
     }, 1000)
     return () => clearInterval(timer)
-  }, [loading])
+  }, [loading, refining])
 
   // Centralized build function. Aborts any in-flight build first.
   // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
@@ -414,7 +452,11 @@ export default function Home() {
             {loading || !result ? (
               <>
                 <Loader2 className="h-3 w-3 animate-spin" />
-                <span>Building... {elapsed > 0 && `${elapsed}s`}</span>
+                <span>
+                  {loading
+                    ? `${THINKING_STEPS[thinkingStep] ?? 'Building...'} ${elapsed > 0 && `· ${elapsed}s`}`
+                    : 'Building...'}
+                </span>
               </>
             ) : (
               <>
@@ -479,14 +521,29 @@ export default function Home() {
 
           {/* First-build loading (no prior result) */}
           {loading && !result && (
-            <div className="mt-4 flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-              <span>
-                The model is writing your app.
-                {elapsed > 0 && ` ${elapsed}s elapsed.`}
-                {' '}This usually takes 20-60 seconds.
-                {elapsed > 60 && ' (taking longer than expected — please wait)'}
-              </span>
+            <div className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                <span className="font-medium text-foreground/80">
+                  {THINKING_STEPS[thinkingStep] ?? THINKING_STEPS[0]}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-2 pl-5">
+                <div className="flex gap-1">
+                  {THINKING_STEPS.map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1 rounded-full transition-all ${
+                        i <= thinkingStep ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/20'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-[10px] text-muted-foreground/50">
+                  {elapsed > 0 && `${elapsed}s`}
+                  {elapsed > 60 && ' · taking longer than expected'}
+                </span>
+              </div>
             </div>
           )}
 
@@ -497,6 +554,9 @@ export default function Home() {
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                 <div className="flex-1">
                   <p className="text-xs text-destructive">{error}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground/60">
+                    The AI sometimes returns incomplete output. Try again, or simplify your request.
+                  </p>
                   <Button
                     onClick={retryFailed}
                     variant="ghost"
@@ -664,9 +724,12 @@ export default function Home() {
                       </div>
                     ))}
                     {refining && (
-                      <div className="flex justify-start">
-                        <div className="rounded-md bg-muted/40 px-2 py-1">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
                           <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                          <span className="text-[11px] text-muted-foreground">
+                            {REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -703,9 +766,22 @@ export default function Home() {
             <div className="relative min-h-0 flex-1 bg-neutral-950">
               {loading && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-2 text-neutral-400">
+                  <div className="flex flex-col items-center gap-3 text-neutral-400">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    <p className="text-xs">Rebuilding...</p>
+                    <p className="text-xs font-medium text-foreground/80">
+                      {THINKING_STEPS[thinkingStep] ?? 'Rebuilding...'}
+                    </p>
+                    <div className="flex gap-1">
+                      {THINKING_STEPS.map((_, i) => (
+                        <div
+                          key={i}
+                          className={`h-1 rounded-full transition-all ${
+                            i <= thinkingStep ? 'w-3 bg-primary' : 'w-1 bg-muted-foreground/20'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    {elapsed > 0 && <p className="text-[10px] text-muted-foreground/50">{elapsed}s</p>}
                   </div>
                 </div>
               )}
