@@ -42,6 +42,7 @@ export default function Home() {
   const [refining, setRefining] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const refineAbortRef = useRef<AbortController | null>(null)
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
   // This prevents build from being re-created on every result change (every build).
   // Updated in a useEffect (not during render — that's a side effect).
@@ -101,6 +102,7 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setFailedMission(null)
+    setChatMessages([])
 
     // Helper: set error state consistently (replaces 6 repeated blocks)
     const fail = (msg: string) => {
@@ -205,14 +207,18 @@ export default function Home() {
   }, [mission])
 
   const loadFromHistory = useCallback((h: BuildResult) => {
-    // Abort any in-flight build so it doesn't overwrite the history item we're loading
+    // Abort any in-flight build or refine
     abortRef.current?.abort()
     abortRef.current = null
+    refineAbortRef.current?.abort()
+    refineAbortRef.current = null
     setLoading(false)
+    setRefining(false)
     setResult(h)
     setMission(h.mission)
     setError(null)
     setFailedMission(null)
+    setChatMessages([])
   }, [])
 
   const cancelBuild = useCallback(() => {
@@ -267,23 +273,24 @@ export default function Home() {
   // Chat refine: send message + current HTML to LLM, get back updated HTML
   const sendChat = useCallback(async () => {
     const msg = chatInput.trim()
-    if (!msg || refining || !result) return
+    const currentResult = resultRef.current
+    if (!msg || refining || !currentResult) return
 
     const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
     setChatMessages(prev => [...prev, userMsg])
     setChatInput('')
     setRefining(true)
 
-    // Abort any in-flight refine
-    abortRef.current?.abort()
+    // Abort any in-flight refine (separate from build abort)
+    refineAbortRef.current?.abort()
     const controller = new AbortController()
-    abortRef.current = controller
+    refineAbortRef.current = controller
 
     try {
       const res = await fetch('/api/refine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mission: result.mission, html: result.html, message: msg }),
+        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg }),
         signal: controller.signal,
       })
 
@@ -314,13 +321,18 @@ export default function Home() {
 
       // Update the result with the refined HTML
       const refinedResult: BuildResult = {
-        ...result,
+        ...currentResult,
         id: newBuildId(),
         html: data.html ?? '',
-        tokens: (result.tokens ?? 0) + (data.tokens ?? 0),
-        ms: (result.ms ?? 0) + (data.ms ?? 0),
       }
       setResult(refinedResult)
+
+      // Update history with the refined version
+      setHistory(prev => {
+        const next = [refinedResult, ...prev.filter(h => h.mission !== currentResult.mission)].slice(0, 10)
+        try { localStorage.setItem('nova_history', JSON.stringify(next)) } catch {}
+        return next
+      })
 
       setChatMessages(prev => [...prev, {
         role: 'assistant',
@@ -335,12 +347,12 @@ export default function Home() {
       setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
       toast.error(failMsg)
     } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null
+      if (refineAbortRef.current === controller) {
+        refineAbortRef.current = null
         setRefining(false)
       }
     }
-  }, [chatInput, refining, result])
+  }, [chatInput, refining])
 
   // Auto-scroll chat to bottom on new messages
   useEffect(() => {
@@ -349,16 +361,21 @@ export default function Home() {
     }
   }, [chatMessages, refining])
 
-  // Keyboard shortcuts: Esc=cancel build, ⌘S/Ctrl+S=download
-  // These are window-level so they work even when the textarea is focused.
-  // ⌘S calls preventDefault() to stop the browser's "Save Page" dialog.
+  // Keyboard shortcuts: Esc=cancel build/refine, ⌘S/Ctrl+S=download
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Esc cancels a build
-      if (e.key === 'Escape' && loading) {
+      // Esc cancels a build or refine
+      if (e.key === 'Escape' && (loading || refining)) {
         e.preventDefault()
-        cancelBuild()
-        toast.info('Build cancelled')
+        if (loading) {
+          cancelBuild()
+          toast.info('Build cancelled')
+        } else if (refining) {
+          refineAbortRef.current?.abort()
+          refineAbortRef.current = null
+          setRefining(false)
+          toast.info('Refine cancelled')
+        }
         return
       }
       // ⌘S / Ctrl+S downloads the current result (always preventDefault to stop browser save)
@@ -372,7 +389,7 @@ export default function Home() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [loading, result, download, cancelBuild])
+  }, [loading, refining, result, download, cancelBuild])
 
   // Whether to show examples (only when no result, no error, not loading)
   const showExamples = !result && !loading && !error
