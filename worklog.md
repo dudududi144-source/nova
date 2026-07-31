@@ -2715,3 +2715,48 @@ Stage Summary:
   are the REAL wins. Plan adherence is crude but still useful as a hint.
 - All restrictions released: 1000/hour rate limit, 200KB body, 2000 char mission, 64000 token budget.
 - The system is now "open to the edge" as the user requested.
+
+---
+Task ID: 51
+Agent: main (Z.ai Code)
+Task: Deep examination + fixes of all v3 code.
+
+ISSUES FOUND AND FIXED (5):
+
+1. **CRITICAL: Line numbers in runtime errors were WRONG**
+   - Design tokens (~80 lines) + CSP + error capture script (~60 lines) are injected BEFORE the app's code
+   - This shifts all line numbers by ~140 lines
+   - The LLM got wrong line numbers in auto-fix requests → couldn't find the right code to fix
+   - FIX: Set line/col to 0 in all error reports. Rely on error message + stack trace instead.
+   - Also increased msg truncation from 500→1000 chars and stack from 1000→2000 chars
+
+2. **MEDIUM: Probe typed "test input" into all inputs**
+   - Number inputs got "test input" → could cause parse errors
+   - Email inputs got "test input" → invalid format
+   - FIX: Use appropriate values: number→"42", email→"test@example.com", search→"test", else→"test input"
+   - Also expanded selector to include input[type="email"], input[type="number"], input[type="search"]
+
+3. **MEDIUM: Truncation retry maxTokens too low (8000)**
+   - Complex apps that were truncated needed more than 8000 tokens to complete
+   - Context was only 500 chars — not enough for the LLM to understand where to continue
+   - FIX: maxTokens 8000→16000, context 500→1000 chars (both code and refine routes)
+
+4. **LOW: Auto-fix error list didn't include stack traces**
+   - The LLM only got the error message, not the stack trace
+   - Stack traces help the LLM identify the exact function and location
+   - FIX: Include stack traces (truncated to 300 chars) in the auto-fix error list
+
+5. **LOW: Dead imports — formatProbeErrors and Theme type**
+   - Imported but never used
+   - FIX: Removed unused imports
+
+TESTS:
+- All 395 tests pass, 721 assertions
+- Lint clean (1 intentional warning)
+- TypeScript clean
+
+Stage Summary:
+- The line number fix is the most important — it was actively misleading the LLM in auto-fix.
+  Now the LLM gets error messages + stack traces, which are accurate and actionable.
+- The probe now uses smart input values — no more false errors from typing "test input" into number fields.
+- Truncation retry is now more likely to complete complex apps — 16000 tokens + 1000 chars of context.

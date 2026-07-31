@@ -9,8 +9,8 @@ import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from 
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens, BUILD_STAGES, getCurrentStage } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
-import { probeApp, formatProbeErrors, type ProbeResult } from '@/lib/interaction-probe'
-import { THEMES, type Theme } from '@/lib/design-tokens'
+import { probeApp, type ProbeResult } from '@/lib/interaction-probe'
+import { THEMES } from '@/lib/design-tokens'
 
 interface BuildResponse {
   ok: boolean
@@ -620,12 +620,13 @@ export default function Home() {
     setAutoFixing(true)
     toast.info(`Auto-fixing ${allErrors.length} runtime error(s)...`)
 
+    // Build error list with stack traces for better LLM context
     const errorList = allErrors.map((e, i) => {
-      const loc = e.line ? ` (line ${e.line}:${e.col})` : ''
-      return `${i + 1}. [${e.type}]${loc}: ${e.msg}`
+      const stack = e.stack ? `\n  Stack: ${e.stack.slice(0, 300)}` : ''
+      return `${i + 1}. [${e.type}]: ${e.msg}${stack}`
     }).join('\n')
 
-    const fixMessage = `Fix these runtime errors:\n${errorList}\n\nThe app must work without these errors. Fix the root cause, not just the symptom.`
+    const fixMessage = `Fix these runtime errors:\n${errorList}\n\nThe app must work without these errors. Fix the root cause, not just the symptom. Test each fix mentally before writing it.`
 
     refineAbortRef.current?.abort()
     const controller = new AbortController()

@@ -19,8 +19,7 @@ export const RUNTIME_ERROR_SCRIPT = `<script>
 
   function sendError(type, msg, line, col, stack) {
     if (errors.length >= MAX_ERRORS) return;
-    var err = { type: type, msg: String(msg).slice(0, 500), line: line || 0, col: col || 0 };
-    if (stack) err.stack = String(stack).slice(0, 1000);
+    var err = { type: type, msg: String(msg).slice(0, 1000), line: 0, col: 0, stack: stack ? String(stack).slice(0, 2000) : undefined };
     errors.push(err);
     try {
       parent.postMessage({ source: 'nova-preview', kind: 'error', error: err }, '*');
@@ -28,8 +27,11 @@ export const RUNTIME_ERROR_SCRIPT = `<script>
   }
 
   // Capture uncaught errors
+  // NOTE: line/col numbers are unreliable because design tokens + CSP + this script
+  // are injected before the app's code, shifting line numbers by ~140 lines.
+  // We set line/col to 0 and rely on the error message + stack trace instead.
   window.addEventListener('error', function(e) {
-    sendError('error', e.message, e.lineno, e.colno, e.error && e.error.stack);
+    sendError('error', e.message, 0, 0, e.error && e.error.stack);
   });
 
   // Capture unhandled promise rejections

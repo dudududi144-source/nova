@@ -121,13 +121,18 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
               }
             })
 
-            // Type into every input
-            const inputs = doc.querySelectorAll('input[type="text"], input:not([type]), textarea')
+            // Type into every input — use appropriate value based on input type
+            const inputs = doc.querySelectorAll('input[type="text"], input:not([type]), textarea, input[type="email"], input[type="number"], input[type="search"]')
             inputs.forEach((input, i) => {
               if (i >= 5) return // Limit to 5 inputs
               try {
                 const el = input as HTMLInputElement
-                el.value = 'test input'
+                // Use appropriate test value based on input type
+                const inputType = el.type || 'text'
+                if (inputType === 'number') el.value = '42'
+                else if (inputType === 'email') el.value = 'test@example.com'
+                else if (inputType === 'search') el.value = 'test'
+                else el.value = 'test input'
                 el.dispatchEvent(new Event('input', { bubbles: true }))
                 el.dispatchEvent(new Event('change', { bubbles: true }))
                 inputsTested++

@@ -257,11 +257,11 @@ export async function POST(request: NextRequest): Promise<Response> {
           // Send progress event
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
 
-          const lastChars = rawHtml.slice(-500)
+          const lastChars = rawHtml.slice(-1000)
           const retryResult = await llmChat(
             'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
-            `The previous output was truncated. Last 500 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
-            { maxTokens: 8000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
+            `The previous output was truncated. Last 1000 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
+            { maxTokens: 16000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
           )
           if (retryResult.ok) {
             rawHtml = rawHtml + stripCodeFences(retryResult.text)
