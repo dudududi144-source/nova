@@ -1586,14 +1586,29 @@ export default function Home() {
                   ) : null}
                 </div>
                 {runtimeErrors.length === 0 && (!probeResult || probeResult.errors.length === 0) ? (
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-400">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    <span>No runtime errors detected. The app runs cleanly.</span>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 text-[11px] text-emerald-400">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>No runtime errors detected. The app runs cleanly.</span>
+                    </div>
                     {probeResult && (
-                      <span className="text-muted-foreground/60">
-                        ({probeResult.buttonsClicked} buttons clicked, {probeResult.inputsTested} inputs tested
-                        {probeResult.gameKeysDispatched ? ', arrow keys dispatched' : ''})
-                      </span>
+                      <div className="space-y-1 text-[10px] text-muted-foreground/60">
+                        <span>{probeResult.buttonsClicked} buttons clicked, {probeResult.inputsTested} inputs tested{probeResult.gameKeysDispatched ? ', arrow keys dispatched' : ''}</span>
+                        {probeResult.stateChanges && probeResult.stateChanges.length > 0 ? (
+                          <div className="mt-1 space-y-0.5">
+                            <span className="text-emerald-400/80">State changes detected (features working):</span>
+                            {probeResult.stateChanges.map((sc, i) => (
+                              <div key={i} className="pl-3 text-[10px]">
+                                <span className="text-muted-foreground">{sc.selector}:</span>{' '}
+                                <span className="text-foreground/60">"{sc.before}"</span>{' → '}{/* eslint-disable-line */}
+                                <span className="text-emerald-400/80">"{sc.after}"</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-amber-400/60">No state changes detected — buttons may not be wired up correctly.</div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ) : (

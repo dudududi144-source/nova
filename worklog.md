@@ -2760,3 +2760,45 @@ Stage Summary:
   Now the LLM gets error messages + stack traces, which are accurate and actionable.
 - The probe now uses smart input values — no more false errors from typing "test input" into number fields.
 - Truncation retry is now more likely to complete complex apps — 16000 tokens + 1000 chars of context.
+
+---
+Task ID: 52
+Agent: main (Z.ai Code)
+Task: Built Static Analysis Engine (שלב 1) + State Change Verification (שלב 2). Both verified feasible and working.
+
+SHALB 1: STATIC ANALYSIS ENGINE (src/lib/static-analysis.ts, ~250 LOC)
+- Catches 4 types of bugs in <1ms, on the server, before the user sees the result:
+  1. getElementById() referencing IDs that don't exist (with "did you mean?" typo suggestions)
+  2. addEventListener() referencing undefined functions
+  3. Function calls to undefined functions
+  4. Variable assignments without let/const/var declaration
+- Integrated into BOTH code route and refine route
+- Findings fed to LLM as targeted retry hints: "getElementById('gameCanvass') — Did you mean 'gameCanvas'?"
+- 14 tests covering: typos, undefined functions, undeclared variables, real-world buggy snake game, edge cases
+- VERIFIED: catches all 4 bugs in a test HTML with intentional errors
+
+SHALB 2: STATE CHANGE VERIFICATION (interaction-probe.ts, ~50 LOC addition)
+- The probe now reads DOM state BEFORE and AFTER clicking each button
+- Checks elements likely to hold state: #counter, #score, #result, #output, #display, .counter, .score, etc.
+- If text content changed → the feature works (green)
+- If nothing changed → the button may not be wired up (amber warning)
+- Results displayed in the runtime errors panel with before→after values
+- This is the difference between "no errors" (current) and "the app actually works" (new)
+
+HOW THEY WORK TOGETHER:
+1. LLM generates HTML
+2. Static analysis runs (<1ms) → catches getElementById typos, undefined functions, undeclared vars
+3. If bugs found → retry with targeted fix hints
+4. If clean → send to client
+5. Client runs probe → clicks buttons, checks state changes
+6. If no state changes → "buttons may not be wired up correctly" warning
+7. If state changed → shows "before → after" for each change (visual proof the app works)
+
+TESTS:
+- 409 pass, 0 fail, 748 assertions
+- Lint clean, TypeScript clean
+- 14 new tests for static analysis
+
+WHAT'S NEXT:
+- שלב 3: Template Seeding — golden templates that the LLM modifies instead of generating from scratch
+- שלב 4: Cross-Build Memory — IndexedDB cache of past builds

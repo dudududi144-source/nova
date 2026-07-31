@@ -18,6 +18,7 @@ import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build
 import { generateDesignTokens, DESIGN_TOKENS_INSTRUCTION } from '@/lib/design-tokens'
 import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
 import { checkPlanAdherence } from '@/lib/plan-adherence'
+import { analyzeHtml } from '@/lib/static-analysis'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -294,25 +295,40 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         const totalMs = Date.now() - startTime
 
+        // ═══ STATIC ANALYSIS — catch real bugs BEFORE the user sees them ═══
+        // Runs in <1ms on the server. Catches:
+        // - getElementById() referencing IDs that don't exist
+        // - addEventListener() referencing undefined functions
+        // - Function calls to undefined functions
+        // - Variable assignments without declaration
+        const staticAnalysis = analyzeHtml(html)
+        if (staticAnalysis.issues.length > 0) {
+          logger.warn('code.static_analysis', { ip, issues: staticAnalysis.issues.length, errors: staticAnalysis.issues.filter(i => i.severity === 'error').length })
+        } else {
+          logger.info('code.static_analysis_passed', { ip })
+        }
+
         // ── INTELLIGENCE: Validate output quality ──
         const validation = validateOutput(html, mission)
         logger.info('code.validated', { ip, score: validation.score, passed: validation.passed, checks: validation.checks.length })
 
         // ── INTELLIGENCE: Plan adherence check ──
-        // Verify the coder actually implemented all features from the architect's plan.
-        // This was previously decorative — the plan was passed but never verified.
         const planAdherence = checkPlanAdherence(html, plan)
         if (!planAdherence.adherent) {
           logger.warn('code.plan_not_adherent', { ip, missing: planAdherence.missingFeatures.length, features: planAdherence.missingFeatures.slice(0, 3) })
         }
 
-        // Combine validation retry hint with plan adherence hint
-        const combinedHint = [validation.retryHint, planAdherence.hint].filter(Boolean).join('\n\n')
+        // Combine ALL hints: static analysis + validation + plan adherence
+        const staticHint = staticAnalysis.issues.length > 0
+          ? `Static analysis found these bugs:\n${staticAnalysis.issues.map(i => `- [${i.severity}] ${i.message}\n  Fix: ${i.fixHint}`).join('\n')}`
+          : null
 
-        // If validation failed OR plan not adherent, try ONE retry with combined hint
-        if ((!validation.passed || !planAdherence.adherent) && combinedHint) {
-          logger.warn('code.retry_needed', { ip, score: validation.score, missingFeatures: planAdherence.missingFeatures.length, retrying: true })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing issues...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+        const combinedHint = [staticHint, validation.retryHint, planAdherence.hint].filter(Boolean).join('\n\n')
+
+        // If ANY check found issues, try ONE retry with the combined hint
+        if ((!staticAnalysis.passed || !validation.passed || !planAdherence.adherent) && combinedHint) {
+          logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, retrying: true })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
 
           const retryPrompt = `${planContext}\n\n${combinedHint}\n\nOutput the complete corrected HTML:`
           const retryResult = await llmChat(CODER_PROMPT, retryPrompt, {

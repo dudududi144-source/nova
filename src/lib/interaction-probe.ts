@@ -19,6 +19,7 @@ export interface ProbeResult {
   buttonsClicked: number
   inputsTested: number
   gameKeysDispatched: boolean
+  stateChanges: StateChange[]
   summary: string
 }
 
@@ -28,6 +29,13 @@ export interface ProbeError {
   line: number
   col: number
   stack?: string
+}
+
+export interface StateChange {
+  selector: string
+  before: string
+  after: string
+  changed: boolean
 }
 
 /**
@@ -45,6 +53,7 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     let buttonsClicked = 0
     let inputsTested = 0
     let gameKeysDispatched = false
+    let stateChanges: StateChange[] = []
 
     // Create a hidden iframe
     const iframe = document.createElement('iframe')
@@ -78,9 +87,14 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     }
 
     function buildResult(): ProbeResult {
-      const summary = errors.length === 0
-        ? `${interactions} interactions, 0 errors`
-        : `${interactions} interactions, ${errors.length} error(s)`
+      const errorCount = errors.length
+      const stateChangeCount = stateChanges.length
+      const parts: string[] = [`${interactions} interactions`]
+      if (errorCount > 0) parts.push(`${errorCount} error(s)`)
+      if (stateChangeCount > 0) parts.push(`${stateChangeCount} state change(s)`)
+      if (errorCount === 0) parts.push('0 errors')
+
+      const summary = parts.join(', ')
 
       return {
         errors,
@@ -88,6 +102,7 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
         buttonsClicked,
         inputsTested,
         gameKeysDispatched,
+        stateChanges,
         summary,
       }
     }
@@ -104,14 +119,47 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
         // Wait a bit for the app's own scripts to initialize
         setTimeout(() => {
           try {
-            // Click every button
+            // ═══ STATE CHANGE VERIFICATION ═══
+            // Before clicking each button, read the DOM state of key elements.
+            // After clicking, read again. If nothing changed, the button might not work.
+
+            // Find elements that likely hold state (text content that might change)
+            const stateSelectors = ['#counter', '#score', '#result', '#output', '#display',
+                                    '.counter', '.score', '.result', '.output', '.display',
+                                    '[data-state]', '#count', '#value', '#total']
+            const stateEls: { selector: string, el: Element }[] = []
+            for (const sel of stateSelectors) {
+              const el = doc.querySelector(sel)
+              if (el) stateEls.push({ selector: sel, el })
+            }
+
+            // Click every button — with state change tracking
             const buttons = doc.querySelectorAll('button')
             buttons.forEach((btn, i) => {
               if (i >= 10) return // Limit to 10 buttons
+
+              // Read state BEFORE click
+              const before = stateEls.map(s => ({ sel: s.selector, val: s.el.textContent?.trim().slice(0, 100) ?? '' }))
+
               try {
                 (btn as HTMLButtonElement).click()
                 buttonsClicked++
                 interactions++
+
+                // Read state AFTER click
+                const after = stateEls.map(s => ({ sel: s.selector, val: s.el.textContent?.trim().slice(0, 100) ?? '' }))
+
+                // Check if any state changed
+                for (let j = 0; j < before.length; j++) {
+                  if (before[j].val !== after[j].val) {
+                    stateChanges.push({
+                      selector: before[j].sel,
+                      before: before[j].val,
+                      after: after[j].val,
+                      changed: true,
+                    })
+                  }
+                }
               } catch (e) {
                 errors.push({
                   type: 'click-error',

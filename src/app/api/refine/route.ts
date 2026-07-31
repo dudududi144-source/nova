@@ -16,6 +16,7 @@ import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
 import { generateDesignTokens } from '@/lib/design-tokens'
 import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
+import { analyzeHtml } from '@/lib/static-analysis'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -224,20 +225,32 @@ export async function POST(request: NextRequest): Promise<Response> {
         finalHtml = injectRuntimeErrorCapture(finalHtml)
         const totalMs = Date.now() - startTime
 
+        // ═══ STATIC ANALYSIS — same as code route, catch bugs before user sees them ═══
+        const staticAnalysis = analyzeHtml(finalHtml)
+        if (staticAnalysis.issues.length > 0) {
+          logger.warn('refine.static_analysis', { ip, issues: staticAnalysis.issues.length, errors: staticAnalysis.issues.filter(i => i.severity === 'error').length })
+        }
+
         // ── INTELLIGENCE: Validate refined output ──
         const validation = validateOutput(finalHtml, mission)
         logger.info('refine.validated', { ip, score: validation.score, passed: validation.passed })
 
-        // If validation failed (score < 70), try ONE retry with targeted hint (same as code route)
-        if (!validation.passed && validation.retryHint) {
-          logger.warn('refine.validation_failed', { ip, score: validation.score, retrying: true })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Improving output quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+        // Combine static analysis + validation hints
+        const staticHint = staticAnalysis.issues.length > 0
+          ? `Static analysis found these bugs:\n${staticAnalysis.issues.map(i => `- [${i.severity}] ${i.message}\n  Fix: ${i.fixHint}`).join('\n')}`
+          : null
+        const combinedHint = [staticHint, validation.retryHint].filter(Boolean).join('\n\n')
 
-          const retryPrompt = `${userPrompt}\n\n${validation.retryHint}\n\nOutput the complete corrected HTML:`
+        // If static analysis or validation found issues, retry with combined hint
+        if ((!staticAnalysis.passed || !validation.passed) && combinedHint) {
+          logger.warn('refine.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, retrying: true })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+
+          const retryPrompt = `${userPrompt}\n\n${combinedHint}\n\nOutput the complete corrected HTML:`
           const retryResult = await llmChat(REFINE_PROMPT, retryPrompt, {
             maxTokens: tokenBudget,
             temperature: 0.3,
-            timeoutMs: 25_000, // 25s — must fit within maxDuration (180s) after stream (150s) + truncation retry (40s)
+            timeoutMs: 25_000,
             signal: request.signal,
           })
 
