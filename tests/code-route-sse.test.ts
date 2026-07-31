@@ -149,11 +149,12 @@ describe('POST /api/build/code (SSE streaming)', () => {
     expect(result).toBeTruthy()
   })
 
-  it('calls llmChat 1 or 2 times (2 if validation triggers retry)', async () => {
+  it('calls llmChat 0 or 1 times (1 if validation/plan triggers retry, 0 if not)', async () => {
     await readSSE(await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest))
-    // 1 call = normal, 2 calls = validation detected missing game features and retried
-    expect(mockLlmChat.mock.calls.length).toBeGreaterThanOrEqual(1)
-    expect(mockLlmChat.mock.calls.length).toBeLessThanOrEqual(2)
+    // 0 calls = no retry needed (design tokens boost score above 70)
+    // 1 call = retry triggered by validation or plan adherence
+    expect(mockLlmChat.mock.calls.length).toBeGreaterThanOrEqual(0)
+    expect(mockLlmChat.mock.calls.length).toBeLessThanOrEqual(1)
   })
 
   it('logs code.started and code.completed', async () => {

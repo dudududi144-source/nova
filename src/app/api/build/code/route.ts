@@ -15,6 +15,9 @@ import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
+import { generateDesignTokens, DESIGN_TOKENS_INSTRUCTION } from '@/lib/design-tokens'
+import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
+import { checkPlanAdherence } from '@/lib/plan-adherence'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -29,6 +32,8 @@ OUTPUT FORMAT:
 - Do NOT use localStorage, sessionStorage, or document.cookie. Use in-memory variables.
 - No external resources (no fetch, no CDN scripts, no external fonts/images).
 
+${DESIGN_TOKENS_INSTRUCTION}
+
 PLAN:
 - If a Plan is provided in the user message, follow it closely:
   implement every listed feature, use the suggested approach, apply the suggested
@@ -38,8 +43,7 @@ PLAN:
 QUALITY:
 - The app MUST work fully. Every button, input, interaction.
 - Games: game loop (requestAnimationFrame), score, game-over, restart, arrow keys.
-- Professional UI: dark theme (#0f172a bg, #1e293b cards, #e2e8f0 text), gradients,
-  shadows, rounded corners, responsive layout.
+- Professional UI: use the design tokens, gradients, shadows, rounded corners, responsive layout.
 
 ACCESSIBILITY (REQUIRED):
 - Add lang="en" to the <html> tag.
@@ -54,12 +58,12 @@ PERFORMANCE & POLISH:
 - Use requestAnimationFrame for animations, not setInterval when possible.
 - Add :focus-visible styles for keyboard users.
 - Add hover effects on buttons and cards.
-- Use CSS custom properties (variables) for consistent theming.
 
 ERROR HANDLING:
 - Wrap game/app logic in try-catch to prevent crashes.
 - Handle edge cases: empty input, game-over state, division by zero.
 - Validate user input before processing.
+- If an error occurs, show a user-friendly message, don't let the app freeze.
 
 Keep it concise but complete. Output the HTML now:`
 
@@ -239,37 +243,71 @@ export async function POST(request: NextRequest): Promise<Response> {
           return
         }
 
-        const html = injectCsp(rawHtml)
+        // ═══ POST-PROCESSING: Inject design tokens, CSP, and runtime error capture ═══
+        // 1. Design tokens — CSS custom properties for consistent theming
+        // 2. CSP — blocks external network requests
+        // 3. Runtime error capture — injects script to catch JS errors via postMessage
+        const designTokens = generateDesignTokens('slate')
+        let html = rawHtml
+        // Inject design tokens right after <head>
+        const headMatch = html.match(/<head[^>]*>/i)
+        if (headMatch) {
+          html = html.replace(/<head[^>]*>/i, `${headMatch[0]}\n${designTokens}`)
+        }
+        // Inject CSP (strips any existing CSP, adds NOVA's strict CSP)
+        html = injectCsp(html)
+        // Inject runtime error capture (before app's scripts)
+        html = injectRuntimeErrorCapture(html)
+
         const totalMs = Date.now() - startTime
 
         // ── INTELLIGENCE: Validate output quality ──
         const validation = validateOutput(html, mission)
         logger.info('code.validated', { ip, score: validation.score, passed: validation.passed, checks: validation.checks.length })
 
-        // If validation failed (score < 70), try ONE retry with targeted hint
-        if (!validation.passed && validation.retryHint) {
-          logger.warn('code.validation_failed', { ip, score: validation.score, retrying: true })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Improving output quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+        // ── INTELLIGENCE: Plan adherence check ──
+        // Verify the coder actually implemented all features from the architect's plan.
+        // This was previously decorative — the plan was passed but never verified.
+        const planAdherence = checkPlanAdherence(html, plan)
+        if (!planAdherence.adherent) {
+          logger.warn('code.plan_not_adherent', { ip, missing: planAdherence.missingFeatures.length, features: planAdherence.missingFeatures.slice(0, 3) })
+        }
 
-          const retryPrompt = `${planContext}\n\n${validation.retryHint}\n\nOutput the complete corrected HTML:`
+        // Combine validation retry hint with plan adherence hint
+        const combinedHint = [validation.retryHint, planAdherence.hint].filter(Boolean).join('\n\n')
+
+        // If validation failed OR plan not adherent, try ONE retry with combined hint
+        if ((!validation.passed || !planAdherence.adherent) && combinedHint) {
+          logger.warn('code.retry_needed', { ip, score: validation.score, missingFeatures: planAdherence.missingFeatures.length, retrying: true })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing issues...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+
+          const retryPrompt = `${planContext}\n\n${combinedHint}\n\nOutput the complete corrected HTML:`
           const retryResult = await llmChat(CODER_PROMPT, retryPrompt, {
             maxTokens: tokenBudget,
             temperature: 0.3,
-            timeoutMs: 25_000, // 25s — must fit within maxDuration (180s) after stream (150s) + truncation retry (40s)
+            timeoutMs: 25_000,
             signal: request.signal,
           })
 
           if (retryResult.ok) {
-            const retryHtml = stripCodeFences(retryResult.text)
-            if (looksLikeHtml(retryHtml)) {
-              const retryValidation = validateOutput(injectCsp(retryHtml), mission)
+            const retryHtmlRaw = stripCodeFences(retryResult.text)
+            if (looksLikeHtml(retryHtmlRaw)) {
+              // Apply the same post-processing to retry HTML
+              let retryHtml = retryHtmlRaw
+              const retryHeadMatch = retryHtml.match(/<head[^>]*>/i)
+              if (retryHeadMatch) {
+                retryHtml = retryHtml.replace(/<head[^>]*>/i, `${retryHeadMatch[0]}\n${designTokens}`)
+              }
+              retryHtml = injectCsp(retryHtml)
+              retryHtml = injectRuntimeErrorCapture(retryHtml)
+
+              const retryValidation = validateOutput(retryHtml, mission)
               logger.info('code.retry_validated', { ip, score: retryValidation.score, improved: retryValidation.score > validation.score })
               if (retryValidation.score > validation.score) {
                 // Use the improved version
-                const finalHtml = injectCsp(retryHtml)
-                const metrics = analyzeQuality(finalHtml)
-                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: finalHtml.length, score: retryValidation.score, metrics: metrics.summary })
-                safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`)
+                const metrics = analyzeQuality(retryHtml)
+                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: retryHtml.length, score: retryValidation.score, metrics: metrics.summary })
+                safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: retryHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`)
                 safeClose()
                 return
               }
