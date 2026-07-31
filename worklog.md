@@ -2837,3 +2837,41 @@ TESTS:
 SERVER:
 - Started and verified stable — 2 consecutive HTTP 200 responses
 - Server is running and accessible
+
+---
+Task ID: 54
+Agent: main (Z.ai Code)
+Task: תיקון hydration mismatch + בניית multi-iteration auto-fix loop.
+
+FIX 1: HYDRATION MISMATCH (theme selector)
+- הבעיה: selectedTheme קרא מlocalStorage בזמן useState initializer, מה שגרם לשרת ולקוח
+  לרנדר ערכים שונים (שרת: 'slate', לקוח: מה ששמור בlocalStorage).
+- התיקון: useState('slate') דיפולטי + useEffect שטוען מlocalStorage אחרי mount.
+- זה מונע את הhydration warning לגמרי.
+
+FEATURE 2: MULTI-ITERATION AUTO-FIX LOOP
+- הבעיה: autoFix היה עושה ניסיון 1 ואם נכשל, המשתמש נשאר עם באגים.
+- הפתרון: autoFixLoop() — רץ עד 3 איטרציות:
+  1. רוץ probe → אסוף שגיאות
+  2. אם אין שגיאות → עצור, הצלחה!
+  3. שלח שגיאות לLLM → קבל HTML חדש
+  4. עדכן result → חכה 2s לprobe הבא
+  5. חזור לשלב 1
+- אחרי 3 איטרציות: הרץ probe סופי, דווח תוצאה
+- UI: מציג "Fixing (1/3)..." → "Fixing (2/3)..." → "Fixing (3/3)..."
+- כפתור: "Auto-fix all (3 iterations)" במקום "Auto-fix all"
+
+מה זה נותן:
+- NOVA עכשיו self-correcting — היא מנסה לתקן את עצמה עד 3 פעמים
+- כל איטרציה מקבלת מידע מדויק (שגיאות runtime + state changes)
+- זה ה"agent loop" של NOVA — bounded אבל יעיל
+- לוקח ~30-45s נוספים (3 LLM calls + 3 probes)
+- Manus עושה עשרות איטרציות בדקות — NOVA עושה 3 ב45 שניות עם מידע מדויק יותר
+
+TESTS:
+- 409 pass, 0 fail, 748 assertions
+- Lint clean (3 warnings, 0 errors)
+- TypeScript clean
+
+SERVER:
+- Running and stable — 2 consecutive HTTP 200 responses

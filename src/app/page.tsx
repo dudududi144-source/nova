@@ -82,9 +82,7 @@ export default function Home() {
   const [runtimeErrors, setRuntimeErrors] = useState<ProbeError[]>([])
   const [showRuntimeErrors, setShowRuntimeErrors] = useState(false)
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
-  const [selectedTheme, setSelectedTheme] = useState<string>(() => {
-    try { return localStorage.getItem('nova_theme') || 'slate' } catch { return 'slate' }
-  })
+  const [selectedTheme, setSelectedTheme] = useState<string>('slate')
   const [planFeatures, setPlanFeatures] = useState<{name: string; found: boolean}[]>([])
   const [autoFixing, setAutoFixing] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -213,6 +211,14 @@ export default function Home() {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
       document.getElementById('mission-input')?.focus()
     }
+  }, [])
+
+  // Load saved theme from localStorage after mount (avoids SSR hydration mismatch)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('nova_theme')
+      if (saved && saved !== selectedTheme) setSelectedTheme(saved)
+    } catch {}
   }, [])
 
   // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
@@ -758,6 +764,151 @@ export default function Home() {
       }
     }
   }, [runtimeErrors, probeResult, autoFixing])
+
+  // ═══ MULTI-ITERATION AUTO-FIX LOOP ═══
+  // Runs autoFix up to 3 times, re-probing after each fix.
+  // Stops when: no errors found, OR 3 iterations reached.
+  // This is NOVA's "agent loop" — bounded but effective.
+  const [autoFixIterations, setAutoFixIterations] = useState(0)
+  const [autoFixLoopRunning, setAutoFixLoopRunning] = useState(false)
+
+  const autoFixLoop = useCallback(async (maxIterations: number = 3) => {
+    const currentResult = resultRef.current
+    if (!currentResult || autoFixLoopRunning) return
+
+    setAutoFixLoopRunning(true)
+    setAutoFixIterations(0)
+
+    for (let i = 0; i < maxIterations; i++) {
+      setAutoFixIterations(i + 1)
+      const current = resultRef.current
+      if (!current) break
+
+      // Step 1: Run probe to find current errors
+      const isGame = /game|snake|tetris|arcade|puzzle/i.test(current.mission)
+      let probe: ProbeResult
+      try {
+        probe = await probeApp(current.html, isGame)
+      } catch {
+        break // Probe failed, can't continue
+      }
+
+      // Collect all errors
+      const allErrors = [
+        ...runtimeErrors,
+        ...probe.errors,
+      ].slice(0, 10)
+
+      // Step 2: If no errors, we're done!
+      if (allErrors.length === 0) {
+        toast.success(`All bugs fixed! (${i} iteration${i !== 1 ? 's' : ''})`)
+        break
+      }
+
+      // Step 3: Send errors to LLM for fixing
+      toast.info(`Fixing iteration ${i + 1}/${maxIterations}: ${allErrors.length} error(s)...`)
+
+      const errorList = allErrors.map((e, idx) => {
+        const stack = e.stack ? `\n  Stack: ${e.stack.slice(0, 300)}` : ''
+        return `${idx + 1}. [${e.type}]: ${e.msg}${stack}`
+      }).join('\n')
+
+      const fixMessage = `Fix these runtime errors (iteration ${i + 1}):\n${errorList}\n\nThe app must work without these errors. Fix the root cause.`
+
+      const controller = new AbortController()
+      refineAbortRef.current = controller
+
+      try {
+        const res = await fetch('/api/refine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+          body: JSON.stringify({
+            mission: current.mission,
+            html: current.html,
+            message: fixMessage,
+          }),
+          signal: controller.signal,
+        })
+
+        if (!res.ok) break
+
+        // Read SSE stream (simplified — just get the result)
+        const reader = res.body?.getReader()
+        if (!reader) break
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let finalHtml = ''
+        let finalTokens = 0
+        let finalMs = 0
+        let finalQuality = 0
+        let finalMetrics = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const events = buffer.replace(/\r\n/g, '\n').split('\n\n')
+          buffer = events.pop() ?? ''
+          for (const eventStr of events) {
+            const dataLine = eventStr.trim()
+            if (!dataLine.startsWith('data: ')) continue
+            try {
+              const evt = JSON.parse(dataLine.slice(6))
+              if (evt.type === 'result') {
+                finalHtml = evt.html ?? ''
+                finalTokens = evt.tokens ?? 0
+                finalMs = evt.ms ?? 0
+                finalQuality = evt.quality ?? 0
+                finalMetrics = evt.metrics ?? ''
+              }
+            } catch {}
+          }
+        }
+
+        if (!finalHtml) break
+
+        // Update result
+        const fixedResult: BuildResult = {
+          ...current,
+          id: newBuildId(),
+          html: finalHtml,
+          tokens: finalTokens,
+          ms: finalMs,
+        }
+        setResult(fixedResult)
+        resultRef.current = fixedResult
+        addBuildToHistory(fixedResult)
+        setQualityScore(finalQuality)
+        setQualityMetrics(finalMetrics)
+        setProbeResult(null) // Force re-probe
+        setRuntimeErrors([])
+
+        // Wait for probe to run on new result
+        await new Promise(resolve => setTimeout(resolve, 2000))
+
+      } catch {
+        break // Network error, stop the loop
+      }
+    }
+
+    // Final status
+    const finalResult = resultRef.current
+    if (finalResult) {
+      const isGame = /game|snake|tetris|arcade|puzzle/i.test(finalResult.mission)
+      try {
+        const finalProbe = await probeApp(finalResult.html, isGame)
+        setProbeResult({ ...finalProbe, summary: `${finalResult.id} ${finalProbe.summary}` })
+        if (finalProbe.errors.length === 0) {
+          toast.success('Auto-fix complete — no errors remaining!')
+        } else {
+          toast.warning(`Auto-fix complete — ${finalProbe.errors.length} error(s) still remain after ${maxIterations} iterations`)
+        }
+      } catch {}
+    }
+
+    setAutoFixLoopRunning(false)
+    setAutoFixIterations(0)
+  }, [runtimeErrors, autoFixLoopRunning])
 
   const reset = useCallback(() => {
     // Reset clears everything — used by the "New" button.
@@ -1472,17 +1623,17 @@ export default function Home() {
                     size="sm"
                     variant="ghost"
                     className="h-7 gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10"
-                    onClick={autoFix}
+                    onClick={() => autoFixLoop()}
                     title="Automatically fix runtime errors using AI"
                   >
                     <Bug className="h-3.5 w-3.5" />
                     Auto-fix
                   </Button>
                 )}
-                {autoFixing && (
+                {(autoFixing || autoFixLoopRunning) && (
                   <span className="flex items-center gap-1 text-[10px] text-amber-400">
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    Fixing...
+                    {autoFixLoopRunning ? `Fixing (${autoFixIterations}/3)...` : 'Fixing...'}
                   </span>
                 )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
@@ -1576,12 +1727,12 @@ export default function Home() {
                   {runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) ? (
                     <button
                       type="button"
-                      onClick={autoFix}
-                      disabled={autoFixing || loading || refining}
+                      onClick={() => autoFixLoop()}
+                      disabled={autoFixing || autoFixLoopRunning || loading || refining}
                       className="flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
                     >
-                      {autoFixing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bug className="h-3 w-3" />}
-                      {autoFixing ? 'Fixing...' : 'Auto-fix all'}
+                      {(autoFixing || autoFixLoopRunning) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bug className="h-3 w-3" />}
+                      {autoFixLoopRunning ? `Fixing (${autoFixIterations}/3)...` : (autoFixing ? 'Fixing...' : 'Auto-fix all (3 iterations)')}
                     </button>
                   ) : null}
                 </div>
