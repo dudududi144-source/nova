@@ -2550,3 +2550,72 @@ Stage Summary:
   verified, not just passed as decoration.
 - This is the foundation for the 5-call pipeline: architect → coder → probe → critique → fix.
   The probe and critique calls now have real runtime signal to work with.
+
+---
+Task ID: 48
+Agent: main (Z.ai Code)
+Task: Massive execution — wired up runtime error capture, interaction probe, auto-fix loop, theme selector, runtime errors panel.
+
+IMPLEMENTED (7 features):
+
+1. **Runtime Error Listener (client-side)**
+   - Added postMessage listener in page.tsx that catches errors from the preview iframe
+   - Collects up to 20 unique errors (deduped by msg + line)
+   - Errors displayed in real-time in the runtime errors panel
+
+2. **Interaction Probe Auto-Run**
+   - After each build completes, automatically runs the interaction probe
+   - Creates hidden iframe, clicks buttons, types inputs, dispatches arrow keys for games
+   - 1.5s delay to let the app initialize
+   - Results stored in probeResult state
+
+3. **Auto-Fix Function**
+   - Collects all runtime errors + probe errors
+   - Sends them to /api/refine with a fix prompt
+   - Streams the fixed HTML back, replaces result
+   - Forces re-probe to verify the fix worked
+   - This is the "auto-debug loop" — NOVA can now fix its own runtime errors
+
+4. **Runtime Errors Panel (UI)**
+   - Collapsible panel showing all runtime errors with:
+     - Error type (error/promise/console.error/click-error/etc.)
+     - Line number and column
+     - Error message
+     - Stack trace (truncated)
+   - Green checkmark when no errors found
+   - Shows probe stats (buttons clicked, inputs tested, keys dispatched)
+   - "Auto-fix all" button in the panel
+
+5. **Runtime Errors Badge (toolbar)**
+   - Red badge with error count when errors found
+   - Green checkmark when app is clean
+   - Click to toggle the runtime errors panel
+   - "Auto-fix" button appears automatically when errors are detected
+
+6. **Theme Selector (UI)**
+   - 5 theme buttons: slate, midnight, ocean, forest, sunset
+   - Each shows 3 color swatches (bg, primary, accent)
+   - Selected theme saved to localStorage
+   - Passed to /api/build/code as `theme` parameter
+   - Code route uses the theme to generate design tokens
+
+7. **Theme Parameter in Code Route**
+   - CodeBody interface now accepts `theme` field
+   - generateDesignTokens(themeName) uses the selected theme
+   - Default is 'slate' if not specified
+
+BROWSER VERIFICATION:
+- Server running (HTTP 200)
+- All 395 tests pass, 711 assertions
+- Lint clean, TypeScript clean
+
+Stage Summary:
+- Tests: 395 pass, 0 fail, 711 expect() calls
+- The auto-fix loop is the biggest feature — NOVA can now detect runtime errors
+  (via interaction probe + postMessage listener) and automatically fix them by
+  sending the errors to the LLM. This is the "Replit-style self-correction" that
+  was missing.
+- The theme selector gives users control over the design system — 5 curated themes
+  with consistent tokens.
+- The runtime errors panel makes quality transparent — users see exactly what's
+  broken and can fix it with one click.

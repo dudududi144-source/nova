@@ -82,6 +82,7 @@ const PROGRESS_STEPS = [
 interface CodeBody {
   mission?: unknown
   plan?: unknown
+  theme?: unknown
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const mission = typeof body?.mission === 'string' ? body.mission.trim() : ''
   const plan = body?.plan
+  const themeName = typeof body?.theme === 'string' ? body.theme : 'slate'
 
   // Validate mission (same validation as architect route — control chars, length, etc.)
   const missionCheck = validateMission(mission)
@@ -247,7 +249,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         // 1. Design tokens — CSS custom properties for consistent theming
         // 2. CSP — blocks external network requests
         // 3. Runtime error capture — injects script to catch JS errors via postMessage
-        const designTokens = generateDesignTokens('slate')
+        const designTokens = generateDesignTokens(themeName)
         let html = rawHtml
         // Inject design tokens right after <head>
         const headMatch = html.match(/<head[^>]*>/i)

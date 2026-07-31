@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -9,6 +9,8 @@ import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from 
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens, BUILD_STAGES, getCurrentStage } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
+import { probeApp, formatProbeErrors, type ProbeResult } from '@/lib/interaction-probe'
+import { THEMES, type Theme } from '@/lib/design-tokens'
 
 interface BuildResponse {
   ok: boolean
@@ -16,6 +18,14 @@ interface BuildResponse {
   tokens?: number
   ms?: number
   error?: string
+}
+
+interface ProbeError {
+  type: string
+  msg: string
+  line: number
+  col: number
+  stack?: string
 }
 
 interface ChatMessage {
@@ -68,6 +78,15 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [refining, setRefining] = useState(false)
+  // v3: runtime errors, theme, probe results, plan adherence
+  const [runtimeErrors, setRuntimeErrors] = useState<ProbeError[]>([])
+  const [showRuntimeErrors, setShowRuntimeErrors] = useState(false)
+  const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
+  const [selectedTheme, setSelectedTheme] = useState<string>(() => {
+    try { return localStorage.getItem('nova_theme') || 'slate' } catch { return 'slate' }
+  })
+  const [planFeatures, setPlanFeatures] = useState<{name: string; found: boolean}[]>([])
+  const [autoFixing, setAutoFixing] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const refineAbortRef = useRef<AbortController | null>(null)
@@ -121,6 +140,61 @@ export default function Home() {
       }
     }
   }, [loading, refining])
+
+  // ═══ v3: Listen for runtime errors from the preview iframe ═══
+  // The injected runtime error capture script sends errors via postMessage.
+  // We collect them and display in the runtime errors panel.
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.source !== 'nova-preview') return
+      if (e.data.kind === 'error' && e.data.error) {
+        setRuntimeErrors(prev => {
+          // Avoid duplicates — same msg + line
+          const exists = prev.some(err => err.msg === e.data.error.msg && err.line === e.data.error.line)
+          if (exists || prev.length >= 20) return prev
+          return [...prev, e.data.error]
+        })
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
+
+  // ═══ v3: Run interaction probe after build completes ═══
+  // After a build finishes (not refine), run the probe to detect runtime errors.
+  useEffect(() => {
+    if (!result || loading || refining || autoFixing) return
+    // Only probe if we haven't probed this result yet
+    if (probeResult && probeResult.summary.includes(result.id)) return
+
+    let cancelled = false
+    const isGame = /game|snake|tetris|arcade|puzzle/i.test(result.mission)
+    setRuntimeErrors([]) // Clear previous errors
+
+    // Small delay to let the iframe finish initializing
+    const timer = setTimeout(async () => {
+      if (cancelled) return
+      try {
+        const probe = await probeApp(result.html, isGame)
+        if (!cancelled) {
+          setProbeResult({ ...probe, summary: `${result.id} ${probe.summary}` })
+          if (probe.errors.length > 0) {
+            // Don't toast — just show the badge. User can click to see details.
+            console.warn('[NOVA] Probe found', probe.errors.length, 'runtime errors')
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('[NOVA] Probe failed:', err)
+        }
+      }
+    }, 1500)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [result, loading, refining, autoFixing, probeResult])
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -313,7 +387,7 @@ export default function Home() {
       const codeRes = await fetch('/api/build/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null }),
+        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null, theme: selectedTheme }),
         signal: controller.signal,
       })
 
@@ -524,6 +598,165 @@ export default function Home() {
     setRefining(false)
     setLivePreviewHtml(null)
   }, [])
+
+  // ═══ v3: Auto-fix function — sends runtime errors to LLM for automatic repair ═══
+  // Collects runtime errors + probe errors, sends them to /api/refine with a fix prompt,
+  // and replaces the result with the fixed HTML. This is the "auto-debug loop" that
+  // competitors like Replit use — NOVA can now do it too.
+  const autoFix = useCallback(async () => {
+    const currentResult = resultRef.current
+    if (!currentResult || autoFixing) return
+
+    const allErrors = [
+      ...runtimeErrors,
+      ...(probeResult?.errors || []),
+    ].slice(0, 10) // Limit to 10 errors
+
+    if (allErrors.length === 0) {
+      toast.info('No runtime errors found — the app looks healthy!')
+      return
+    }
+
+    setAutoFixing(true)
+    toast.info(`Auto-fixing ${allErrors.length} runtime error(s)...`)
+
+    const errorList = allErrors.map((e, i) => {
+      const loc = e.line ? ` (line ${e.line}:${e.col})` : ''
+      return `${i + 1}. [${e.type}]${loc}: ${e.msg}`
+    }).join('\n')
+
+    const fixMessage = `Fix these runtime errors:\n${errorList}\n\nThe app must work without these errors. Fix the root cause, not just the symptom.`
+
+    refineAbortRef.current?.abort()
+    const controller = new AbortController()
+    refineAbortRef.current = controller
+    setLivePreviewHtml(null)
+    livePreviewAccumulatorRef.current = ''
+    setRuntimeErrors([])
+
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+        body: JSON.stringify({
+          mission: currentResult.mission,
+          html: currentResult.html,
+          message: fixMessage,
+        }),
+        signal: controller.signal,
+      })
+
+      if (!res.ok) {
+        let errorMsg = `Server error (${res.status})`
+        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+        toast.error(errorMsg)
+        return
+      }
+
+      const refineCt = res.headers.get('content-type') ?? ''
+      if (!refineCt.includes('text/event-stream')) {
+        toast.error('Unexpected response from server')
+        return
+      }
+
+      // Read SSE stream (same pattern as sendChat)
+      const reader = res.body?.getReader()
+      if (!reader) { toast.error('No stream'); return }
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalHtml = ''
+      let finalTokens = 0
+      let finalMs = 0
+      let finalQuality = 0
+      let finalMetrics = ''
+      let streamError: string | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const normalized = buffer.replace(/\r\n/g, '\n')
+        const events = normalized.split('\n\n')
+        buffer = events.pop() ?? ''
+        for (const eventStr of events) {
+          const dataLine = eventStr.trim()
+          if (!dataLine.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(dataLine.slice(6))
+            if (evt.type === 'token') {
+              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+            } else if (evt.type === 'result') {
+              finalHtml = evt.html ?? ''
+              finalTokens = evt.tokens ?? 0
+              finalMs = evt.ms ?? 0
+              finalQuality = evt.quality ?? 0
+              finalMetrics = evt.metrics ?? ''
+            } else if (evt.type === 'error') {
+              streamError = evt.error ?? 'Unknown error'
+            }
+          } catch {}
+        }
+      }
+
+      // Flush decoder
+      buffer += decoder.decode()
+      if (buffer.trim()) {
+        const normalized = buffer.replace(/\r\n/g, '\n')
+        const events = normalized.split('\n\n')
+        for (const eventStr of events) {
+          const dataLine = eventStr.trim()
+          if (!dataLine.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(dataLine.slice(6))
+            if (evt.type === 'result') {
+              finalHtml = evt.html ?? ''
+              finalTokens = evt.tokens ?? 0
+              finalMs = evt.ms ?? 0
+              finalQuality = evt.quality ?? 0
+              finalMetrics = evt.metrics ?? ''
+            } else if (evt.type === 'error') {
+              streamError = evt.error ?? 'Unknown error'
+            }
+          } catch {}
+        }
+      }
+
+      if (streamError) {
+        toast.error(streamError)
+        return
+      }
+
+      if (!finalHtml) {
+        toast.error('Auto-fix returned empty response')
+        return
+      }
+
+      const fixedResult: BuildResult = {
+        ...currentResult,
+        id: newBuildId(),
+        html: finalHtml,
+        tokens: finalTokens,
+        ms: finalMs,
+      }
+      setResult(fixedResult)
+      resultRef.current = fixedResult
+      addBuildToHistory(fixedResult)
+      setQualityScore(finalQuality)
+      setQualityMetrics(finalMetrics)
+      setProbeResult(null) // Force re-probe
+      toast.success(`Fixed! ${finalMs ? `${(finalMs / 1000).toFixed(1)}s` : ''} · quality: ${finalQuality}`)
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      const failMsg = err instanceof Error ? err.message : 'Network error'
+      toast.error(failMsg)
+    } finally {
+      if (refineAbortRef.current === controller) {
+        refineAbortRef.current = null
+        setAutoFixing(false)
+        setLivePreviewHtml(null)
+      }
+    }
+  }, [runtimeErrors, probeResult, autoFixing])
 
   const reset = useCallback(() => {
     // Reset clears everything — used by the "New" button.
@@ -1046,6 +1279,49 @@ export default function Home() {
             </div>
           )}
 
+          {/* v3: Theme selector — pick a design system theme */}
+          {showExamples && (
+            <div className="mt-4 space-y-1.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 flex items-center gap-1">
+                <Palette className="h-3 w-3" />
+                Theme
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {THEMES.map((theme) => (
+                  <button
+                    key={theme.name}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTheme(theme.name)
+                      try { localStorage.setItem('nova_theme', theme.name) } catch {}
+                      toast.info(`Theme: ${theme.name}`)
+                    }}
+                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] transition-colors ${
+                      selectedTheme === theme.name
+                        ? 'border-primary/40 bg-primary/10 text-foreground'
+                        : 'border-border/40 text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={`${theme.name} theme`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full border border-border/40"
+                      style={{ background: theme.colors.bg }}
+                    />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: theme.colors.primary }}
+                    />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: theme.colors.accent }}
+                    />
+                    {theme.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* History */}
           {history.length > 0 && (
             <div className="mt-4 space-y-1.5">
@@ -1183,6 +1459,47 @@ export default function Home() {
                     Q:{qualityScore}
                   </button>
                 )}
+                {/* v3: Runtime errors badge — red if errors found, green if clean */}
+                {result && !loading && !refining && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRuntimeErrors(!showRuntimeErrors)}
+                    className={`rounded-md px-2 py-1 text-[10px] flex items-center gap-1 transition-colors ${
+                      runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)
+                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                    }`}
+                    title={runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)
+                      ? `${runtimeErrors.length + (probeResult?.errors.length || 0)} runtime error(s) found — click to view`
+                      : 'No runtime errors detected'
+                    }
+                  >
+                    {runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) ? (
+                      <><Bug className="h-3 w-3" />{runtimeErrors.length + (probeResult?.errors.length || 0)}</>
+                    ) : (
+                      <><CheckCircle2 className="h-3 w-3" /></>
+                    )}
+                  </button>
+                )}
+                {/* v3: Auto-fix button — appears when runtime errors are found */}
+                {result && !loading && !refining && !autoFixing && (runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10"
+                    onClick={autoFix}
+                    title="Automatically fix runtime errors using AI"
+                  >
+                    <Bug className="h-3.5 w-3.5" />
+                    Auto-fix
+                  </Button>
+                )}
+                {autoFixing && (
+                  <span className="flex items-center gap-1 text-[10px] text-amber-400">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Fixing...
+                  </span>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
                   <Copy className="h-3.5 w-3.5" />
                   Copy
@@ -1265,6 +1582,63 @@ export default function Home() {
                 </Button>
               </div>
             </div>
+
+            {/* v3: Runtime errors panel — shows runtime errors with auto-fix option */}
+            {showRuntimeErrors && result && (
+              <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2 max-h-[200px] overflow-y-auto">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Runtime Errors</p>
+                  {runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) ? (
+                    <button
+                      type="button"
+                      onClick={autoFix}
+                      disabled={autoFixing || loading || refining}
+                      className="flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
+                    >
+                      {autoFixing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bug className="h-3 w-3" />}
+                      {autoFixing ? 'Fixing...' : 'Auto-fix all'}
+                    </button>
+                  ) : null}
+                </div>
+                {runtimeErrors.length === 0 && (!probeResult || probeResult.errors.length === 0) ? (
+                  <div className="flex items-center gap-2 text-[11px] text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>No runtime errors detected. The app runs cleanly.</span>
+                    {probeResult && (
+                      <span className="text-muted-foreground/60">
+                        ({probeResult.buttonsClicked} buttons clicked, {probeResult.inputsTested} inputs tested
+                        {probeResult.gameKeysDispatched ? ', arrow keys dispatched' : ''})
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {/* Live runtime errors from postMessage */}
+                    {runtimeErrors.map((err, i) => (
+                      <div key={`live-${i}`} className="flex items-start gap-2 text-[11px]">
+                        <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-red-400" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-red-400">[{err.type}]</span>
+                          {err.line > 0 && <span className="text-muted-foreground"> line {err.line}:{err.col}</span>}
+                          <span className="text-foreground/80"> {err.msg}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Probe errors (from interaction testing) */}
+                    {probeResult?.errors.map((err, i) => (
+                      <div key={`probe-${i}`} className="flex items-start gap-2 text-[11px]">
+                        <Bug className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-amber-400">[{err.type}]</span>
+                          {err.line > 0 && <span className="text-muted-foreground"> line {err.line}:{err.col}</span>}
+                          <span className="text-foreground/80"> {err.msg}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Code analysis panel — collapsible, shows quality metrics breakdown */}
             {showCodeAnalysis && qualityMetrics && (
