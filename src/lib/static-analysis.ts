@@ -68,6 +68,33 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   const objMethods = js.matchAll(/(?:^|\.)\s*(\w+)\s*=\s*function/gm)
   for (const m of objMethods) definedFunctions.add(m[1])
 
+  // 3b. Extract object/class method names to avoid false positives on method calls
+  const knownMethodNames = new Set<string>()
+  // Object literal methods: { methodName() { ... } }
+  const objLiteralMethods = js.matchAll(/[{,]\s*(\w+)\s*\(\s*\)\s*\{/g)
+  for (const m of objLiteralMethods) knownMethodNames.add(m[1])
+  // Class methods: extract class body with brace matching (not lazy regex)
+  let classStart = 0
+  while ((classStart = js.indexOf('class ', classStart)) !== -1) {
+    const braceStart = js.indexOf('{', classStart)
+    if (braceStart === -1) break
+    // Find matching closing brace
+    let depth = 1
+    let pos = braceStart + 1
+    while (depth > 0 && pos < js.length) {
+      if (js[pos] === '{') depth++
+      else if (js[pos] === '}') depth--
+      pos++
+    }
+    const classBody = js.slice(braceStart + 1, pos - 1)
+    const methods = classBody.matchAll(/(\w+)\s*\(\s*\)\s*\{/g)
+    for (const m of methods) knownMethodNames.add(m[1])
+    classStart = pos
+  }
+  // this.methodName assignments: this.method = function
+  const thisMethods = js.matchAll(/this\.(\w+)\s*=\s*(?:function|\()/g)
+  for (const m of thisMethods) knownMethodNames.add(m[1])
+
   // 4. Extract all declared variables (let/const/var)
   const declaredVars = new Set<string>()
   const varDecls = js.matchAll(/(?:let|const|var)\s+(\w+)/g)
@@ -108,7 +135,7 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   }
 
   // 7. Check function calls to undefined functions
-  // Extract all function calls: foo() — but skip builtins and control flow
+  // Extract all function calls: foo() — but skip builtins, control flow, method calls, and declarations
   const fnCalls = js.matchAll(/(?<!\.)\b(\w+)\s*\(/g)
   const checkedCalls = new Set<string>()
   for (const m of fnCalls) {
@@ -120,6 +147,9 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
     // Skip if it's a defined function or declared variable
     if (definedFunctions.has(fnName) || declaredVars.has(fnName)) continue
 
+    // Skip if it's a known object/class method name
+    if (knownMethodNames.has(fnName)) continue
+
     // Skip if it looks like a method call (preceded by .)
     const callPos = m.index ?? 0
     if (callPos > 0 && js[callPos - 1] === '.') continue
@@ -130,6 +160,17 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
     // Skip if preceded by 'function' (function declaration)
     const before = js.slice(Math.max(0, callPos - 12), callPos)
     if (before.includes('function ')) continue
+
+    // Skip anonymous function expressions: 'function(' or 'function ('
+    if (fnName === 'function') continue
+
+    // Skip 'new ClassName()' — constructor calls, not function calls
+    if (callPos >= 4 && js.slice(callPos - 4, callPos) === 'new ') continue
+
+    // Skip class method definitions inside class body: 'methodName() {'
+    // Check if the call is followed by '{' (definition, not call)
+    const afterCall = js.slice(callPos + fnName.length, callPos + fnName.length + 20)
+    if (afterCall.match(/^\s*\)/) && afterCall.slice(1).match(/^\s*\{/)) continue // 'methodName() {'
 
     // Only report as warning — could be a global function we can't see
     issues.push({
