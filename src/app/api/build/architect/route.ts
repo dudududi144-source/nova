@@ -20,10 +20,15 @@ const ARCHITECT_PROMPT = `You are a software architect. Output a JSON plan for a
   "type": "game|tool|app",
   "title": "title",
   "features": ["feature1", "feature2", "feature3"],
-  "approach": "how to build it",
+  "approach": "how to build it — be specific about the architecture",
   "colors": { "bg": "#0f172a", "primary": "#3b82f6", "accent": "#22d3ee" },
-  "layout": "UI layout description",
-  "keyFunctions": ["func1", "func2"]
+  "layout": "UI layout description — describe the visual structure in detail",
+  "keyFunctions": ["func1", "func2"],
+  "components": ["component1", "component2"],
+  "stateManagement": "how state is managed (in-memory variables, etc.)",
+  "interactions": ["click handler", "keyboard input", "etc."],
+  "edgeCases": ["empty input", "error state", "etc."],
+  "estimatedComplexity": "simple|medium|complex"
 }`
 
 const architectLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)

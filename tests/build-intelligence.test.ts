@@ -207,10 +207,10 @@ describe('estimateTokenBudget', () => {
     expect(estimateTokenBudget(plan)).toBe(8000)
   })
 
-  it('clamps to maximum 32000', () => {
-    const plan = { features: Array(10).fill('f'), keyFunctions: Array(10).fill('fn') }
-    // 10*4000 + 10*2000 + 2000 = 62000 → clamped to 32000
-    expect(estimateTokenBudget(plan)).toBe(32000)
+  it('clamps to maximum 64000 (was 32000 — too low for complex apps)', () => {
+    const plan = { features: Array(20).fill('f'), keyFunctions: Array(20).fill('fn') }
+    // 20*4000 + 20*2000 + 2000 = 122000 → clamped to 64000
+    expect(estimateTokenBudget(plan)).toBe(64000)
   })
 
   it('handles plan with missing fields', () => {

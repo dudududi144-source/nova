@@ -179,7 +179,7 @@ export async function* llmChatStream(
   opts: LlmOptions = {}
 ): AsyncGenerator<StreamChunk> {
   const t0 = Date.now()
-  const maxTokens = opts.maxTokens ?? 16000
+  const maxTokens = opts.maxTokens ?? 32000
   const temperature = opts.temperature ?? 0.4
   const timeoutMs = opts.timeoutMs ?? 150_000
 

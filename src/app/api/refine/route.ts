@@ -14,6 +14,8 @@ import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build-intelligence'
+import { generateDesignTokens } from '@/lib/design-tokens'
+import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -211,7 +213,15 @@ export async function POST(request: NextRequest): Promise<Response> {
           return
         }
 
-        const finalHtml = injectCsp(rawHtml)
+        // ═══ POST-PROCESSING: Inject design tokens, CSP, and runtime error capture (same as code route) ═══
+        const designTokens = generateDesignTokens('slate') // TODO: accept theme from request
+        let finalHtml = rawHtml
+        const headMatch = finalHtml.match(/<head[^>]*>/i)
+        if (headMatch) {
+          finalHtml = finalHtml.replace(/<head[^>]*>/i, `${headMatch[0]}\n${designTokens}`)
+        }
+        finalHtml = injectCsp(finalHtml)
+        finalHtml = injectRuntimeErrorCapture(finalHtml)
         const totalMs = Date.now() - startTime
 
         // ── INTELLIGENCE: Validate refined output ──
@@ -234,14 +244,22 @@ export async function POST(request: NextRequest): Promise<Response> {
           if (retryResult.ok) {
             const retryHtml = stripCodeFences(retryResult.text)
             if (looksLikeHtml(retryHtml)) {
-              const retryValidation = validateOutput(injectCsp(retryHtml), mission)
+              // Apply same post-processing to retry HTML
+              let processedRetryHtml = retryHtml
+              const retryHeadMatch = processedRetryHtml.match(/<head[^>]*>/i)
+              if (retryHeadMatch) {
+                processedRetryHtml = processedRetryHtml.replace(/<head[^>]*>/i, `${retryHeadMatch[0]}\n${designTokens}`)
+              }
+              processedRetryHtml = injectCsp(processedRetryHtml)
+              processedRetryHtml = injectRuntimeErrorCapture(processedRetryHtml)
+
+              const retryValidation = validateOutput(processedRetryHtml, mission)
               logger.info('refine.retry_validated', { ip, score: retryValidation.score, improved: retryValidation.score > validation.score })
               if (retryValidation.score > validation.score) {
                 // Use the improved version
-                const improvedHtml = injectCsp(retryHtml)
-                const metrics = analyzeQuality(improvedHtml)
-                logger.info('refine.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: improvedHtml.length, score: retryValidation.score, metrics: metrics.summary })
-                safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: improvedHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`)
+                const metrics = analyzeQuality(processedRetryHtml)
+                logger.info('refine.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: processedRetryHtml.length, score: retryValidation.score, metrics: metrics.summary })
+                safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: processedRetryHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`)
                 safeClose()
                 return
               }

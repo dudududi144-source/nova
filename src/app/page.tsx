@@ -1116,10 +1116,34 @@ export default function Home() {
             <p className="text-[10px] text-muted-foreground">Describe it. Build it.</p>
           </div>
         </div>
-        {(result || loading) && (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            {loading || !result ? (
-              <>
+        <div className="flex items-center gap-3">
+          {/* v3: Theme selector — always visible, not just in showExamples */}
+          <div className="flex items-center gap-1">
+            <Palette className="h-3 w-3 text-muted-foreground/60" />
+            <div className="flex items-center gap-0.5">
+              {THEMES.map((theme) => (
+                <button
+                  key={theme.name}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTheme(theme.name)
+                    try { localStorage.setItem('nova_theme', theme.name) } catch {}
+                    toast.info(`Theme: ${theme.name}`)
+                  }}
+                  className={`h-4 w-4 rounded-full border transition-transform hover:scale-125 ${
+                    selectedTheme === theme.name ? 'border-primary ring-1 ring-primary/30' : 'border-border/40'
+                  }`}
+                  style={{ background: theme.colors.bg }}
+                  title={`${theme.name} theme — bg: ${theme.colors.bg}, primary: ${theme.colors.primary}`}
+                  aria-label={`Select ${theme.name} theme`}
+                />
+              ))}
+            </div>
+          </div>
+          {(result || loading) && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              {loading || !result ? (
+                <>
                 <Loader2 className="h-3 w-3 animate-spin" />
                 <span>
                   {loading
@@ -1140,6 +1164,7 @@ export default function Home() {
             )}
           </div>
         )}
+        </div>
       </header>
 
       {/* Main */}
@@ -1279,48 +1304,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* v3: Theme selector — pick a design system theme */}
-          {showExamples && (
-            <div className="mt-4 space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 flex items-center gap-1">
-                <Palette className="h-3 w-3" />
-                Theme
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {THEMES.map((theme) => (
-                  <button
-                    key={theme.name}
-                    type="button"
-                    onClick={() => {
-                      setSelectedTheme(theme.name)
-                      try { localStorage.setItem('nova_theme', theme.name) } catch {}
-                      toast.info(`Theme: ${theme.name}`)
-                    }}
-                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] transition-colors ${
-                      selectedTheme === theme.name
-                        ? 'border-primary/40 bg-primary/10 text-foreground'
-                        : 'border-border/40 text-muted-foreground hover:text-foreground'
-                    }`}
-                    title={`${theme.name} theme`}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full border border-border/40"
-                      style={{ background: theme.colors.bg }}
-                    />
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: theme.colors.primary }}
-                    />
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: theme.colors.accent }}
-                    />
-                    {theme.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Theme selector is now in the header — always visible */}
 
           {/* History */}
           {history.length > 0 && (

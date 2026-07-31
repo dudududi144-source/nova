@@ -42,8 +42,33 @@ PLAN:
 
 QUALITY:
 - The app MUST work fully. Every button, input, interaction.
-- Games: game loop (requestAnimationFrame), score, game-over, restart, arrow keys.
 - Professional UI: use the design tokens, gradients, shadows, rounded corners, responsive layout.
+
+GAME-SPECIFIC (if building a game):
+- Use HTML5 Canvas for rendering (not DOM elements for game objects).
+- Game loop with requestAnimationFrame (not setInterval for rendering).
+- Implement: start screen, gameplay, game-over screen, restart button.
+- Score display, lives/health, level progression if applicable.
+- Keyboard controls (arrow keys, WASD, space) with preventDefault.
+- Collision detection and response.
+- Pause functionality (P key or button).
+- Sound effects using Web Audio API (oscillator, no external files).
+
+TOOL-SPECIFIC (if building a tool like calculator, converter, etc.):
+- Clear input/output areas with proper labeling.
+- Input validation with user-friendly error messages.
+- Copy-to-clipboard functionality where appropriate.
+- Keyboard support for all inputs.
+- Reset/clear button.
+- History of recent operations (in-memory).
+
+APP-SPECIFIC (if building an app like todo, notes, etc.):
+- CRUD operations: create, read, update, delete.
+- Filter/search functionality.
+- Empty state with helpful message.
+- Responsive layout that works on mobile and desktop.
+- Form validation with inline error messages.
+- Confirmation dialogs for destructive actions.
 
 ACCESSIBILITY (REQUIRED):
 - Add lang="en" to the <html> tag.
@@ -64,6 +89,12 @@ ERROR HANDLING:
 - Handle edge cases: empty input, game-over state, division by zero.
 - Validate user input before processing.
 - If an error occurs, show a user-friendly message, don't let the app freeze.
+
+OUTPUT LENGTH:
+- For simple apps (calculator, timer): ~200-400 lines is fine.
+- For medium apps (todo, editor): ~400-800 lines.
+- For complex apps (games, music): ~800-2000 lines. Don't truncate — output the COMPLETE app.
+- If you're running out of space, prioritize working core features over polish.
 
 Keep it concise but complete. Output the HTML now:`
 

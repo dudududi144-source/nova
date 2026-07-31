@@ -2619,3 +2619,48 @@ Stage Summary:
   with consistent tokens.
 - The runtime errors panel makes quality transparent — users see exactly what's
   broken and can fix it with one click.
+
+---
+Task ID: 49
+Agent: main (Z.ai Code)
+Task: ROAST אכזרי + תיקונים מסיביים. User: "זה לא היה רציני זה נגמר בדקה".
+
+ROAST FINDINGS (6 critical issues):
+
+1. **Refine route לא מזריק design tokens וruntime error capture** — כל refine מאבד את הdesign system ואת יכולת לכידת השגיאות. הrefine HTML חזר ללא tokens, בלי error capture, בלי CSP תקין.
+   → תוקן: הוספתי generateDesignTokens + injectRuntimeErrorCapture לrefine route (גם לfinalHtml וגם לretryHtml).
+
+2. **Theme selector נעלם אחרי build** — הופיע רק בshowExamples (לפני build ראשון). אחרי build, המשתמש לא יכול לשנות theme.
+   → תוקן: העברתי את הtheme selector לheader — תמיד גלוי, 10 themes עם color swatches.
+
+3. **Token budget נמוך מדי (32000 max)** — אפליקציות מורכבות (music looper: 696 lines, 22KB) נחתכות. הLLM לא מצליח לסיים.
+   → תוקן: העליתי את הmax ל64000. גם העליתי את הdefault בllm.ts מ16000 ל32000.
+
+4. **CODER_PROMPT כללי מדי** — אין הוראות ספציפיות לסוגי אפליקציות. הLLM לא יודע איך לבנות משחק vs כלי vs אפליקציה.
+   → תוקן: הוספתי GAME-SPECIFIC (canvas, rAF, collision, sound), TOOL-SPECIFIC (validation, copy, history), APP-SPECIFIC (CRUD, filter, empty state), ו-OUTPUT LENGTH (200-2000 lines depending on complexity).
+
+5. **Architect prompt חלש** — רק 7 שדות, אין פירוט של components, data flow, state management.
+   → תוקן: הוספתי components, stateManagement, interactions, edgeCases, estimatedComplexity.
+
+6. **רק 5 themes** — מגוון צר מדי.
+   → תוקן: הוספתי 5 themes חדשים: amber, rose, violet, emerald, cyan. עכשיו 10 themes.
+
+FIXES APPLIED (6 fixes):
+1. Refine route: inject design tokens + runtime error capture + CSP (same as code route)
+2. Theme selector: moved to header, always visible, 10 themes
+3. Token budget: max 64000 (was 32000), default 32000 (was 16000)
+4. CODER_PROMPT v4: game/tool/app-specific instructions + output length guidance
+5. Architect prompt v2: 12 fields (was 7) with components, state, interactions, edge cases
+6. 5 new themes: amber, rose, violet, emerald, cyan (total 10)
+
+BROWSER VERIFICATION:
+- All 395 tests pass, 721 assertions
+- Lint clean, TypeScript clean
+
+Stage Summary:
+- Tests: 395 pass, 0 fail, 721 expect() calls
+- The refine route fix is critical — every refine now preserves design tokens and error capture
+- The token budget increase allows complex apps (music looper, games) to complete without truncation
+- The CODER_PROMPT v4 gives the LLM specific guidance for each app type — games get canvas/rAF/collision,
+  tools get validation/copy/history, apps get CRUD/filter/empty-state
+- 10 themes give users real choice over the design system

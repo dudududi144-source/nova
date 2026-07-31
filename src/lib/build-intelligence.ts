@@ -282,8 +282,8 @@ export function estimateTokenBudget(plan: unknown): number {
   // Base: 4000 tokens per feature + 2000 per function + 2000 overhead
   const estimated = 4000 * features + 2000 * keyFunctions + 2000
 
-  // Clamp: 8000 minimum, 32000 maximum
-  return Math.max(8000, Math.min(32000, estimated))
+  // Clamp: 8000 minimum, 64000 maximum (was 32000 — too low for complex apps like music looper)
+  return Math.max(8000, Math.min(64000, estimated))
 }
 
 // ── 4. Quality Metrics ──
