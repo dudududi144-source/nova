@@ -10,7 +10,7 @@ const source = fs.readFileSync(
 
 describe('page.tsx (characterization)', () => {
   it('has maxLength on textarea', () => {
-    expect(source).toContain('maxLength={500}')
+    expect(source).toContain('maxLength={2000}')
   })
 
   it('has autoFocus on textarea', () => {
@@ -79,7 +79,7 @@ describe('page.tsx (characterization)', () => {
 
   it('has character count display', () => {
     expect(source).toContain('mission.length')
-    expect(source).toContain('/500')
+    expect(source).toContain('/2000')
   })
 
   it('has prefers-reduced-motion in globals.css', () => {

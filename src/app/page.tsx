@@ -1182,7 +1182,7 @@ export default function Home() {
             // On mobile, autoFocus pops the on-screen keyboard on load — annoying.
             autoFocus={false}
             value={mission}
-            maxLength={500}
+            maxLength={2000}
             onChange={(e) => setMission(e.target.value)}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -1197,8 +1197,8 @@ export default function Home() {
             <span className="text-[10px] text-muted-foreground/40">
               ⌘+Enter to build
             </span>
-            <span className={`text-[10px] ${mission.length > 500 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
-              {mission.length}/500
+            <span className={`text-[10px] ${mission.length > 2000 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+              {mission.length}/2000
             </span>
           </div>
           <Button
@@ -1558,7 +1558,7 @@ export default function Home() {
                   }}
                   placeholder="Ask NOVA to change something..."
                   disabled={refining || loading}
-                  maxLength={500}
+                  maxLength={2000}
                   className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none disabled:opacity-50"
                 />
                 <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={sendChat} disabled={refining || loading || !chatInput.trim()}>

@@ -31,7 +31,7 @@ const ARCHITECT_PROMPT = `You are a software architect. Output a JSON plan for a
   "estimatedComplexity": "simple|medium|complex"
 }`
 
-const architectLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
+const architectLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
 
 interface ArchitectBody {
   mission?: unknown

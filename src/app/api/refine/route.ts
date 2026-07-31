@@ -45,8 +45,8 @@ REFINEMENT RULES:
 - Use :focus-visible styles for keyboard users.
 - Wrap new logic in try-catch to prevent crashes.`
 
-const refineLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
-const MAX_BODY_BYTES = 50_000
+const refineLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
+const MAX_BODY_BYTES = 200_000
 
 const REFINE_PROGRESS_STEPS = [
   'Analyzing current code...',

@@ -32,12 +32,12 @@ describe('validateMission — works correctly from mission module', () => {
     expect(validateMission('abc').ok).toBe(true)
   })
 
-  it('rejects too long (> 500 chars)', () => {
-    expect(validateMission('a'.repeat(501)).ok).toBe(false)
+  it('rejects too long (> 2000 chars)', () => {
+    expect(validateMission('a'.repeat(2001)).ok).toBe(false)
   })
 
-  it('accepts exactly 500 chars', () => {
-    expect(validateMission('a'.repeat(500)).ok).toBe(true)
+  it('accepts exactly 2000 chars', () => {
+    expect(validateMission('a'.repeat(2000)).ok).toBe(true)
   })
 
   it('rejects DEL character (\\x7F)', () => {

@@ -33,13 +33,13 @@ describe('validateMission', () => {
     expect(validateMission('abc').ok).toBe(true)
   })
 
-  it('accepts exactly 500 chars', () => {
-    const m = 'a'.repeat(500)
+  it('accepts exactly 2000 chars', () => {
+    const m = 'a'.repeat(2000)
     expect(validateMission(m).ok).toBe(true)
   })
 
-  it('rejects 501 chars', () => {
-    const m = 'a'.repeat(501)
+  it('rejects 2001 chars (max is 2000)', () => {
+    const m = 'a'.repeat(2001)
     expect(validateMission(m).ok).toBe(false)
     expect(validateMission(m).error).toContain('too long')
   })

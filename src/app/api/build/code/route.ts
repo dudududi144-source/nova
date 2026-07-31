@@ -98,8 +98,8 @@ OUTPUT LENGTH:
 
 Keep it concise but complete. Output the HTML now:`
 
-const codeLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
-const MAX_BODY_BYTES = 50_000
+const codeLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
+const MAX_BODY_BYTES = 200_000
 
 const PROGRESS_STEPS = [
   'Writing HTML structure...',

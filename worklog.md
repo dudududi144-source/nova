@@ -2664,3 +2664,54 @@ Stage Summary:
 - The CODER_PROMPT v4 gives the LLM specific guidance for each app type — games get canvas/rAF/collision,
   tools get validation/copy/history, apps get CRUD/filter/empty-state
 - 10 themes give users real choice over the design system
+
+---
+Task ID: 50
+Agent: main (Z.ai Code)
+Task: Honest assessment + release restrictions. User: "שחרר הגבלות, בחן מה מועיל".
+
+HONEST ASSESSMENT OF EACH v3 FEATURE:
+
+1. **Runtime error capture** — ✅ WORKS. Verified in browser: badge shows green when no errors, errors are captured via postMessage.
+2. **Interaction probe** — ✅ WORKS. Verified in browser: "No runtime errors detected. The app runs cleanly." with stats (buttons clicked, inputs tested).
+3. **Design tokens** — ✅ WORKS. Verified via API: HTML contains --color-bg, __novaGetErrors, CSP, AND var(--color-*) — the LLM actually uses the tokens!
+4. **Plan adherence** — ⚠️ CRUDE. Keyword matching creates false positives ("score display" found if "score" appears anywhere). But catches obvious missing features ("leaderboard" not appearing at all). Kept as a hint, not a gate.
+5. **Auto-fix loop** — ✅ WORKS but expensive. Full re-generation instead of surgical fix. Still valuable — converts runtime errors into LLM fix requests.
+6. **10 themes** — ✅ FINE. Simple selector, no cognitive cost. All 10 visible in header.
+7. **Theme selector in header** — ✅ BETTER than in showExamples. Always visible.
+
+RESTRICTIONS RELEASED:
+
+1. **Rate limit: 100/hour → 1000/hour** (all 3 routes)
+   - Was too restrictive for an "open to the edge" system
+   - maxKeys raised from 1000 to 5000 (memory protection still in place)
+
+2. **MAX_BODY_BYTES: 50KB → 200KB** (code + refine routes)
+   - 50KB was too small for refine with large HTML (music looper was 22KB HTML + mission + message)
+   - 200KB allows even the largest single-file HTML apps
+
+3. **Mission maxLength: 500 → 2000** (textarea + validateMission)
+   - 500 chars was too short for complex mission descriptions
+   - 2000 allows detailed requirements with feature lists, design specs, etc.
+
+4. **Token budget max: 32000 → 64000** (already done in previous cycle)
+   - Allows complex apps (games, music) to complete without truncation
+
+BROWSER VERIFICATION:
+- Built "Build a simple counter app" — score 97/100, 565 lines, 47 CSS rules, 12 functions
+- Runtime errors badge: green "No runtime errors detected"
+- Probe ran automatically after build — found 0 errors, clicked buttons, tested inputs
+- All 10 themes visible in header
+- Responsive toggle works
+- Zero console errors
+
+TESTS:
+- All 395 tests pass, 721 assertions
+- Updated 5 tests for new limits (500→2000)
+- Lint clean, TypeScript clean
+
+Stage Summary:
+- The honest assessment confirmed: runtime verification + design tokens + better prompts + higher budget
+  are the REAL wins. Plan adherence is crude but still useful as a hint.
+- All restrictions released: 1000/hour rate limit, 200KB body, 2000 char mission, 64000 token budget.
+- The system is now "open to the edge" as the user requested.
