@@ -27,7 +27,7 @@ You will receive: the original mission, the current HTML, and the user's request
 OUTPUT FORMAT:
 - Output ONLY the complete updated raw HTML. No explanation, no markdown.
 - Do NOT wrap the output in code fences. Output raw HTML directly.
-- The HTML must remain a complete document: <!DOCTYPE html>, <html>, <head>, <body>.
+- The HTML must remain a complete document: <!DOCTYPE html>, <html lang="en">, <head>, <body>.
 - Keep all CSS in <style> tags and all JS in <script> tags — everything inline.
 - Do NOT use localStorage, sessionStorage, or cookies. Use in-memory variables.
 - No external resources (scripts, stylesheets, fonts, images, fetch).
@@ -37,8 +37,11 @@ REFINEMENT RULES:
 - Keep everything else the same — don't rewrite unrelated parts.
 - If the change is ambiguous, make a reasonable interpretation and apply it.
 - Preserve all existing functionality unless the user explicitly asks to remove it.
-- Maintain accessibility (semantic HTML, aria-labels, keyboard nav).
-- Maintain the dark theme unless the user specifies otherwise.`
+- Maintain accessibility: semantic HTML, aria-labels, keyboard nav, lang attribute.
+- Maintain the dark theme unless the user specifies otherwise.
+- Add CSS transitions on new interactive elements.
+- Use :focus-visible styles for keyboard users.
+- Wrap new logic in try-catch to prevent crashes.`
 
 const refineLimiter = new RateLimiter(100, 60 * 60 * 1000, 5 * 60 * 1000, 1000)
 const MAX_BODY_BYTES = 50_000

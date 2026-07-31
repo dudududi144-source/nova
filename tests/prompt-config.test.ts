@@ -45,7 +45,11 @@ describe('Code route characterization (SSE)', () => {
   it('has CODER_PROMPT with quality requirements', () => {
     expect(codeSource).toContain('CODER_PROMPT')
     expect(codeSource).toContain('requestAnimationFrame')
-    expect(codeSource).toContain('aria-labels')
+    expect(codeSource).toContain('aria-label')
+    expect(codeSource).toContain('lang="en"')
+    expect(codeSource).toContain('try-catch')
+    expect(codeSource).toContain('focus-visible')
+    expect(codeSource).toContain('transition')
   })
 
   it('returns SSE stream (text/event-stream)', () => {

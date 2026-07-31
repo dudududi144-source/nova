@@ -98,59 +98,127 @@ export interface ValidationResult {
   retryHint?: string // If failed, what to tell the LLM on retry
 }
 
+// ── Weighted check type ──
+// Each check has a weight (points). The score is the sum of passed weights
+// divided by the total possible weight, times 100. This gives more meaningful
+// scores than flat counting — a missing DOCTYPE (weight 20) hurts more than
+// a missing aria-label (weight 2).
+interface WeightedCheck {
+  name: string
+  passed: boolean
+  detail: string
+  weight: number
+  category: 'structure' | 'javascript' | 'css' | 'a11y' | 'security' | 'mission'
+}
+
 export function validateOutput(html: string, mission: string): ValidationResult {
-  const checks: { name: string; passed: boolean; detail: string }[] = []
+  const checks: WeightedCheck[] = []
   const lower = html.toLowerCase()
   const lowerMission = mission.toLowerCase()
 
-  // Check 1: Has DOCTYPE
+  // ═══ STRUCTURE CHECKS (weight: 35) ═══
   checks.push({
     name: 'DOCTYPE',
     passed: lower.includes('<!doctype'),
     detail: 'HTML must start with <!DOCTYPE html>',
+    weight: 15,
+    category: 'structure',
   })
-
-  // Check 2: Has closing tags
   checks.push({
     name: 'Closing tags',
     passed: lower.includes('</html>') && lower.includes('</body>'),
     detail: 'HTML must have </body> and </html> closing tags',
+    weight: 15,
+    category: 'structure',
+  })
+  checks.push({
+    name: 'Size',
+    passed: html.length > 2000,
+    detail: `HTML is ${html.length} bytes (minimum 2000 for a decent app)`,
+    weight: 5,
+    category: 'structure',
   })
 
-  // Check 3: Has <script> tag (JavaScript)
+  // ═══ JAVASCRIPT CHECKS (weight: 15) ═══
   const scriptCount = (html.match(/<script/gi) || []).length
   checks.push({
     name: 'JavaScript',
     passed: scriptCount > 0,
     detail: `Found ${scriptCount} <script> tag(s)`,
+    weight: 10,
+    category: 'javascript',
+  })
+  // Check for error handling — try-catch around game/app logic
+  const hasTryCatch = /try\s*\{/.test(lower)
+  checks.push({
+    name: 'Error handling',
+    passed: hasTryCatch,
+    detail: hasTryCatch ? 'Has try-catch error handling' : 'Missing try-catch (app may crash on edge cases)',
+    weight: 5,
+    category: 'javascript',
   })
 
-  // Check 4: Has <style> tag (CSS)
+  // ═══ CSS CHECKS (weight: 15) ═══
   const styleCount = (html.match(/<style/gi) || []).length
   checks.push({
     name: 'CSS',
     passed: styleCount > 0,
     detail: `Found ${styleCount} <style> tag(s)`,
+    weight: 10,
+    category: 'css',
   })
-
-  // Check 5: Minimum size (500 bytes = very basic, 2000 = decent)
+  // Check for transitions/animations (polish indicator)
+  const hasTransitions = /transition\s*:/.test(lower) || /animation\s*:/.test(lower)
   checks.push({
-    name: 'Size',
-    passed: html.length > 2000,
-    detail: `HTML is ${html.length} bytes (minimum 2000)`,
+    name: 'Transitions/Animations',
+    passed: hasTransitions,
+    detail: hasTransitions ? 'Has CSS transitions or animations (polish)' : 'Missing CSS transitions (feels static)',
+    weight: 5,
+    category: 'css',
   })
 
-  // Check 5b: No blocked storage APIs (localStorage/sessionStorage/cookie are blocked in sandbox)
-  // The CODER_PROMPT says don't use them, but LLMs sometimes ignore it. When they do,
-  // the app crashes on first interaction. Catch it here so we can retry.
+  // ═══ SECURITY CHECKS (weight: 10) ═══
   const hasBlockedApi = /localstorage|sessionstorage|document\.cookie/.test(lower)
   checks.push({
     name: 'No blocked storage',
     passed: !hasBlockedApi,
     detail: hasBlockedApi ? 'Uses localStorage/sessionStorage/cookie (blocked in sandbox)' : 'No blocked storage APIs',
+    weight: 10,
+    category: 'security',
   })
 
-  // Check 6: Game-specific checks
+  // ═══ ACCESSIBILITY CHECKS (weight: 10) ═══
+  // Check for aria-labels on interactive elements
+  const ariaLabelCount = (html.match(/aria-label\s*=/gi) || []).length
+  const interactiveCount = (html.match(/<button|<input|<a\s|role=["']button/gi) || []).length
+  const hasAriaLabels = interactiveCount === 0 || ariaLabelCount >= Math.floor(interactiveCount / 3)
+  checks.push({
+    name: 'ARIA labels',
+    passed: hasAriaLabels,
+    detail: `${ariaLabelCount} aria-label(s) for ${interactiveCount} interactive element(s)`,
+    weight: 4,
+    category: 'a11y',
+  })
+  // Check for semantic HTML (main, nav, header, section, article)
+  const semanticTags = (html.match(/<(main|nav|header|section|article|footer|aside)\b/gi) || []).length
+  checks.push({
+    name: 'Semantic HTML',
+    passed: semanticTags >= 2,
+    detail: `Found ${semanticTags} semantic tag(s) (main, nav, header, section, article)`,
+    weight: 3,
+    category: 'a11y',
+  })
+  // Check for lang attribute on <html>
+  const hasLangAttr = /<html\s+[^>]*\blang\s*=/.test(lower)
+  checks.push({
+    name: 'Language attribute',
+    passed: hasLangAttr,
+    detail: hasLangAttr ? 'Has lang attribute on <html>' : 'Missing lang attribute on <html> (screen readers need it)',
+    weight: 3,
+    category: 'a11y',
+  })
+
+  // ═══ MISSION-SPECIFIC CHECKS (weight: 15) ═══
   if (lowerMission.includes('snake') || lowerMission.includes('game')) {
     const hasCanvas = lower.includes('<canvas')
     const hasRAF = lower.includes('requestanimationframe')
@@ -158,41 +226,42 @@ export function validateOutput(html: string, mission: string): ValidationResult 
     const hasEventListener = lower.includes('addeventlistener')
     const hasScore = lower.includes('score')
 
-    checks.push({ name: 'Canvas', passed: hasCanvas, detail: hasCanvas ? 'Has <canvas>' : 'Missing <canvas> for game rendering' })
-    checks.push({ name: 'Game loop', passed: hasRAF || hasSetInterval, detail: (hasRAF || hasSetInterval) ? 'Has game loop (rAF or setInterval)' : 'Missing game loop' })
-    checks.push({ name: 'Event listeners', passed: hasEventListener, detail: hasEventListener ? 'Has event listeners' : 'Missing event listeners' })
-    checks.push({ name: 'Score', passed: hasScore, detail: hasScore ? 'Has score' : 'Missing score display' })
-  }
-
-  // Check 7: Todo-specific checks
-  if (lowerMission.includes('todo') || lowerMission.includes('task')) {
+    checks.push({ name: 'Canvas', passed: hasCanvas, detail: hasCanvas ? 'Has <canvas>' : 'Missing <canvas> for game rendering', weight: 4, category: 'mission' })
+    checks.push({ name: 'Game loop', passed: hasRAF || hasSetInterval, detail: (hasRAF || hasSetInterval) ? 'Has game loop (rAF or setInterval)' : 'Missing game loop', weight: 4, category: 'mission' })
+    checks.push({ name: 'Event listeners', passed: hasEventListener, detail: hasEventListener ? 'Has event listeners' : 'Missing event listeners', weight: 4, category: 'mission' })
+    checks.push({ name: 'Score', passed: hasScore, detail: hasScore ? 'Has score' : 'Missing score display', weight: 3, category: 'mission' })
+  } else if (lowerMission.includes('todo') || lowerMission.includes('task')) {
     const hasInput = lower.includes('<input') || lower.includes('<textarea')
     const hasButton = lower.includes('<button')
-    checks.push({ name: 'Input', passed: hasInput, detail: hasInput ? 'Has input' : 'Missing input field' })
-    checks.push({ name: 'Buttons', passed: hasButton, detail: hasButton ? 'Has buttons' : 'Missing buttons' })
-  }
-
-  // Check 8: Calculator-specific checks
-  if (/\bcalc(ulator)?\b/.test(lowerMission)) {
+    checks.push({ name: 'Input', passed: hasInput, detail: hasInput ? 'Has input' : 'Missing input field', weight: 8, category: 'mission' })
+    checks.push({ name: 'Buttons', passed: hasButton, detail: hasButton ? 'Has buttons' : 'Missing buttons', weight: 7, category: 'mission' })
+  } else if (/\bcalc(ulator)?\b/.test(lowerMission)) {
     const hasButtons = (html.match(/<button/gi) || []).length
-    checks.push({ name: 'Calculator buttons', passed: hasButtons >= 10, detail: `Found ${hasButtons} buttons (need 10+)` })
+    checks.push({ name: 'Calculator buttons', passed: hasButtons >= 10, detail: `Found ${hasButtons} buttons (need 10+)`, weight: 15, category: 'mission' })
+  } else {
+    // Generic mission — check for basic interactivity
+    const hasInteractivity = lower.includes('addeventlistener') || lower.includes('onclick')
+    checks.push({ name: 'Interactivity', passed: hasInteractivity, detail: hasInteractivity ? 'Has event handlers' : 'Missing event handlers (static page)', weight: 15, category: 'mission' })
   }
 
-  // Calculate score
-  const passedCount = checks.filter(c => c.passed).length
-  const score = Math.round((passedCount / checks.length) * 100)
+  // ═══ CALCULATE WEIGHTED SCORE ═══
+  const totalWeight = checks.reduce((sum, c) => sum + c.weight, 0)
+  const passedWeight = checks.filter(c => c.passed).reduce((sum, c) => sum + c.weight, 0)
+  const score = Math.round((passedWeight / totalWeight) * 100)
 
   // Generate retry hint if score < 70
   const failedChecks = checks.filter(c => !c.passed)
   let retryHint: string | undefined
   if (score < 70 && failedChecks.length > 0) {
-    retryHint = `The previous output was incomplete. Fix these issues:\n${failedChecks.map(c => `- ${c.name}: ${c.detail}`).join('\n')}`
+    // Sort by weight descending — fix the most impactful issues first
+    const sorted = [...failedChecks].sort((a, b) => b.weight - a.weight)
+    retryHint = `The previous output was incomplete. Fix these issues (highest impact first):\n${sorted.map(c => `- ${c.name} (${c.weight}pts): ${c.detail}`).join('\n')}`
   }
 
   return {
     passed: score >= 70,
     score,
-    checks,
+    checks: checks.map(c => ({ name: c.name, passed: c.passed, detail: c.detail })),
     retryHint,
   }
 }

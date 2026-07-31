@@ -58,6 +58,9 @@ export default function Home() {
   const [elapsed, setElapsed] = useState(0)
   const [thinkingStep, setThinkingStep] = useState(0)
   const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
+  const [previewWidth, setPreviewWidth] = useState<'full' | 'desktop' | 'tablet' | 'mobile'>('full')
+  const [showCodeAnalysis, setShowCodeAnalysis] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
   const [planSummary, setPlanSummary] = useState<string | null>(null)
   const [qualityScore, setQualityScore] = useState(0)
@@ -824,10 +827,25 @@ export default function Home() {
         reset()
         return
       }
+      // ? shows keyboard shortcuts help panel (only when not typing in a text field)
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField) {
+          e.preventDefault()
+          setShowShortcuts(prev => !prev)
+          return
+        }
+      }
+      // Escape closes shortcuts panel if open
+      if (e.key === 'Escape' && showShortcuts) {
+        setShowShortcuts(false)
+        return
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [loading, refining, result, download, cancelBuild, cancelRefine, reset])
+  }, [loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts])
 
   // Helper: get current thinking step text (DYNAMIC — from mission or plan)
   const getThinkingText = useCallback(() => {
@@ -1124,6 +1142,47 @@ export default function Home() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                {/* Responsive preview toggle */}
+                <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewWidth('full')}
+                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'full' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Full width"
+                    aria-label="Full width preview"
+                  >Full</button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewWidth('desktop')}
+                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'desktop' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Desktop (1280px)"
+                    aria-label="Desktop width preview"
+                  >D</button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewWidth('tablet')}
+                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'tablet' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Tablet (768px)"
+                    aria-label="Tablet width preview"
+                  >T</button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewWidth('mobile')}
+                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'mobile' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Mobile (375px)"
+                    aria-label="Mobile width preview"
+                  >M</button>
+                </div>
+                {qualityScore > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCodeAnalysis(!showCodeAnalysis)}
+                    className={`rounded-md px-2 py-1 text-[10px] transition-colors ${showCodeAnalysis ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Toggle code analysis"
+                  >
+                    Q:{qualityScore}
+                  </button>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
                   <Copy className="h-3.5 w-3.5" />
                   Copy
@@ -1207,11 +1266,33 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Code analysis panel — collapsible, shows quality metrics breakdown */}
+            {showCodeAnalysis && qualityMetrics && (
+              <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">Code Analysis</p>
+                <p className="text-[11px] text-muted-foreground font-mono">{qualityMetrics}</p>
+                {qualityScore > 0 && (
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 rounded-full bg-muted-foreground/20 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${qualityScore >= 70 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                        style={{ width: `${qualityScore}%` }}
+                      />
+                    </div>
+                    <span className={`text-[10px] font-mono ${qualityScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {qualityScore}/100
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Preview iframe — single iframe handles both live preview and final result.
                 During build/refine, srcDoc shows livePreviewHtml (partial HTML as tokens arrive).
                 When idle, srcDoc shows the final result.html.
-                bg-neutral-950 prevents white flash before the LLM's CSS loads. */}
-            <div className="relative min-h-0 flex-1 bg-neutral-950">
+                bg-neutral-950 prevents white flash before the LLM's CSS loads.
+                The preview wrapper centers the iframe when a specific width is selected. */}
+            <div className="relative min-h-0 flex-1 bg-neutral-950 overflow-auto">
               {/* Loading overlay (shown when building/refining and no live preview yet) */}
               {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
                 <div role="status" aria-live="polite" className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
@@ -1234,17 +1315,73 @@ export default function Home() {
                   </div>
                 </div>
               )}
-              <iframe
-                key={result?.id ?? 'loading'}
-                srcDoc={(loading || refining) && livePreviewHtml ? injectCsp(livePreviewHtml) : (result?.html ?? '')}
-                title="Preview"
-                sandbox="allow-scripts"
-                className="h-full w-full border-0 bg-neutral-950"
-              />
+              {/* Responsive preview wrapper — centers iframe when a specific width is selected */}
+              <div className={`flex min-h-full ${previewWidth === 'full' ? 'w-full' : 'justify-center pt-4 pb-4'}`}>
+                <iframe
+                  key={result?.id ?? 'loading'}
+                  srcDoc={(loading || refining) && livePreviewHtml ? injectCsp(livePreviewHtml) : (result?.html ?? '')}
+                  title="Preview"
+                  sandbox="allow-scripts"
+                  className={`h-full border-0 bg-neutral-950 transition-all ${
+                    previewWidth === 'full' ? 'w-full' :
+                    previewWidth === 'desktop' ? 'w-[1280px] max-w-full' :
+                    previewWidth === 'tablet' ? 'w-[768px] max-w-full' :
+                    'w-[375px] max-w-full'
+                  }`}
+                  style={previewWidth !== 'full' ? { minHeight: 'calc(100% - 2rem)' } : undefined}
+                />
+              </div>
             </div>
           </section>
         )}
       </main>
+
+      {/* Keyboard shortcuts help panel — press ? to toggle */}
+      {showShortcuts && (
+        <div
+          role="dialog"
+          aria-label="Keyboard shortcuts"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-border/40 bg-card p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Keyboard Shortcuts</h2>
+              <button
+                type="button"
+                onClick={() => setShowShortcuts(false)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Close shortcuts"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {[
+                { keys: ['⌘', 'Enter'], label: 'Build the app' },
+                { keys: ['⌘', 'S'], label: 'Download HTML file' },
+                { keys: ['⌘', 'N'], label: 'Start a new build' },
+                { keys: ['Esc'], label: 'Cancel build/refine' },
+                { keys: ['?'], label: 'Show/hide this help' },
+              ].map((shortcut) => (
+                <div key={shortcut.label} className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{shortcut.label}</span>
+                  <div className="flex gap-1">
+                    {shortcut.keys.map((k) => (
+                      <kbd key={k} className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-foreground">
+                        {k}
+                      </kbd>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="mt-auto shrink-0 border-t border-border/40 px-4 py-2">
@@ -1254,7 +1391,8 @@ export default function Home() {
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+N</kbd> new ·
-            <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel
+            <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">?</kbd> help
           </span>
           <span className="sm:hidden">⌘+Enter to build</span>
         </div>

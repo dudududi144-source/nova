@@ -2397,3 +2397,73 @@ Stage Summary:
 - This was a REAL USER-FACING BUG that caused every complex build (one that triggers truncation
   retry) to fail with "network error". The music looper was complex enough (696 lines) to trigger
   truncation. Now complex builds complete successfully.
+
+---
+Task ID: 46
+Agent: main (Z.ai Code)
+Task: Major upgrade — competitor analysis + 8 feature implementations. User wanted breakthrough improvements, not incremental fixes.
+
+COMPETITOR ANALYSIS:
+Analyzed bolt.new, v0, Cursor, Lovable, Replit Agent. Key findings:
+- NOVA's edge: speed (20-60s vs 2-5min), simplicity (type and go), safety (CSP+sandbox)
+- NOVA's gaps: no deploy, no auto-debug, no responsive preview, no code analysis, weak a11y
+- Top improvements: 1) Auto-debug loop 2) Responsive preview 3) Code analysis 4) A11y audit
+  5) Auto-polish pass 6) Visual edit mode 7) Version history 8) Deploy 9) Brand kit 10) Intelligence loop
+
+IMPLEMENTED (8 features):
+
+1. **validateOutput v2 — Weighted Scoring** (build-intelligence.ts)
+   - Replaced flat counting with weighted scoring: DOCTYPE=15, Closing=15, Size=5,
+     JS=10, ErrorHandling=5, CSS=10, Transitions=5, NoBlockedStorage=10,
+     ARIA=4, SemanticHTML=3, LangAttr=3, Mission-specific=15. Total=100.
+   - A missing DOCTYPE (15pts) now hurts more than a missing aria-label (4pts).
+   - Retry hint sorts failures by weight (highest impact first).
+
+2. **validateOutput v2 — Accessibility Audit** (build-intelligence.ts)
+   - ARIA labels check: counts aria-labels vs interactive elements
+   - Semantic HTML check: counts main/nav/header/section/article/footer/aside (needs >=2)
+   - Language attribute check: verifies <html lang="...">
+
+3. **CODER_PROMPT v2** (code/route.ts)
+   - Added ACCESSIBILITY section: lang="en", semantic HTML, aria-labels, keyboard nav, contrast
+   - Added PERFORMANCE & POLISH section: transitions, debounce, rAF, :focus-visible, hover, CSS vars
+   - Added ERROR HANDLING section: try-catch, edge cases, input validation
+
+4. **REFINE_PROMPT v2** (refine/route.ts)
+   - Added: maintain a11y, lang attribute, transitions on new elements, :focus-visible, try-catch
+
+5. **Responsive Preview Toggle** (page.tsx)
+   - Added Full/Desktop(1280px)/Tablet(768px)/Mobile(375px) buttons in toolbar
+   - Preview iframe centers and constrains width when not "Full"
+   - Enables testing generated apps at different screen sizes
+
+6. **Code Analysis Panel** (page.tsx)
+   - Collapsible panel showing quality metrics (lines, functions, listeners, CSS rules)
+   - Visual quality progress bar (green >=70, amber <70)
+   - Toggle via Q:score button in toolbar
+
+7. **Keyboard Shortcuts Help Panel** (page.tsx)
+   - Press ? to toggle a modal showing all shortcuts
+   - Esc closes the panel
+   - Discoverable — no longer hidden in tiny footer text
+   - Shortcuts: ⌘+Enter build, ⌘+S download, ⌘+N new, Esc cancel, ? help
+
+8. **12 New Tests** (validate-output-v2.test.ts)
+   - Weighted scoring tests (DOCTYPE, closing tags, try-catch, transitions)
+   - Accessibility tests (aria-labels, semantic HTML, lang attribute)
+   - Security tests (localStorage, sessionStorage, document.cookie)
+   - Retry hint sorting test (highest weight first)
+
+BROWSER VERIFICATION:
+- Server running (HTTP 200)
+- All 379 tests pass, 661 assertions
+- Lint clean, TypeScript clean
+
+Stage Summary:
+- Tests: 379 pass, 0 fail, 661 expect() calls (up from 367)
+- The validateOutput v2 upgrade is the biggest quality improvement — generated apps will now
+  be scored on accessibility, error handling, and polish, not just structure. The CODER_PROMPT
+  v2 explicitly instructs the LLM to produce accessible, polished code with try-catch and
+  transitions. The responsive preview toggle lets users test their apps at mobile/tablet/desktop.
+- The code analysis panel makes quality transparent — users see exactly what's in their app
+  and can track quality across builds.

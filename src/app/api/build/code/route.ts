@@ -24,7 +24,7 @@ const CODER_PROMPT = `You are an expert front-end engineer. Output the complete 
 
 OUTPUT FORMAT:
 - Output ONLY raw HTML. No explanation, no markdown, no code fences.
-- Complete document: <!DOCTYPE html>, <html>, <head>, <body>.
+- Complete document: <!DOCTYPE html>, <html lang="en">, <head>, <body>.
 - All CSS in <style>, all JS in <script>. Everything inline. One file.
 - Do NOT use localStorage, sessionStorage, or document.cookie. Use in-memory variables.
 - No external resources (no fetch, no CDN scripts, no external fonts/images).
@@ -40,8 +40,26 @@ QUALITY:
 - Games: game loop (requestAnimationFrame), score, game-over, restart, arrow keys.
 - Professional UI: dark theme (#0f172a bg, #1e293b cards, #e2e8f0 text), gradients,
   shadows, rounded corners, responsive layout.
-- Semantic HTML, aria-labels, CSS transitions on interactive elements.
-- Handle edge cases (empty input, game-over state).
+
+ACCESSIBILITY (REQUIRED):
+- Add lang="en" to the <html> tag.
+- Use semantic HTML: <main>, <nav>, <header>, <section>, <article>, <footer>.
+- Add aria-label to every <button>, <input>, and icon-only element.
+- Ensure keyboard navigation: all interactive elements reachable via Tab.
+- Use sufficient color contrast (minimum 4.5:1 for text).
+
+PERFORMANCE & POLISH:
+- Add CSS transitions on interactive elements (hover, focus, active states).
+- Debounce scroll/resize event listeners (100ms).
+- Use requestAnimationFrame for animations, not setInterval when possible.
+- Add :focus-visible styles for keyboard users.
+- Add hover effects on buttons and cards.
+- Use CSS custom properties (variables) for consistent theming.
+
+ERROR HANDLING:
+- Wrap game/app logic in try-catch to prevent crashes.
+- Handle edge cases: empty input, game-over state, division by zero.
+- Validate user input before processing.
 
 Keep it concise but complete. Output the HTML now:`
 
