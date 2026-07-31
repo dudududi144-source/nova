@@ -1,0 +1,1762 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useRef, useEffect, useCallback } from 'react'
+     4→     4→import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle } from 'lucide-react'
+     5→     5→import { Button } from '@/components/ui/button'
+     6→     6→import { Textarea } from '@/components/ui/textarea'
+     7→     7→import { toast } from 'sonner'
+     8→     8→import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
+     9→     9→import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
+    10→    10→import { formatTokens, BUILD_STAGES, getCurrentStage } from '@/lib/format'
+    11→    11→import { injectCsp } from '@/lib/html-utils'
+    12→    12→import { probeApp, type ProbeResult } from '@/lib/interaction-probe'
+    13→    13→import { THEMES } from '@/lib/design-tokens'
+    14→    14→
+    15→    15→interface BuildResponse {
+    16→    16→  ok: boolean
+    17→    17→  html?: string
+    18→    18→  tokens?: number
+    19→    19→  ms?: number
+    20→    20→  error?: string
+    21→    21→}
+    22→    22→
+    23→    23→interface ProbeError {
+    24→    24→  type: string
+    25→    25→  msg: string
+    26→    26→  line: number
+    27→    27→  col: number
+    28→    28→  stack?: string
+    29→    29→}
+    30→    30→
+    31→    31→interface ChatMessage {
+    32→    32→  role: 'user' | 'assistant'
+    33→    33→  content: string
+    34→    34→  ts: number
+    35→    35→}
+    36→    36→
+    37→    37→// Quick-start presets — organized by category (stolen from TFA's templates concept,
+    38→    38→// adapted for NOVA's prompt-to-app model).
+    39→    39→// More presets = lower barrier to entry. Users click and build immediately.
+    40→    40→const EXAMPLES: readonly string[] = [
+    41→    41→  'Build a snake game with score and game-over',
+    42→    42→  'Build a todo app with add, complete, and delete',
+    43→    43→  'Build a calculator with keyboard support',
+    44→    44→  'Build a color palette generator with copy-to-clipboard',
+    45→    45→  'Build a pomodoro timer with start/pause/reset',
+    46→    46→  'Build a markdown editor with live preview',
+    47→    47→  'Build a drawing canvas with brush size and color',
+    48→    48→  'Build a quiz app with multiple choice and score',
+    49→    49→]
+    50→    50→
+    51→    51→const REFINE_THINKING_STEPS: readonly string[] = [
+    52→    52→  'Analyzing current code...',
+    53→    53→  'Understanding your request...',
+    54→    54→  'Planning the changes...',
+    55→    55→  'Applying modifications...',
+    56→    56→  'Verifying everything still works...',
+    57→    57→  'Finalizing the update...',
+    58→    58→]
+    59→    59→
+    60→    60→export default function Home() {
+    61→    61→  const [mission, setMission] = useState('')
+    62→    62→  const [loading, setLoading] = useState(false)
+    63→    63→  const [error, setError] = useState<string | null>(null)
+    64→    64→  const [failedMission, setFailedMission] = useState<string | null>(null) // what to retry
+    65→    65→  const [result, setResult] = useState<BuildResult | null>(null)
+    66→    66→  const [history, setHistory] = useState<BuildResult[]>([])
+    67→    67→  const [confirmClear, setConfirmClear] = useState(false)
+    68→    68→  const [elapsed, setElapsed] = useState(0)
+    69→    69→  const [thinkingStep, setThinkingStep] = useState(0)
+    70→    70→  const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
+    71→    71→  const [previewWidth, setPreviewWidth] = useState<'full' | 'desktop' | 'tablet' | 'mobile'>('full')
+    72→    72→  const [showCodeAnalysis, setShowCodeAnalysis] = useState(false)
+    73→    73→  const [showShortcuts, setShowShortcuts] = useState(false)
+    74→    74→  const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
+    75→    75→  const [planSummary, setPlanSummary] = useState<string | null>(null)
+    76→    76→  const [qualityScore, setQualityScore] = useState(0)
+    77→    77→  const [qualityMetrics, setQualityMetrics] = useState('')
+    78→    78→  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+    79→    79→  const [chatInput, setChatInput] = useState('')
+    80→    80→  const [refining, setRefining] = useState(false)
+    81→    81→  // v3: runtime errors, theme, probe results, plan adherence
+    82→    82→  const [runtimeErrors, setRuntimeErrors] = useState<ProbeError[]>([])
+    83→    83→  const [showRuntimeErrors, setShowRuntimeErrors] = useState(false)
+    84→    84→  const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
+    85→    85→  const [selectedTheme, setSelectedTheme] = useState<string>(() => {
+    86→    86→    try { return localStorage.getItem('nova_theme') || 'slate' } catch { return 'slate' }
+    87→    87→  })
+    88→    88→  const [planFeatures, setPlanFeatures] = useState<{name: string; found: boolean}[]>([])
+    89→    89→  const [autoFixing, setAutoFixing] = useState(false)
+    90→    90→  const chatScrollRef = useRef<HTMLDivElement>(null)
+    91→    91→  const abortRef = useRef<AbortController | null>(null)
+    92→    92→  const refineAbortRef = useRef<AbortController | null>(null)
+    93→    93→  // Ref mirror of `result` so build() doesn't need it in useCallback deps.
+    94→    94→  // This prevents build from being re-created on every result change (every build).
+    95→    95→  // Updated in a useEffect (not during render — that's a side effect).
+    96→    96→  const resultRef = useRef<BuildResult | null>(null)
+    97→    97→  useEffect(() => {
+    98→    98→    resultRef.current = result
+    99→    99→  }, [result])
+   100→   100→
+   101→   101→  // Throttled live-preview accumulator.
+   102→   102→  // CRITICAL: Without throttling, setLivePreviewHtml fires on every token (~2000+ times per build),
+   103→   103→  // and each fires a full iframe srcDoc reload (re-parse + re-render + re-run partial scripts).
+   104→   104→  // We accumulate tokens in a ref and flush to state at most every 200ms via an interval.
+   105→   105→  const livePreviewAccumulatorRef = useRef<string>('')
+   106→   106→  const livePreviewFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   107→   107→  // Track the last char count we updated buildSteps with — used to throttle setBuildSteps
+   108→   108→  // during token streaming (prevents ~2000 array allocations per build).
+   109→   109→  const generatingCharsRef = useRef(0)
+   110→   110→
+   111→   111→  // Start the throttled flush timer when loading or refining begins; clear when it ends.
+   112→   112→  useEffect(() => {
+   113→   113→    if (!loading && !refining) {
+   114→   114→      // Flush any remaining accumulated text, then stop the timer.
+   115→   115→      if (livePreviewAccumulatorRef.current) {
+   116→   116→        setLivePreviewHtml(livePreviewAccumulatorRef.current)
+   117→   117→        livePreviewAccumulatorRef.current = ''
+   118→   118→      }
+   119→   119→      if (livePreviewFlushTimerRef.current) {
+   120→   120→        clearInterval(livePreviewFlushTimerRef.current)
+   121→   121→        livePreviewFlushTimerRef.current = null
+   122→   122→      }
+   123→   123→      return
+   124→   124→    }
+   125→   125→    // Start a 200ms flush interval — updates the iframe at most 5 times/second instead of ~2000.
+   126→   126→    if (!livePreviewFlushTimerRef.current) {
+   127→   127→      livePreviewFlushTimerRef.current = setInterval(() => {
+   128→   128→        if (livePreviewAccumulatorRef.current) {
+   129→   129→          setLivePreviewHtml(livePreviewAccumulatorRef.current)
+   130→   130→          // Don't clear the accumulator — new tokens may have arrived since the flush.
+   131→   131→          // It's overwritten on the next token event.
+   132→   132→        }
+   133→   133→      }, 200)
+   134→   134→    }
+   135→   135→    return () => {
+   136→   136→      // Cleanup on unmount or dep change — don't leave the interval running.
+   137→   137→      if (livePreviewFlushTimerRef.current) {
+   138→   138→        clearInterval(livePreviewFlushTimerRef.current)
+   139→   139→        livePreviewFlushTimerRef.current = null
+   140→   140→      }
+   141→   141→    }
+   142→   142→  }, [loading, refining])
+   143→   143→
+   144→   144→  // ═══ v3: Listen for runtime errors from the preview iframe ═══
+   145→   145→  // The injected runtime error capture script sends errors via postMessage.
+   146→   146→  // We collect them and display in the runtime errors panel.
+   147→   147→  useEffect(() => {
+   148→   148→    const handler = (e: MessageEvent) => {
+   149→   149→      if (e.data?.source !== 'nova-preview') return
+   150→   150→      if (e.data.kind === 'error' && e.data.error) {
+   151→   151→        setRuntimeErrors(prev => {
+   152→   152→          // Avoid duplicates — same msg + line
+   153→   153→          const exists = prev.some(err => err.msg === e.data.error.msg && err.line === e.data.error.line)
+   154→   154→          if (exists || prev.length >= 20) return prev
+   155→   155→          return [...prev, e.data.error]
+   156→   156→        })
+   157→   157→      }
+   158→   158→    }
+   159→   159→    window.addEventListener('message', handler)
+   160→   160→    return () => window.removeEventListener('message', handler)
+   161→   161→  }, [])
+   162→   162→
+   163→   163→  // ═══ v3: Run interaction probe after build completes ═══
+   164→   164→  // After a build finishes (not refine), run the probe to detect runtime errors.
+   165→   165→  useEffect(() => {
+   166→   166→    if (!result || loading || refining || autoFixing) return
+   167→   167→    // Only probe if we haven't probed this result yet
+   168→   168→    if (probeResult && probeResult.summary.includes(result.id)) return
+   169→   169→
+   170→   170→    let cancelled = false
+   171→   171→    const isGame = /game|snake|tetris|arcade|puzzle/i.test(result.mission)
+   172→   172→    setRuntimeErrors([]) // Clear previous errors
+   173→   173→
+   174→   174→    // Small delay to let the iframe finish initializing
+   175→   175→    const timer = setTimeout(async () => {
+   176→   176→      if (cancelled) return
+   177→   177→      try {
+   178→   178→        const probe = await probeApp(result.html, isGame)
+   179→   179→        if (!cancelled) {
+   180→   180→          setProbeResult({ ...probe, summary: `${result.id} ${probe.summary}` })
+   181→   181→          if (probe.errors.length > 0) {
+   182→   182→            // Don't toast — just show the badge. User can click to see details.
+   183→   183→            console.warn('[NOVA] Probe found', probe.errors.length, 'runtime errors')
+   184→   184→          }
+   185→   185→        }
+   186→   186→      } catch (err) {
+   187→   187→        if (!cancelled) {
+   188→   188→          console.error('[NOVA] Probe failed:', err)
+   189→   189→        }
+   190→   190→      }
+   191→   191→    }, 1500)
+   192→   192→
+   193→   193→    return () => {
+   194→   194→      cancelled = true
+   195→   195→      clearTimeout(timer)
+   196→   196→    }
+   197→   197→  }, [result, loading, refining, autoFixing, probeResult])
+   198→   198→
+   199→   199→  // Load history from localStorage on mount
+   200→   200→  useEffect(() => {
+   201→   201→    try {
+   202→   202→      const stored = JSON.parse(localStorage.getItem('nova_history') ?? '[]')
+   203→   203→      setHistory(validateHistory(stored))
+   204→   204→    } catch (err) {
+   205→   205→      console.error('[NOVA] Failed to load history:', err)
+   206→   206→    }
+   207→   207→  }, [])
+   208→   208→
+   209→   209→  // Focus the mission textarea on mount — desktop only.
+   210→   210→  // On mobile, auto-focusing pops the on-screen keyboard which is annoying.
+   211→   211→  // Runs after mount to avoid SSR hydration mismatch.
+   212→   212→  useEffect(() => {
+   213→   213→    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+   214→   214→      document.getElementById('mission-input')?.focus()
+   215→   215→    }
+   216→   216→  }, [])
+   217→   217→
+   218→   218→  // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
+   219→   219→  // to avoid double-firing in React StrictMode.
+   220→   220→  const saveHistoryToStorage = useCallback((items: BuildResult[]) => {
+   221→   221→    let savedCount = items.length
+   222→   222→    try {
+   223→   223→      localStorage.setItem('nova_history', JSON.stringify(items))
+   224→   224→    } catch (quotaErr) {
+   225→   225→      console.error('[NOVA] localStorage quota exceeded:', quotaErr)
+   226→   226→      savedCount = 0
+   227→   227→      for (let i = items.length - 1; i >= 0; i--) {
+   228→   228→        try {
+   229→   229→          localStorage.setItem('nova_history', JSON.stringify(items.slice(0, i + 1)))
+   230→   230→          savedCount = i + 1
+   231→   231→          break
+   232→   232→        } catch {
+   233→   233→          // keep trying smaller
+   234→   234→        }
+   235→   235→      }
+   236→   236→    }
+   237→   237→    if (savedCount < items.length) {
+   238→   238→      toast.error(`localStorage full — only ${savedCount} of ${items.length} builds saved to history`)
+   239→   239→    }
+   240→   240→  }, [])
+   241→   241→
+   242→   242→  // Add a build result to history (dedupe by mission) and persist to localStorage.
+   243→   243→  // Uses historyRef to compute newHistory synchronously (not inside the setState updater).
+   244→   244→  // The previous implementation had a race: setHistory's updater runs async, so
+   245→   245→  // newHistory was still [] when saveHistoryToStorage was called.
+   246→   246→  const historyRef = useRef<BuildResult[]>([])
+   247→   247→  useEffect(() => {
+   248→   248→    historyRef.current = history
+   249→   249→  }, [history])
+   250→   250→
+   251→   251→  const addBuildToHistory = useCallback((buildResult: BuildResult) => {
+   252→   252→    // Compute new history synchronously from the ref (not from the state closure)
+   253→   253→    const newHistory = [buildResult, ...historyRef.current.filter(h => h.mission !== buildResult.mission)].slice(0, 10)
+   254→   254→    historyRef.current = newHistory // Update ref synchronously so rapid successive calls see the latest
+   255→   255→    setHistory(newHistory)
+   256→   256→    saveHistoryToStorage(newHistory)
+   257→   257→  }, [saveHistoryToStorage])
+   258→   258→
+   259→   259→  // Abort any in-flight build AND refine on unmount
+   260→   260→  useEffect(() => {
+   261→   261→    return () => {
+   262→   262→      abortRef.current?.abort()
+   263→   263→      refineAbortRef.current?.abort()
+   264→   264→    }
+   265→   265→  }, [])
+   266→   266→
+   267→   267→  // Ref mirror of buildSteps so the elapsed-time effect doesn't need buildSteps in its deps.
+   268→   268→  // If buildSteps is in the deps, the effect tears down and re-runs on every token event
+   269→   269→  // (because setBuildSteps is called on every token), resetting startTime and thinkingStep.
+   270→   270→  const buildStepsRef = useRef<string[]>(['Building...'])
+   271→   271→  useEffect(() => {
+   272→   272→    buildStepsRef.current = buildSteps
+   273→   273→  }, [buildSteps])
+   274→   274→
+   275→   275→  // Elapsed time counter + dynamic thinking step rotation.
+   276→   276→  // CRITICAL: deps are [loading, refining] ONLY — not buildSteps.
+   277→   277→  // If buildSteps were in deps, every token event would reset startTime to Date.now(),
+   278→   278→  // the interval would be cleared before it ever fires, and elapsed would stay at 0.
+   279→   279→  useEffect(() => {
+   280→   280→    if (!loading && !refining) {
+   281→   281→      setElapsed(0)
+   282→   282→      setThinkingStep(0)
+   283→   283→      return
+   284→   284→    }
+   285→   285→    const startTime = Date.now()
+   286→   286→    let step = 0
+   287→   287→    setThinkingStep(0)
+   288→   288→
+   289→   289→    const timer = setInterval(() => {
+   290→   290→      const sec = Math.floor((Date.now() - startTime) / 1000)
+   291→   291→      setElapsed(sec)
+   292→   292→
+   293→   293→      // Read steps from ref (not from closure — closure would be stale)
+   294→   294→      const steps = loading ? buildStepsRef.current : REFINE_THINKING_STEPS
+   295→   295→      if (steps.length === 0) return
+   296→   296→
+   297→   297→      // Rotate through steps — ~4s per step for build, 5s for refine
+   298→   298→      const stepDuration = loading ? 4 : 5
+   299→   299→      const nextStep = Math.min(steps.length - 1, Math.floor(sec / stepDuration))
+   300→   300→      if (nextStep !== step) {
+   301→   301→        step = nextStep
+   302→   302→        setThinkingStep(step)
+   303→   303→      }
+   304→   304→    }, 1000)
+   305→   305→    return () => clearInterval(timer)
+   306→   306→  }, [loading, refining])
+   307→   307→
+   308→   308→  // Centralized build function. Aborts any in-flight build first.
+   309→   309→  // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
+   310→   310→  // Uses resultRef instead of result state to avoid being re-created on every build.
+   311→   311→  const build = useCallback(async (explicitMission?: string) => {
+   312→   312→    const m = (explicitMission ?? mission).trim()
+   313→   313→    if (!m) {
+   314→   314→      toast.error('Describe what to build first')
+   315→   315→      return
+   316→   316→    }
+   317→   317→
+   318→   318→    // If an explicit mission was passed, sync the textarea state
+   319→   319→    if (explicitMission && explicitMission !== mission) {
+   320→   320→      setMission(explicitMission)
+   321→   321→    }
+   322→   322→
+   323→   323→    // Abort any in-flight build AND refine (covers: rebuild during refine, history-click-during-build, reset-during-build)
+   324→   324→    // This prevents the race condition where build and refine run simultaneously and
+   325→   325→    // both call setResult/setHistory, corrupting state.
+   326→   326→    abortRef.current?.abort()
+   327→   327→    refineAbortRef.current?.abort()
+   328→   328→    refineAbortRef.current = null
+   329→   329→    setRefining(false)
+   330→   330→    const controller = new AbortController()
+   331→   331→    abortRef.current = controller
+   332→   332→
+   333→   333→    setLoading(true)
+   334→   334→    setError(null)
+   335→   335→    setFailedMission(null)
+   336→   336→    setChatMessages([])
+   337→   337→    setConfirmClear(false) // Hide confirm-clear UI if it was visible
+   338→   338→
+   339→   339→    // Extract dynamic steps from the mission IMMEDIATELY — not pre-canned
+   340→   340→    const steps = extractStepsFromMission(m)
+   341→   341→    setBuildSteps(steps)
+   342→   342→    setPlanSummary(null)
+   343→   343→    setLivePreviewHtml(null)
+   344→   344→    livePreviewAccumulatorRef.current = '' // Clear accumulator for fresh build
+   345→   345→    generatingCharsRef.current = 0 // Reset char counter for build step throttling
+   346→   346→
+   347→   347→    // Helper: set error state consistently (replaces 6 repeated blocks)
+   348→   348→    const fail = (msg: string) => {
+   349→   349→      setError(msg)
+   350→   350→      setFailedMission(m)
+   351→   351→      if (!resultRef.current) toast.error(msg)
+   352→   352→    }
+   353→   353→
+   354→   354→    try {
+   355→   355→      // ═══ STAGE 1: ARCHITECT — get the plan first ═══
+   356→   356→      // This is a separate, fast call (~2-3s). The plan lets us show
+   357→   357→      // AUTHENTIC steps to the user before the coder even starts.
+   358→   358→      const archRes = await fetch('/api/build/architect', {
+   359→   359→        method: 'POST',
+   360→   360→        headers: { 'Content-Type': 'application/json' },
+   361→   361→        body: JSON.stringify({ mission: m }),
+   362→   362→        signal: controller.signal,
+   363→   363→      })
+   364→   364→
+   365→   365→      let archData: { ok: boolean; plan?: unknown; error?: string } | null = null
+   366→   366→      const archContentType = archRes.headers.get('content-type') ?? ''
+   367→   367→      if (archContentType.includes('application/json')) {
+   368→   368→        try { archData = await archRes.json() } catch {}
+   369→   369→      }
+   370→   370→
+   371→   371→      // If architect succeeded, update steps with the REAL plan
+   372→   372→      if (archData?.ok && archData.plan) {
+   373→   373→        const planSteps = extractStepsFromPlan(archData.plan, m)
+   374→   374→        const summary = getPlanSummary(archData.plan)
+   375→   375→        setBuildSteps(planSteps)
+   376→   376→        setPlanSummary(summary)
+   377→   377→        // Debug log gated to non-production — don't spam user's console
+   378→   378→        if (process.env.NODE_ENV !== 'production') {
+   379→   379→          console.log('[NOVA] Architect plan:', summary, planSteps.length, 'steps')
+   380→   380→        }
+   381→   381→      }
+   382→   382→      // If architect failed, continue with mission-based steps (already set)
+   383→   383→
+   384→   384→      // ═══ STAGE 2: CODER — SSE streaming with keepalive ═══
+   385→   385→      // The route returns Server-Sent Events: progress events while LLM works,
+   386→   386→      // then a result event with the final HTML. No timeout — keepalive prevents it.
+   387→   387→      const codeRes = await fetch('/api/build/code', {
+   388→   388→        method: 'POST',
+   389→   389→        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+   390→   390→        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null, theme: selectedTheme }),
+   391→   391→        signal: controller.signal,
+   392→   392→      })
+   393→   393→
+   394→   394→      if (!codeRes.ok) {
+   395→   395→        // Non-SSE error (400, 429, 413) — parse as JSON
+   396→   396→        let errorMsg = `Server error (${codeRes.status})`
+   397→   397→        try {
+   398→   398→          const errData = await codeRes.json()
+   399→   399→          if (errData?.error) errorMsg = errData.error
+   400→   400→        } catch {}
+   401→   401→        fail(errorMsg)
+   402→   402→        return
+   403→   403→      }
+   404→   404→
+   405→   405→      // Verify the response is actually SSE — a proxy or CDN might return 200 with HTML
+   406→   406→      // (captive portal, error page) which would silently fail to parse as SSE.
+   407→   407→      const codeCt = codeRes.headers.get('content-type') ?? ''
+   408→   408→      if (!codeCt.includes('text/event-stream')) {
+   409→   409→        let errorMsg = 'Unexpected response from server'
+   410→   410→        try {
+   411→   411→          const errData = await codeRes.json()
+   412→   412→          if (errData?.error) errorMsg = errData.error
+   413→   413→        } catch {}
+   414→   414→        fail(errorMsg)
+   415→   415→        return
+   416→   416→      }
+   417→   417→
+   418→   418→      // Read SSE stream
+   419→   419→      const reader = codeRes.body?.getReader()
+   420→   420→      if (!reader) {
+   421→   421→        fail('No response stream')
+   422→   422→        return
+   423→   423→      }
+   424→   424→
+   425→   425→      const decoder = new TextDecoder()
+   426→   426→      let buffer = ''
+   427→   427→      let finalHtml = ''
+   428→   428→      let finalTokens = 0
+   429→   429→      let finalMs = 0
+   430→   430→      let finalQuality = 0
+   431→   431→      let finalMetrics = ''
+   432→   432→      let streamError: string | null = null
+   433→   433→
+   434→   434→      while (true) {
+   435→   435→        const { done, value } = await reader.read()
+   436→   436→        if (done) break
+   437→   437→
+   438→   438→        buffer += decoder.decode(value, { stream: true })
+   439→   439→
+   440→   440→        // Parse SSE events (separated by \n\n or \r\n\r\n — some proxies normalize to \r\n)
+   441→   441→        // Normalize \r\n to \n first so the split works regardless of proxy behavior.
+   442→   442→        const normalized = buffer.replace(/\r\n/g, '\n')
+   443→   443→        const events = normalized.split('\n\n')
+   444→   444→        buffer = events.pop() ?? '' // keep incomplete event in buffer
+   445→   445→
+   446→   446→        for (const eventStr of events) {
+   447→   447→          const dataLine = eventStr.trim()
+   448→   448→          if (!dataLine.startsWith('data: ')) continue
+   449→   449→
+   450→   450→          try {
+   451→   451→            const evt = JSON.parse(dataLine.slice(6))
+   452→   452→
+   453→   453→            if (evt.type === 'progress') {
+   454→   454→              // Update thinking steps with real progress from server
+   455→   455→              setBuildSteps(prev => {
+   456→   456→                // Replace with server-provided step, keep last as fallback
+   457→   457→                if (prev.length <= 2) return [evt.step, 'Generating code...', 'Finalizing...']
+   458→   458→                return [prev[0], evt.step, ...prev.slice(2)]
+   459→   459→              })
+   460→   460→            } else if (evt.type === 'token') {
+   461→   461→              // REAL TOKEN STREAMING — accumulate in ref for throttled flush.
+   462→   462→              // We DON'T call setLivePreviewHtml here (would reload iframe on every token).
+   463→   463→              // The 200ms flush interval picks up the accumulated text.
+   464→   464→              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+   465→   465→              // Throttle setBuildSteps: only update the "Generating: N chars..." text
+   466→   466→              // when the char count crosses a 500-char threshold (not on every token).
+   467→   467→              // This prevents ~2000 setBuildSteps calls (each creating a new array) per build.
+   468→   468→              const totalLen = (evt.length ?? 0)
+   469→   469→              const lastUpdate = generatingCharsRef.current
+   470→   470→              if (totalLen - lastUpdate >= 500 || totalLen === 0) {
+   471→   471→                generatingCharsRef.current = totalLen
+   472→   472→                setBuildSteps(prev => {
+   473→   473→                  const last = prev[prev.length - 1]
+   474→   474→                  const newLast = `Generating: ${totalLen} chars...`
+   475→   475→                  if (last && last.startsWith('Generating:')) {
+   476→   476→                    return [...prev.slice(0, -1), newLast]
+   477→   477→                  }
+   478→   478→                  return [...prev, newLast]
+   479→   479→                })
+   480→   480→              }
+   481→   481→            } else if (evt.type === 'result') {
+   482→   482→              finalHtml = evt.html ?? ''
+   483→   483→              finalTokens = evt.tokens ?? 0
+   484→   484→              finalMs = evt.ms ?? 0
+   485→   485→              finalQuality = evt.quality ?? 0
+   486→   486→              finalMetrics = evt.metrics ?? ''
+   487→   487→            } else if (evt.type === 'error') {
+   488→   488→              streamError = evt.error ?? 'Unknown error'
+   489→   489→            }
+   490→   490→          } catch {
+   491→   491→            // Ignore malformed events
+   492→   492→          }
+   493→   493→        }
+   494→   494→      }
+   495→   495→
+   496→   496→      // Flush the decoder — any remaining bytes (incomplete multi-byte chars)
+   497→   497→      buffer += decoder.decode()
+   498→   498→      // Process any remaining complete event in the buffer
+   499→   499→      if (buffer.trim()) {
+   500→   500→        const normalized = buffer.replace(/\r\n/g, '\n')
+   501→   501→        const events = normalized.split('\n\n')
+   502→   502→        for (const eventStr of events) {
+   503→   503→          const dataLine = eventStr.trim()
+   504→   504→          if (!dataLine.startsWith('data: ')) continue
+   505→   505→          try {
+   506→   506→            const evt = JSON.parse(dataLine.slice(6))
+   507→   507→            if (evt.type === 'result') {
+   508→   508→              finalHtml = evt.html ?? ''
+   509→   509→              finalTokens = evt.tokens ?? 0
+   510→   510→              finalMs = evt.ms ?? 0
+   511→   511→              finalQuality = evt.quality ?? 0
+   512→   512→              finalMetrics = evt.metrics ?? ''
+   513→   513→            } else if (evt.type === 'error') {
+   514→   514→              streamError = evt.error ?? 'Unknown error'
+   515→   515→            }
+   516→   516→          } catch {}
+   517→   517→        }
+   518→   518→      }
+   519→   519→
+   520→   520→      if (streamError) {
+   521→   521→        fail(streamError)
+   522→   522→        return
+   523→   523→      }
+   524→   524→
+   525→   525→      if (!finalHtml) {
+   526→   526→        fail('Server returned empty HTML')
+   527→   527→        return
+   528→   528→      }
+   529→   529→
+   530→   530→      const buildResult: BuildResult = {
+   531→   531→        id: newBuildId(),
+   532→   532→        html: finalHtml,
+   533→   533→        tokens: finalTokens,
+   534→   534→        ms: finalMs,
+   535→   535→        mission: m,
+   536→   536→      }
+   537→   537→
+   538→   538→      setResult(buildResult)
+   539→   539→      resultRef.current = buildResult // Update ref synchronously
+   540→   540→      addBuildToHistory(buildResult)
+   541→   541→
+   542→   542→      toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
+   543→   543→      setQualityScore(finalQuality)
+   544→   544→      setQualityMetrics(finalMetrics)
+   545→   545→    } catch (err: unknown) {
+   546→   546→      // AbortError = user started a new build, loaded history, or navigated away; silently ignore
+   547→   547→      if (err instanceof DOMException && err.name === 'AbortError') return
+   548→   548→      const msg = err instanceof Error ? err.message : 'Network error'
+   549→   549→      fail(msg)
+   550→   550→    } finally {
+   551→   551→      // Only clear loading if this controller is still the active one
+   552→   552→      if (abortRef.current === controller) {
+   553→   553→        abortRef.current = null
+   554→   554→        setLoading(false)
+   555→   555→      }
+   556→   556→    }
+   557→   557→  }, [mission])
+   558→   558→
+   559→   559→  const loadFromHistory = useCallback((h: BuildResult) => {
+   560→   560→    // Abort any in-flight build or refine
+   561→   561→    abortRef.current?.abort()
+   562→   562→    abortRef.current = null
+   563→   563→    refineAbortRef.current?.abort()
+   564→   564→    refineAbortRef.current = null
+   565→   565→    setLoading(false)
+   566→   566→    setRefining(false)
+   567→   567→    setResult(h)
+   568→   568→    resultRef.current = h // Update ref synchronously so sendChat sees the correct result immediately
+   569→   569→    setMission(h.mission)
+   570→   570→    setError(null)
+   571→   571→    setFailedMission(null)
+   572→   572→    setChatMessages([])
+   573→   573→    // Reset all derived state so we don't show the previous build's badges/plan
+   574→   574→    setQualityScore(0)
+   575→   575→    setQualityMetrics('')
+   576→   576→    setPlanSummary(null)
+   577→   577→    setLivePreviewHtml(null)
+   578→   578→    setConfirmClear(false)
+   579→   579→  }, [])
+   580→   580→
+   581→   581→  const cancelBuild = useCallback(() => {
+   582→   582→    // Cancel only aborts the in-flight build — does NOT clear mission or result.
+   583→   583→    // The user keeps their mission text and the old preview (if any).
+   584→   584→    abortRef.current?.abort()
+   585→   585→    abortRef.current = null
+   586→   586→    setLoading(false)
+   587→   587→    setError(null)
+   588→   588→    setFailedMission(null)
+   589→   589→    setLivePreviewHtml(null) // Clear stale partial HTML so it doesn't flash back later
+   590→   590→  }, [])
+   591→   591→
+   592→   592→  // Cancel an in-flight refine — accessible via the toolbar Cancel button during refining.
+   593→   593→  // Previously, the Cancel button only appeared during loading, leaving no mouse-accessible
+   594→   594→  // way to cancel a refine (only Esc worked, which is not discoverable).
+   595→   595→  const cancelRefine = useCallback(() => {
+   596→   596→    refineAbortRef.current?.abort()
+   597→   597→    refineAbortRef.current = null
+   598→   598→    setRefining(false)
+   599→   599→    setLivePreviewHtml(null)
+   600→   600→  }, [])
+   601→   601→
+   602→   602→  // ═══ v3: Auto-fix function — sends runtime errors to LLM for automatic repair ═══
+   603→   603→  // Collects runtime errors + probe errors, sends them to /api/refine with a fix prompt,
+   604→   604→  // and replaces the result with the fixed HTML. This is the "auto-debug loop" that
+   605→   605→  // competitors like Replit use — NOVA can now do it too.
+   606→   606→  const autoFix = useCallback(async () => {
+   607→   607→    const currentResult = resultRef.current
+   608→   608→    if (!currentResult || autoFixing) return
+   609→   609→
+   610→   610→    const allErrors = [
+   611→   611→      ...runtimeErrors,
+   612→   612→      ...(probeResult?.errors || []),
+   613→   613→    ].slice(0, 10) // Limit to 10 errors
+   614→   614→
+   615→   615→    if (allErrors.length === 0) {
+   616→   616→      toast.info('No runtime errors found — the app looks healthy!')
+   617→   617→      return
+   618→   618→    }
+   619→   619→
+   620→   620→    setAutoFixing(true)
+   621→   621→    toast.info(`Auto-fixing ${allErrors.length} runtime error(s)...`)
+   622→   622→
+   623→   623→    // Build error list with stack traces for better LLM context
+   624→   624→    const errorList = allErrors.map((e, i) => {
+   625→   625→      const stack = e.stack ? `\n  Stack: ${e.stack.slice(0, 300)}` : ''
+   626→   626→      return `${i + 1}. [${e.type}]: ${e.msg}${stack}`
+   627→   627→    }).join('\n')
+   628→   628→
+   629→   629→    const fixMessage = `Fix these runtime errors:\n${errorList}\n\nThe app must work without these errors. Fix the root cause, not just the symptom. Test each fix mentally before writing it.`
+   630→   630→
+   631→   631→    refineAbortRef.current?.abort()
+   632→   632→    const controller = new AbortController()
+   633→   633→    refineAbortRef.current = controller
+   634→   634→    setLivePreviewHtml(null)
+   635→   635→    livePreviewAccumulatorRef.current = ''
+   636→   636→    setRuntimeErrors([])
+   637→   637→
+   638→   638→    try {
+   639→   639→      const res = await fetch('/api/refine', {
+   640→   640→        method: 'POST',
+   641→   641→        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+   642→   642→        body: JSON.stringify({
+   643→   643→          mission: currentResult.mission,
+   644→   644→          html: currentResult.html,
+   645→   645→          message: fixMessage,
+   646→   646→        }),
+   647→   647→        signal: controller.signal,
+   648→   648→      })
+   649→   649→
+   650→   650→      if (!res.ok) {
+   651→   651→        let errorMsg = `Server error (${res.status})`
+   652→   652→        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+   653→   653→        toast.error(errorMsg)
+   654→   654→        return
+   655→   655→      }
+   656→   656→
+   657→   657→      const refineCt = res.headers.get('content-type') ?? ''
+   658→   658→      if (!refineCt.includes('text/event-stream')) {
+   659→   659→        toast.error('Unexpected response from server')
+   660→   660→        return
+   661→   661→      }
+   662→   662→
+   663→   663→      // Read SSE stream (same pattern as sendChat)
+   664→   664→      const reader = res.body?.getReader()
+   665→   665→      if (!reader) { toast.error('No stream'); return }
+   666→   666→      const decoder = new TextDecoder()
+   667→   667→      let buffer = ''
+   668→   668→      let finalHtml = ''
+   669→   669→      let finalTokens = 0
+   670→   670→      let finalMs = 0
+   671→   671→      let finalQuality = 0
+   672→   672→      let finalMetrics = ''
+   673→   673→      let streamError: string | null = null
+   674→   674→
+   675→   675→      while (true) {
+   676→   676→        const { done, value } = await reader.read()
+   677→   677→        if (done) break
+   678→   678→        buffer += decoder.decode(value, { stream: true })
+   679→   679→        const normalized = buffer.replace(/\r\n/g, '\n')
+   680→   680→        const events = normalized.split('\n\n')
+   681→   681→        buffer = events.pop() ?? ''
+   682→   682→        for (const eventStr of events) {
+   683→   683→          const dataLine = eventStr.trim()
+   684→   684→          if (!dataLine.startsWith('data: ')) continue
+   685→   685→          try {
+   686→   686→            const evt = JSON.parse(dataLine.slice(6))
+   687→   687→            if (evt.type === 'token') {
+   688→   688→              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+   689→   689→            } else if (evt.type === 'result') {
+   690→   690→              finalHtml = evt.html ?? ''
+   691→   691→              finalTokens = evt.tokens ?? 0
+   692→   692→              finalMs = evt.ms ?? 0
+   693→   693→              finalQuality = evt.quality ?? 0
+   694→   694→              finalMetrics = evt.metrics ?? ''
+   695→   695→            } else if (evt.type === 'error') {
+   696→   696→              streamError = evt.error ?? 'Unknown error'
+   697→   697→            }
+   698→   698→          } catch {}
+   699→   699→        }
+   700→   700→      }
+   701→   701→
+   702→   702→      // Flush decoder
+   703→   703→      buffer += decoder.decode()
+   704→   704→      if (buffer.trim()) {
+   705→   705→        const normalized = buffer.replace(/\r\n/g, '\n')
+   706→   706→        const events = normalized.split('\n\n')
+   707→   707→        for (const eventStr of events) {
+   708→   708→          const dataLine = eventStr.trim()
+   709→   709→          if (!dataLine.startsWith('data: ')) continue
+   710→   710→          try {
+   711→   711→            const evt = JSON.parse(dataLine.slice(6))
+   712→   712→            if (evt.type === 'result') {
+   713→   713→              finalHtml = evt.html ?? ''
+   714→   714→              finalTokens = evt.tokens ?? 0
+   715→   715→              finalMs = evt.ms ?? 0
+   716→   716→              finalQuality = evt.quality ?? 0
+   717→   717→              finalMetrics = evt.metrics ?? ''
+   718→   718→            } else if (evt.type === 'error') {
+   719→   719→              streamError = evt.error ?? 'Unknown error'
+   720→   720→            }
+   721→   721→          } catch {}
+   722→   722→        }
+   723→   723→      }
+   724→   724→
+   725→   725→      if (streamError) {
+   726→   726→        toast.error(streamError)
+   727→   727→        return
+   728→   728→      }
+   729→   729→
+   730→   730→      if (!finalHtml) {
+   731→   731→        toast.error('Auto-fix returned empty response')
+   732→   732→        return
+   733→   733→      }
+   734→   734→
+   735→   735→      const fixedResult: BuildResult = {
+   736→   736→        ...currentResult,
+   737→   737→        id: newBuildId(),
+   738→   738→        html: finalHtml,
+   739→   739→        tokens: finalTokens,
+   740→   740→        ms: finalMs,
+   741→   741→      }
+   742→   742→      setResult(fixedResult)
+   743→   743→      resultRef.current = fixedResult
+   744→   744→      addBuildToHistory(fixedResult)
+   745→   745→      setQualityScore(finalQuality)
+   746→   746→      setQualityMetrics(finalMetrics)
+   747→   747→      setProbeResult(null) // Force re-probe
+   748→   748→      toast.success(`Fixed! ${finalMs ? `${(finalMs / 1000).toFixed(1)}s` : ''} · quality: ${finalQuality}`)
+   749→   749→    } catch (err: unknown) {
+   750→   750→      if (err instanceof DOMException && err.name === 'AbortError') return
+   751→   751→      const failMsg = err instanceof Error ? err.message : 'Network error'
+   752→   752→      toast.error(failMsg)
+   753→   753→    } finally {
+   754→   754→      if (refineAbortRef.current === controller) {
+   755→   755→        refineAbortRef.current = null
+   756→   756→        setAutoFixing(false)
+   757→   757→        setLivePreviewHtml(null)
+   758→   758→      }
+   759→   759→    }
+   760→   760→  }, [runtimeErrors, probeResult, autoFixing])
+   761→   761→
+   762→   762→  const reset = useCallback(() => {
+   763→   763→    // Reset clears everything — used by the "New" button.
+   764→   764→    // Abort BOTH in-flight build and refine to prevent phantom state mutations.
+   765→   765→    abortRef.current?.abort()
+   766→   766→    abortRef.current = null
+   767→   767→    refineAbortRef.current?.abort()
+   768→   768→    refineAbortRef.current = null
+   769→   769→    setLoading(false)
+   770→   770→    setRefining(false)
+   771→   771→    setResult(null)
+   772→   772→    setError(null)
+   773→   773→    setFailedMission(null)
+   774→   774→    setMission('')
+   775→   775→    setChatMessages([])
+   776→   776→    setQualityScore(0)
+   777→   777→    setQualityMetrics('')
+   778→   778→    setLivePreviewHtml(null)
+   779→   779→    setPlanSummary(null)
+   780→   780→    setConfirmClear(false)
+   781→   781→  }, [])
+   782→   782→
+   783→   783→  const retryFailed = useCallback(() => {
+   784→   784→    // If the user edited the textarea after the failure, use the edited mission.
+   785→   785→    // Otherwise, use the original failed mission.
+   786→   786→    const currentMission = mission.trim()
+   787→   787→    if (currentMission && currentMission !== failedMission) {
+   788→   788→      build(currentMission)
+   789→   789→    } else if (failedMission) {
+   790→   790→      build(failedMission)
+   791→   791→    }
+   792→   792→  }, [failedMission, build, mission])
+   793→   793→
+   794→   794→  const download = useCallback(() => {
+   795→   795→    if (!result?.html) return
+   796→   796→    const blob = new Blob([result.html], { type: 'text/html' })
+   797→   797→    const url = URL.createObjectURL(blob)
+   798→   798→    const a = document.createElement('a')
+   799→   799→    a.href = url
+   800→   800→    const filename = sanitizeFilename(result.mission)
+   801→   801→    a.download = filename
+   802→   802→    document.body.appendChild(a)
+   803→   803→    a.click()
+   804→   804→    document.body.removeChild(a)
+   805→   805→    // Delay revocation — Safari <16 and Firefox with large blobs read asynchronously.
+   806→   806→    // Revoking immediately can produce 0-byte files.
+   807→   807→    setTimeout(() => URL.revokeObjectURL(url), 1000)
+   808→   808→    toast.success(`Downloaded ${filename}`)
+   809→   809→  }, [result])
+   810→   810→
+   811→   811→  // Copy HTML to clipboard
+   812→   812→  const copyHtml = useCallback(async () => {
+   813→   813→    if (!result?.html) return
+   814→   814→    // Check if clipboard API is available (requires HTTPS or localhost)
+   815→   815→    if (!navigator.clipboard) {
+   816→   816→      toast.error('Clipboard requires HTTPS — try Download instead')
+   817→   817→      return
+   818→   818→    }
+   819→   819→    try {
+   820→   820→      await navigator.clipboard.writeText(result.html)
+   821→   821→      toast.success('HTML copied to clipboard')
+   822→   822→    } catch {
+   823→   823→      toast.error('Failed to copy — try downloading instead')
+   824→   824→    }
+   825→   825→  }, [result])
+   826→   826→
+   827→   827→  // Open the HTML in a new browser tab (full-screen preview)
+   828→   828→  const openInNewTab = useCallback(() => {
+   829→   829→    if (!result?.html) return
+   830→   830→    const blob = new Blob([result.html], { type: 'text/html' })
+   831→   831→    const url = URL.createObjectURL(blob)
+   832→   832→    const w = window.open(url, '_blank', 'noopener,noreferrer')
+   833→   833→    if (!w) {
+   834→   834→      // Popup blocker fired — tell the user instead of silently failing
+   835→   835→      toast.error('Popup blocked — allow popups for this site')
+   836→   836→      URL.revokeObjectURL(url)
+   837→   837→      return
+   838→   838→    }
+   839→   839→    // Revoke after 5min — enough time for the tab to load and be reloaded
+   840→   840→    setTimeout(() => URL.revokeObjectURL(url), 300_000)
+   841→   841→    toast.info('Opened in new tab')
+   842→   842→  }, [result])
+   843→   843→
+   844→   844→  // Chat refine: SSE streaming — same pattern as build/code
+   845→   845→  const sendChat = useCallback(async () => {
+   846→   846→    const msg = chatInput.trim()
+   847→   847→    const currentResult = resultRef.current
+   848→   848→    // Guard against both refining AND loading — defensive (UI also disables, but future
+   849→   849→    // refactors might remove the disabled attribute and this prevents a race).
+   850→   850→    if (!msg || refining || loading) return
+   851→   851→    if (!currentResult) {
+   852→   852→      toast.info('Build something first, then you can refine it')
+   853→   853→      return
+   854→   854→    }
+   855→   855→
+   856→   856→    const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
+   857→   857→    setChatMessages(prev => [...prev, userMsg])
+   858→   858→    // Don't clear chatInput yet — clear it only after the refine succeeds.
+   859→   859→    // If the refine fails, we restore the input so the user doesn't lose their message.
+   860→   860→    setRefining(true)
+   861→   861→
+   862→   862→    refineAbortRef.current?.abort()
+   863→   863→    const controller = new AbortController()
+   864→   864→    refineAbortRef.current = controller
+   865→   865→
+   866→   866→    // Clear live preview so refine starts fresh
+   867→   867→    setLivePreviewHtml(null)
+   868→   868→    livePreviewAccumulatorRef.current = '' // Clear accumulator for fresh refine
+   869→   869→
+   870→   870→    try {
+   871→   871→      const res = await fetch('/api/refine', {
+   872→   872→        method: 'POST',
+   873→   873→        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+   874→   874→        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg }),
+   875→   875→        signal: controller.signal,
+   876→   876→      })
+   877→   877→
+   878→   878→      if (!res.ok) {
+   879→   879→        let errorMsg = `Server error (${res.status})`
+   880→   880→        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+   881→   881→        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMsg}`, ts: Date.now() }])
+   882→   882→        toast.error(errorMsg)
+   883→   883→        return
+   884→   884→      }
+   885→   885→
+   886→   886→      // Verify the response is actually SSE — a proxy or CDN might return 200 with HTML
+   887→   887→      const refineCt = res.headers.get('content-type') ?? ''
+   888→   888→      if (!refineCt.includes('text/event-stream')) {
+   889→   889→        let errorMsg = 'Unexpected response from server'
+   890→   890→        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
+   891→   891→        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errorMsg}`, ts: Date.now() }])
+   892→   892→        toast.error(errorMsg)
+   893→   893→        return
+   894→   894→      }
+   895→   895→
+   896→   896→      // Read SSE stream
+   897→   897→      const reader = res.body?.getReader()
+   898→   898→      if (!reader) {
+   899→   899→        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: No stream', ts: Date.now() }])
+   900→   900→        return
+   901→   901→      }
+   902→   902→
+   903→   903→      const decoder = new TextDecoder()
+   904→   904→      let buffer = ''
+   905→   905→      let finalHtml = ''
+   906→   906→      let finalTokens = 0
+   907→   907→      let finalMs = 0
+   908→   908→      let finalQuality = 0
+   909→   909→      let finalMetrics = ''
+   910→   910→      let streamError: string | null = null
+   911→   911→
+   912→   912→      while (true) {
+   913→   913→        const { done, value } = await reader.read()
+   914→   914→        if (done) break
+   915→   915→
+   916→   916→        buffer += decoder.decode(value, { stream: true })
+   917→   917→        // Normalize \r\n to \n for proxy compatibility, then split on \n\n
+   918→   918→        const normalized = buffer.replace(/\r\n/g, '\n')
+   919→   919→        const events = normalized.split('\n\n')
+   920→   920→        buffer = events.pop() ?? ''
+   921→   921→
+   922→   922→        for (const eventStr of events) {
+   923→   923→          const dataLine = eventStr.trim()
+   924→   924→          if (!dataLine.startsWith('data: ')) continue
+   925→   925→          try {
+   926→   926→            const evt = JSON.parse(dataLine.slice(6))
+   927→   927→            if (evt.type === 'token') {
+   928→   928→              // Live token streaming — accumulate in ref for throttled flush (same as build)
+   929→   929→              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+   930→   930→            } else if (evt.type === 'result') {
+   931→   931→              finalHtml = evt.html ?? ''
+   932→   932→              finalTokens = evt.tokens ?? 0
+   933→   933→              finalMs = evt.ms ?? 0
+   934→   934→              finalQuality = evt.quality ?? 0
+   935→   935→              finalMetrics = evt.metrics ?? ''
+   936→   936→            } else if (evt.type === 'error') {
+   937→   937→              streamError = evt.error ?? 'Unknown error'
+   938→   938→            }
+   939→   939→          } catch {}
+   940→   940→        }
+   941→   941→      }
+   942→   942→
+   943→   943→      // Flush the decoder — any remaining bytes (incomplete multi-byte chars)
+   944→   944→      buffer += decoder.decode()
+   945→   945→      // Process any remaining complete event in the buffer
+   946→   946→      if (buffer.trim()) {
+   947→   947→        const normalized = buffer.replace(/\r\n/g, '\n')
+   948→   948→        const events = normalized.split('\n\n')
+   949→   949→        for (const eventStr of events) {
+   950→   950→          const dataLine = eventStr.trim()
+   951→   951→          if (!dataLine.startsWith('data: ')) continue
+   952→   952→          try {
+   953→   953→            const evt = JSON.parse(dataLine.slice(6))
+   954→   954→            if (evt.type === 'token') {
+   955→   955→              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+   956→   956→            } else if (evt.type === 'result') {
+   957→   957→              finalHtml = evt.html ?? ''
+   958→   958→              finalTokens = evt.tokens ?? 0
+   959→   959→              finalMs = evt.ms ?? 0
+   960→   960→              finalQuality = evt.quality ?? 0
+   961→   961→              finalMetrics = evt.metrics ?? ''
+   962→   962→            } else if (evt.type === 'error') {
+   963→   963→              streamError = evt.error ?? 'Unknown error'
+   964→   964→            }
+   965→   965→          } catch {}
+   966→   966→        }
+   967→   967→      }
+   968→   968→
+   969→   969→      if (streamError) {
+   970→   970→        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${streamError}`, ts: Date.now() }])
+   971→   971→        toast.error(streamError)
+   972→   972→        return
+   973→   973→      }
+   974→   974→
+   975→   975→      if (!finalHtml) {
+   976→   976→        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: Empty response', ts: Date.now() }])
+   977→   977→        return
+   978→   978→      }
+   979→   979→
+   980→   980→      const refinedResult: BuildResult = {
+   981→   981→        ...currentResult,
+   982→   982→        id: newBuildId(),
+   983→   983→        html: finalHtml,
+   984→   984→        tokens: finalTokens, // Update tokens so the header shows the refine's token count
+   985→   985→        ms: finalMs,         // Update ms so the header shows the refine's time
+   986→   986→      }
+   987→   987→      setResult(refinedResult)
+   988→   988→      resultRef.current = refinedResult // Update ref synchronously
+   989→   989→      addBuildToHistory(refinedResult)
+   990→   990→
+   991→   991→      setChatMessages(prev => [...prev, {
+   992→   992→        role: 'assistant',
+   993→   993→        content: `Updated! ${finalMs ? `${(finalMs / 1000).toFixed(1)}s` : ''} · ${finalTokens} tokens`,
+   994→   994→        ts: Date.now(),
+   995→   995→      }])
+   996→   996→
+   997→   997→      toast.success(`Refined! ${(finalMs / 1000).toFixed(1)}s · quality: ${finalQuality}`)
+   998→   998→      setQualityScore(finalQuality)
+   999→   999→      setQualityMetrics(finalMetrics)
+  1000→  1000→      setChatInput('') // Clear input only after success
+  1001→  1001→    } catch (err: unknown) {
+  1002→  1002→      if (err instanceof DOMException && err.name === 'AbortError') return
+  1003→  1003→      const failMsg = err instanceof Error ? err.message : 'Network error'
+  1004→  1004→      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
+  1005→  1005→      toast.error(failMsg)
+  1006→  1006→      // Restore the user's message so they can edit and retry — don't lose their input on error
+  1007→  1007→      setChatInput(msg)
+  1008→  1008→    } finally {
+  1009→  1009→      if (refineAbortRef.current === controller) {
+  1010→  1010→        refineAbortRef.current = null
+  1011→  1011→        setRefining(false)
+  1012→  1012→        setLivePreviewHtml(null) // clear live preview so final result shows
+  1013→  1013→      }
+  1014→  1014→    }
+  1015→  1015→  }, [chatInput, refining])
+  1016→  1016→
+  1017→  1017→  // Auto-scroll chat to bottom on new messages — but only if user is already near the bottom.
+  1018→  1018→  // Don't yank the scroll position if the user scrolled up to read history.
+  1019→  1019→  useEffect(() => {
+  1020→  1020→    const el = chatScrollRef.current
+  1021→  1021→    if (!el) return
+  1022→  1022→    // If user is within 40px of the bottom, auto-scroll. Otherwise, leave them where they are.
+  1023→  1023→    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  1024→  1024→    if (isNearBottom) {
+  1025→  1025→      el.scrollTop = el.scrollHeight
+  1026→  1026→    }
+  1027→  1027→  }, [chatMessages, refining])
+  1028→  1028→
+  1029→  1029→  // Keyboard shortcuts: Esc=cancel build/refine, ⌘S/Ctrl+S=download, ⌘N/Ctrl+N=new
+  1030→  1030→  useEffect(() => {
+  1031→  1031→    const onKey = (e: KeyboardEvent) => {
+  1032→  1032→      // Esc cancels a build or refine — but NOT when the user is focused in a text field.
+  1033→  1033→      // In text fields, Esc should clear the field (standard behavior), not cancel the build.
+  1034→  1034→      if (e.key === 'Escape' && (loading || refining)) {
+  1035→  1035→        const target = e.target as HTMLElement
+  1036→  1036→        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+  1037→  1037→        if (isTextField) return // Let the text field handle Esc (clear input)
+  1038→  1038→
+  1039→  1039→        e.preventDefault()
+  1040→  1040→        if (loading) {
+  1041→  1041→          cancelBuild()
+  1042→  1042→          toast.info('Build cancelled')
+  1043→  1043→        } else if (refining) {
+  1044→  1044→          cancelRefine()
+  1045→  1045→          toast.info('Refine cancelled')
+  1046→  1046→        }
+  1047→  1047→        return
+  1048→  1048→      }
+  1049→  1049→      // ⌘S / Ctrl+S downloads the current result — only preventDefault when we have a result
+  1050→  1050→      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+  1051→  1051→        if (result) {
+  1052→  1052→          e.preventDefault()
+  1053→  1053→          download()
+  1054→  1054→        }
+  1055→  1055→        return
+  1056→  1056→      }
+  1057→  1057→      // ⌘N / Ctrl+N starts a new build — only preventDefault when we'll actually handle it
+  1058→  1058→      // (don't block the browser's new-window shortcut during loading/refining)
+  1059→  1059→      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !loading && !refining) {
+  1060→  1060→        e.preventDefault()
+  1061→  1061→        reset()
+  1062→  1062→        return
+  1063→  1063→      }
+  1064→  1064→      // ? shows keyboard shortcuts help panel (only when not typing in a text field)
+  1065→  1065→      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+  1066→  1066→        const target = e.target as HTMLElement
+  1067→  1067→        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+  1068→  1068→        if (!isTextField) {
+  1069→  1069→          e.preventDefault()
+  1070→  1070→          setShowShortcuts(prev => !prev)
+  1071→  1071→          return
+  1072→  1072→        }
+  1073→  1073→      }
+  1074→  1074→      // Escape closes shortcuts panel if open
+  1075→  1075→      if (e.key === 'Escape' && showShortcuts) {
+  1076→  1076→        setShowShortcuts(false)
+  1077→  1077→        return
+  1078→  1078→      }
+  1079→  1079→    }
+  1080→  1080→    window.addEventListener('keydown', onKey)
+  1081→  1081→    return () => window.removeEventListener('keydown', onKey)
+  1082→  1082→  }, [loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts])
+  1083→  1083→
+  1084→  1084→  // Helper: get current thinking step text (DYNAMIC — from mission or plan)
+  1085→  1085→  const getThinkingText = useCallback(() => {
+  1086→  1086→    if (loading) {
+  1087→  1087→      return buildSteps[thinkingStep] ?? buildSteps[buildSteps.length - 1] ?? 'Building...'
+  1088→  1088→    }
+  1089→  1089→    if (refining) {
+  1090→  1090→      return REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'
+  1091→  1091→    }
+  1092→  1092→    return ''
+  1093→  1093→  }, [loading, refining, thinkingStep, buildSteps])
+  1094→  1094→
+  1095→  1095→  // Whether to show examples (only when no result, no error, not loading)
+  1096→  1096→  const showExamples = !result && !loading && !error
+  1097→  1097→  // Whether to show first-build error panel (no result, has error, not loading)
+  1098→  1098→  const showFirstError = !result && !!error && !loading
+  1099→  1099→
+  1100→  1100→  // Current build stage (stolen from TFA's StageRail concept)
+  1101→  1101→  const currentStage = loading || refining
+  1102→  1102→    ? getCurrentStage(elapsed, !!planSummary, !!livePreviewHtml, false)
+  1103→  1103→    : result
+  1104→  1104→      ? BUILD_STAGES[6]
+  1105→  1105→      : BUILD_STAGES[0]
+  1106→  1106→
+  1107→  1107→  return (
+  1108→  1108→    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading || refining}>
+  1109→  1109→      {/* Header */}
+  1110→  1110→      <header className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-3">
+  1111→  1111→        <div className="flex items-center gap-2">
+  1112→  1112→          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15">
+  1113→  1113→            <Sparkles className="h-4 w-4 text-primary" />
+  1114→  1114→          </div>
+  1115→  1115→          <div>
+  1116→  1116→            <h1 className="text-sm font-semibold">NOVA</h1>
+  1117→  1117→            <p className="text-[10px] text-muted-foreground">Describe it. Build it.</p>
+  1118→  1118→          </div>
+  1119→  1119→        </div>
+  1120→  1120→        <div className="flex items-center gap-3">
+  1121→  1121→          {/* v3: Theme selector — always visible, not just in showExamples */}
+  1122→  1122→          <div className="flex items-center gap-1">
+  1123→  1123→            <Palette className="h-3 w-3 text-muted-foreground/60" />
+  1124→  1124→            <div className="flex items-center gap-0.5">
+  1125→  1125→              {THEMES.map((theme) => (
+  1126→  1126→                <button
+  1127→  1127→                  key={theme.name}
+  1128→  1128→                  type="button"
+  1129→  1129→                  onClick={() => {
+  1130→  1130→                    setSelectedTheme(theme.name)
+  1131→  1131→                    try { localStorage.setItem('nova_theme', theme.name) } catch {}
+  1132→  1132→                    toast.info(`Theme: ${theme.name}`)
+  1133→  1133→                  }}
+  1134→  1134→                  className={`h-4 w-4 rounded-full border transition-transform hover:scale-125 ${
+  1135→  1135→                    selectedTheme === theme.name ? 'border-primary ring-1 ring-primary/30' : 'border-border/40'
+  1136→  1136→                  }`}
+  1137→  1137→                  style={{ background: theme.colors.bg }}
+  1138→  1138→                  title={`${theme.name} theme — bg: ${theme.colors.bg}, primary: ${theme.colors.primary}`}
+  1139→  1139→                  aria-label={`Select ${theme.name} theme`}
+  1140→  1140→                />
+  1141→  1141→              ))}
+  1142→  1142→            </div>
+  1143→  1143→          </div>
+  1144→  1144→          {(result || loading) && (
+  1145→  1145→            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+  1146→  1146→              {loading || !result ? (
+  1147→  1147→                <>
+  1148→  1148→                <Loader2 className="h-3 w-3 animate-spin" />
+  1149→  1149→                <span>
+  1150→  1150→                  {loading
+  1151→  1151→                    ? `${getThinkingText()} ${elapsed > 0 && `· ${elapsed}s`}`
+  1152→  1152→                    : 'Building...'}
+  1153→  1153→                </span>
+  1154→  1154→              </>
+  1155→  1155→            ) : (
+  1156→  1156→              <>
+  1157→  1157→                <Zap className="h-3 w-3" />
+  1158→  1158→                <span>{(result.ms / 1000).toFixed(1)}s · {formatTokens(result.tokens)} tokens</span>
+  1159→  1159→                {qualityScore > 0 && (
+  1160→  1160→                  <span className={`ml-1 rounded px-1 ${qualityScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`} title={qualityMetrics}>
+  1161→  1161→                    Q:{qualityScore}
+  1162→  1162→                  </span>
+  1163→  1163→                )}
+  1164→  1164→              </>
+  1165→  1165→            )}
+  1166→  1166→          </div>
+  1167→  1167→        )}
+  1168→  1168→        </div>
+  1169→  1169→      </header>
+  1170→  1170→
+  1171→  1171→      {/* Main */}
+  1172→  1172→      <main className={`flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row ${result ? '' : 'md:justify-center'}`}>
+  1173→  1173→        {/* Left panel: prompt + examples + history */}
+  1174→  1174→        <section className={`min-h-0 overflow-y-auto border-b border-border/40 p-4 md:border-b-0 md:border-r ${
+  1175→  1175→          result ? 'shrink-0 md:w-80' : 'flex-1 md:max-w-2xl'
+  1176→  1176→        }`}>
+  1177→  1177→          <label htmlFor="mission-input" className="mb-2 block text-xs font-medium text-muted-foreground">
+  1178→  1178→            What do you want to build?
+  1179→  1179→          </label>
+  1180→  1180→          <Textarea
+  1181→  1181→            id="mission-input"
+  1182→  1182→            // autoFocus only on desktop via useEffect (see missionInputRef).
+  1183→  1183→            // On mobile, autoFocus pops the on-screen keyboard on load — annoying.
+  1184→  1184→            autoFocus={false}
+  1185→  1185→            value={mission}
+  1186→  1186→            maxLength={2000}
+  1187→  1187→            onChange={(e) => setMission(e.target.value)}
+  1188→  1188→            onKeyDown={(e) => {
+  1189→  1189→              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+  1190→  1190→                e.preventDefault()
+  1191→  1191→                build()
+  1192→  1192→              }
+  1193→  1193→            }}
+  1194→  1194→            placeholder="Build a snake game with score and game-over..."
+  1195→  1195→            className="min-h-[120px] resize-none font-mono text-sm"
+  1196→  1196→          />
+  1197→  1197→          <div className="mt-1 flex items-center justify-between">
+  1198→  1198→            <span className="text-[10px] text-muted-foreground/40">
+  1199→  1199→              ⌘+Enter to build
+  1200→  1200→            </span>
+  1201→  1201→            <span className={`text-[10px] ${mission.length > 2000 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+  1202→  1202→              {mission.length}/2000
+  1203→  1203→            </span>
+  1204→  1204→          </div>
+  1205→  1205→          <Button
+  1206→  1206→            onClick={() => build()}
+  1207→  1207→            disabled={loading || refining || !mission.trim()}
+  1208→  1208→            className="mt-3 w-full gap-2"
+  1209→  1209→            size="lg"
+  1210→  1210→          >
+  1211→  1211→            {loading ? (
+  1212→  1212→              <>
+  1213→  1213→                <Loader2 className="h-4 w-4 animate-spin" />
+  1214→  1214→                Building...
+  1215→  1215→              </>
+  1216→  1216→            ) : (
+  1217→  1217→              <>
+  1218→  1218→                <Play className="h-4 w-4" />
+  1219→  1219→                Build
+  1220→  1220→              </>
+  1221→  1221→            )}
+  1222→  1222→          </Button>
+  1223→  1223→
+  1224→  1224→          {/* First-build loading (no prior result) — with StageRail stolen from TFA */}
+  1225→  1225→          {loading && !result && (
+  1226→  1226→            <div role="status" aria-live="polite" className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
+  1227→  1227→              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+  1228→  1228→                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+  1229→  1229→                <span className="font-medium text-foreground/80">
+  1230→  1230→                  {getThinkingText()}
+  1231→  1231→                </span>
+  1232→  1232→              </div>
+  1233→  1233→              {/* StageRail — visual progress bar (stolen from TFA Evolution Studio) */}
+  1234→  1234→              <div className="mt-3 flex items-center">
+  1235→  1235→                {BUILD_STAGES.map((stage, i) => {
+  1236→  1236→                  const done = i < BUILD_STAGES.indexOf(currentStage)
+  1237→  1237→                  const active = stage.key === currentStage.key
+  1238→  1238→                  const color = done || active ? 'bg-primary' : 'bg-muted-foreground/20'
+  1239→  1239→                  return (
+  1240→  1240→                    <div key={stage.key} className="flex flex-1 items-center">
+  1241→  1241→                      {i > 0 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
+  1242→  1242→                      <div className={`h-2.5 w-2.5 rounded-full ${color} ${active ? 'ring-2 ring-primary/30' : ''}`} title={stage.label} />
+  1243→  1243→                      {i < BUILD_STAGES.length - 1 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
+  1244→  1244→                    </div>
+  1245→  1245→                  )
+  1246→  1246→                })}
+  1247→  1247→              </div>
+  1248→  1248→              <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground/50">
+  1249→  1249→                {BUILD_STAGES.map(s => <span key={s.key}>{s.short}</span>)}
+  1250→  1250→              </div>
+  1251→  1251→              <div className="mt-2 flex items-center gap-2 pl-0">
+  1252→  1252→                <span className="text-[10px] text-muted-foreground/50">
+  1253→  1253→                  {elapsed > 0 && `${elapsed}s`}
+  1254→  1254→                  {elapsed > 60 && ' · taking longer than expected'}
+  1255→  1255→                  {planSummary && ` · ${planSummary}`}
+  1256→  1256→                  {livePreviewHtml && ` · ${livePreviewHtml.length} chars generated`}
+  1257→  1257→                </span>
+  1258→  1258→              </div>
+  1259→  1259→            </div>
+  1260→  1260→          )}
+  1261→  1261→
+  1262→  1262→          {/* First-build error (no prior result) */}
+  1263→  1263→          {showFirstError && (
+  1264→  1264→            <div role="alert" className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+  1265→  1265→              <div className="flex items-start gap-2">
+  1266→  1266→                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+  1267→  1267→                <div className="flex-1">
+  1268→  1268→                  <p className="text-xs text-destructive">{error}</p>
+  1269→  1269→                  <p className="mt-1 text-[10px] text-muted-foreground/60">
+  1270→  1270→                    The AI sometimes returns incomplete output. Try again, or simplify your request.
+  1271→  1271→                  </p>
+  1272→  1272→                  <Button
+  1273→  1273→                    onClick={retryFailed}
+  1274→  1274→                    variant="ghost"
+  1275→  1275→                    size="sm"
+  1276→  1276→                    className="mt-2 h-7 gap-1.5 text-xs"
+  1277→  1277→                  >
+  1278→  1278→                    <RotateCcw className="h-3 w-3" />
+  1279→  1279→                    Try again
+  1280→  1280→                  </Button>
+  1281→  1281→                </div>
+  1282→  1282→              </div>
+  1283→  1283→            </div>
+  1284→  1284→          )}
+  1285→  1285→
+  1286→  1286→          {/* Examples (only when no result, no error, not loading) */}
+  1287→  1287→          {showExamples && (
+  1288→  1288→            <div className="mt-4 space-y-1.5">
+  1289→  1289→              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+  1290→  1290→                Try one
+  1291→  1291→              </p>
+  1292→  1292→              {EXAMPLES.map((ex) => (
+  1293→  1293→                <button
+  1294→  1294→                  key={ex}
+  1295→  1295→                  type="button"
+  1296→  1296→                  onClick={() => {
+  1297→  1297→                    setMission(ex)
+  1298→  1298→                    build(ex)
+  1299→  1299→                  }}
+  1300→  1300→                  className="block w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10"
+  1301→  1301→                >
+  1302→  1302→                  {ex}
+  1303→  1303→                </button>
+  1304→  1304→              ))}
+  1305→  1305→            </div>
+  1306→  1306→          )}
+  1307→  1307→
+  1308→  1308→          {/* Theme selector is now in the header — always visible */}
+  1309→  1309→
+  1310→  1310→          {/* History */}
+  1311→  1311→          {history.length > 0 && (
+  1312→  1312→            <div className="mt-4 space-y-1.5">
+  1313→  1313→              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+  1314→  1314→                Recent
+  1315→  1315→              </p>
+  1316→  1316→              {history.map((h) => (
+  1317→  1317→                <button
+  1318→  1318→                  key={h.id}
+  1319→  1319→                  type="button"
+  1320→  1320→                  title={h.mission}
+  1321→  1321→                  onClick={() => loadFromHistory(h)}
+  1322→  1322→                  disabled={loading || refining}
+  1323→  1323→                  className="flex w-full items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+  1324→  1324→                >
+  1325→  1325→                  <Zap className="h-3 w-3 shrink-0 text-primary/40" />
+  1326→  1326→                  <span className="truncate">{h.mission}</span>
+  1327→  1327→                </button>
+  1328→  1328→              ))}
+  1329→  1329→              {confirmClear ? (
+  1330→  1330→                <div className="flex gap-1.5">
+  1331→  1331→                  <button
+  1332→  1332→                    type="button"
+  1333→  1333→                    onClick={() => {
+  1334→  1334→                      setHistory([])
+  1335→  1335→                      historyRef.current = [] // Sync ref so addBuildToHistory doesn't use stale data
+  1336→  1336→                      try { localStorage.removeItem('nova_history') } catch {}
+  1337→  1337→                      setConfirmClear(false)
+  1338→  1338→                      toast.success('History cleared')
+  1339→  1339→                    }}
+  1340→  1340→                    disabled={loading || refining}
+  1341→  1341→                    className="flex-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/20 disabled:opacity-50"
+  1342→  1342→                  >
+  1343→  1343→                    Confirm
+  1344→  1344→                  </button>
+  1345→  1345→                  <button
+  1346→  1346→                    type="button"
+  1347→  1347→                    onClick={() => setConfirmClear(false)}
+  1348→  1348→                    disabled={loading || refining}
+  1349→  1349→                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent disabled:opacity-50"
+  1350→  1350→                  >
+  1351→  1351→                    Cancel
+  1352→  1352→                  </button>
+  1353→  1353→                </div>
+  1354→  1354→              ) : (
+  1355→  1355→                <button
+  1356→  1356→                  type="button"
+  1357→  1357→                  onClick={() => setConfirmClear(true)}
+  1358→  1358→                  disabled={loading || refining}
+  1359→  1359→                  className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
+  1360→  1360→                >
+  1361→  1361→                  Clear history
+  1362→  1362→                </button>
+  1363→  1363→              )}
+  1364→  1364→            </div>
+  1365→  1365→          )}
+  1366→  1366→        </section>
+  1367→  1367→
+  1368→  1368→        {/* Right panel: preview — shown when there's a result OR a build/refine in progress.
+  1369→  1369→            This is critical for first build: without this, the live-preview iframe (NOVA's
+  1370→  1370→            breakthrough feature) doesn't render at all until the build completes. */}
+  1371→  1371→        {(result || loading) && (
+  1372→  1372→          <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+  1373→  1373→            {/* Error banner (rebuild failed, but keep old preview visible) */}
+  1374→  1374→            {error && (
+  1375→  1375→              <div role="alert" className="flex shrink-0 items-center justify-between gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
+  1376→  1376→                <div className="flex min-w-0 items-center gap-2">
+  1377→  1377→                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+  1378→  1378→                  <span className="truncate text-xs text-destructive">Rebuild failed: {error}</span>
+  1379→  1379→                </div>
+  1380→  1380→                <div className="flex shrink-0 items-center gap-1">
+  1381→  1381→                  <Button size="sm" variant="ghost" className="h-6 gap-1 text-[11px] text-destructive" onClick={retryFailed}>
+  1382→  1382→                    <RotateCcw className="h-3 w-3" />
+  1383→  1383→                    Retry
+  1384→  1384→                  </Button>
+  1385→  1385→                  <button
+  1386→  1386→                    type="button"
+  1387→  1387→                    onClick={() => setError(null)}
+  1388→  1388→                    className="text-destructive/60 transition-colors hover:text-destructive"
+  1389→  1389→                    aria-label="Dismiss error"
+  1390→  1390→                  >
+  1391→  1391→                    <X className="h-3.5 w-3.5" />
+  1392→  1392→                  </button>
+  1393→  1393→                </div>
+  1394→  1394→              </div>
+  1395→  1395→            )}
+  1396→  1396→
+  1397→  1397→            {/* Toolbar */}
+  1398→  1398→            <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-2">
+  1399→  1399→              <div className="flex min-w-0 items-center gap-2">
+  1400→  1400→                {(loading || refining) && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />}
+  1401→  1401→                <p className="truncate text-xs text-muted-foreground">
+  1402→  1402→                  {loading && !result ? 'Building...' : loading ? 'Rebuilding...' : refining ? 'Refining...' : result?.mission ?? ''}
+  1403→  1403→                </p>
+  1404→  1404→              </div>
+  1405→  1405→              <div className="flex shrink-0 items-center gap-1">
+  1406→  1406→                {/* Responsive preview toggle */}
+  1407→  1407→                <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
+  1408→  1408→                  <button
+  1409→  1409→                    type="button"
+  1410→  1410→                    onClick={() => setPreviewWidth('full')}
+  1411→  1411→                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'full' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+  1412→  1412→                    title="Full width"
+  1413→  1413→                    aria-label="Full width preview"
+  1414→  1414→                  >Full</button>
+  1415→  1415→                  <button
+  1416→  1416→                    type="button"
+  1417→  1417→                    onClick={() => setPreviewWidth('desktop')}
+  1418→  1418→                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'desktop' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+  1419→  1419→                    title="Desktop (1280px)"
+  1420→  1420→                    aria-label="Desktop width preview"
+  1421→  1421→                  >D</button>
+  1422→  1422→                  <button
+  1423→  1423→                    type="button"
+  1424→  1424→                    onClick={() => setPreviewWidth('tablet')}
+  1425→  1425→                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'tablet' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+  1426→  1426→                    title="Tablet (768px)"
+  1427→  1427→                    aria-label="Tablet width preview"
+  1428→  1428→                  >T</button>
+  1429→  1429→                  <button
+  1430→  1430→                    type="button"
+  1431→  1431→                    onClick={() => setPreviewWidth('mobile')}
+  1432→  1432→                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${previewWidth === 'mobile' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+  1433→  1433→                    title="Mobile (375px)"
+  1434→  1434→                    aria-label="Mobile width preview"
+  1435→  1435→                  >M</button>
+  1436→  1436→                </div>
+  1437→  1437→                {qualityScore > 0 && (
+  1438→  1438→                  <button
+  1439→  1439→                    type="button"
+  1440→  1440→                    onClick={() => setShowCodeAnalysis(!showCodeAnalysis)}
+  1441→  1441→                    className={`rounded-md px-2 py-1 text-[10px] transition-colors ${showCodeAnalysis ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+  1442→  1442→                    title="Toggle code analysis"
+  1443→  1443→                  >
+  1444→  1444→                    Q:{qualityScore}
+  1445→  1445→                  </button>
+  1446→  1446→                )}
+  1447→  1447→                {/* v3: Runtime errors badge — red if errors found, green if clean */}
+  1448→  1448→                {result && !loading && !refining && (
+  1449→  1449→                  <button
+  1450→  1450→                    type="button"
+  1451→  1451→                    onClick={() => setShowRuntimeErrors(!showRuntimeErrors)}
+  1452→  1452→                    className={`rounded-md px-2 py-1 text-[10px] flex items-center gap-1 transition-colors ${
+  1453→  1453→                      runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)
+  1454→  1454→                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+  1455→  1455→                        : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+  1456→  1456→                    }`}
+  1457→  1457→                    title={runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)
+  1458→  1458→                      ? `${runtimeErrors.length + (probeResult?.errors.length || 0)} runtime error(s) found — click to view`
+  1459→  1459→                      : 'No runtime errors detected'
+  1460→  1460→                    }
+  1461→  1461→                  >
+  1462→  1462→                    {runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) ? (
+  1463→  1463→                      <><Bug className="h-3 w-3" />{runtimeErrors.length + (probeResult?.errors.length || 0)}</>
+  1464→  1464→                    ) : (
+  1465→  1465→                      <><CheckCircle2 className="h-3 w-3" /></>
+  1466→  1466→                    )}
+  1467→  1467→                  </button>
+  1468→  1468→                )}
+  1469→  1469→                {/* v3: Auto-fix button — appears when runtime errors are found */}
+  1470→  1470→                {result && !loading && !refining && !autoFixing && (runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)) && (
+  1471→  1471→                  <Button
+  1472→  1472→                    size="sm"
+  1473→  1473→                    variant="ghost"
+  1474→  1474→                    className="h-7 gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10"
+  1475→  1475→                    onClick={autoFix}
+  1476→  1476→                    title="Automatically fix runtime errors using AI"
+  1477→  1477→                  >
+  1478→  1478→                    <Bug className="h-3.5 w-3.5" />
+  1479→  1479→                    Auto-fix
+  1480→  1480→                  </Button>
+  1481→  1481→                )}
+  1482→  1482→                {autoFixing && (
+  1483→  1483→                  <span className="flex items-center gap-1 text-[10px] text-amber-400">
+  1484→  1484→                    <Loader2 className="h-3 w-3 animate-spin" />
+  1485→  1485→                    Fixing...
+  1486→  1486→                  </span>
+  1487→  1487→                )}
+  1488→  1488→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
+  1489→  1489→                  <Copy className="h-3.5 w-3.5" />
+  1490→  1490→                  Copy
+  1491→  1491→                </Button>
+  1492→  1492→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={openInNewTab} disabled={!result || loading} title="Open in new tab">
+  1493→  1493→                  <ExternalLink className="h-3.5 w-3.5" />
+  1494→  1494→                  Open
+  1495→  1495→                </Button>
+  1496→  1496→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result} title="Download HTML file">
+  1497→  1497→                  <Download className="h-3.5 w-3.5" />
+  1498→  1498→                  Download
+  1499→  1499→                </Button>
+  1500→  1500→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining} title="Rebuild from scratch">
+  1501→  1501→                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+  1502→  1502→                  Rebuild
+  1503→  1503→                </Button>
+  1504→  1504→                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : refining ? cancelRefine : reset} title={loading ? 'Cancel build' : refining ? 'Cancel refine' : 'Start new'}>
+  1505→  1505→                  {(loading || refining) ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+  1506→  1506→                  {(loading || refining) ? 'Cancel' : 'New'}
+  1507→  1507→                </Button>
+  1508→  1508→              </div>
+  1509→  1509→            </div>
+  1510→  1510→
+  1511→  1511→            {/* Chat panel */}
+  1512→  1512→            <div className="flex shrink-0 flex-col border-b border-border/40 max-h-[200px]">
+  1513→  1513→              {/* Chat messages — role=log + aria-live so screen readers announce new messages */}
+  1514→  1514→              <div ref={chatScrollRef} role="log" aria-live="polite" aria-atomic="false" className="max-h-[120px] overflow-y-auto px-4 py-2">
+  1515→  1515→                {chatMessages.length === 0 ? (
+  1516→  1516→                  <p className="text-[10px] text-muted-foreground/40">
+  1517→  1517→                    <MessageSquare className="mr-1 inline h-3 w-3" />
+  1518→  1518→                    Ask NOVA to change something — "make it blue", "add dark mode", "add a high score"
+  1519→  1519→                  </p>
+  1520→  1520→                ) : (
+  1521→  1521→                  <div className="space-y-1.5">
+  1522→  1522→                    {chatMessages.map((m, i) => (
+  1523→  1523→                      <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+  1524→  1524→                        <div className={`max-w-[80%] rounded-md px-2 py-1 text-[11px] ${
+  1525→  1525→                          m.role === 'user'
+  1526→  1526→                            ? 'bg-primary/15 text-foreground'
+  1527→  1527→                            : m.content.startsWith('Error:')
+  1528→  1528→                              ? 'bg-destructive/10 text-destructive'
+  1529→  1529→                              : 'bg-muted/40 text-muted-foreground'
+  1530→  1530→                        }`}>
+  1531→  1531→                          {m.content}
+  1532→  1532→                        </div>
+  1533→  1533→                      </div>
+  1534→  1534→                    ))}
+  1535→  1535→                    {refining && (
+  1536→  1536→                      <div className="flex items-center gap-2">
+  1537→  1537→                        <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
+  1538→  1538→                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+  1539→  1539→                          <span className="text-[11px] text-muted-foreground">
+  1540→  1540→                            {getThinkingText()}
+  1541→  1541→                          </span>
+  1542→  1542→                        </div>
+  1543→  1543→                      </div>
+  1544→  1544→                    )}
+  1545→  1545→                  </div>
+  1546→  1546→                )}
+  1547→  1547→              </div>
+  1548→  1548→              {/* Chat input */}
+  1549→  1549→              <div className="flex items-center gap-1.5 border-t border-border/40 p-2">
+  1550→  1550→                <input
+  1551→  1551→                  type="text"
+  1552→  1552→                  value={chatInput}
+  1553→  1553→                  onChange={(e) => setChatInput(e.target.value)}
+  1554→  1554→                  onKeyDown={(e) => {
+  1555→  1555→                    if (e.key === 'Enter' && !e.shiftKey) {
+  1556→  1556→                      e.preventDefault()
+  1557→  1557→                      sendChat()
+  1558→  1558→                    }
+  1559→  1559→                  }}
+  1560→  1560→                  placeholder="Ask NOVA to change something..."
+  1561→  1561→                  disabled={refining || loading}
+  1562→  1562→                  maxLength={2000}
+  1563→  1563→                  className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none disabled:opacity-50"
+  1564→  1564→                />
+  1565→  1565→                <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={sendChat} disabled={refining || loading || !chatInput.trim()}>
+  1566→  1566→                  {refining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+  1567→  1567→                </Button>
+  1568→  1568→              </div>
+  1569→  1569→            </div>
+  1570→  1570→
+  1571→  1571→            {/* v3: Runtime errors panel — shows runtime errors with auto-fix option */}
+  1572→  1572→            {showRuntimeErrors && result && (
+  1573→  1573→              <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2 max-h-[200px] overflow-y-auto">
+  1574→  1574→                <div className="mb-2 flex items-center justify-between">
+  1575→  1575→                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Runtime Errors</p>
+  1576→  1576→                  {runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) ? (
+  1577→  1577→                    <button
+  1578→  1578→                      type="button"
+  1579→  1579→                      onClick={autoFix}
+  1580→  1580→                      disabled={autoFixing || loading || refining}
+  1581→  1581→                      className="flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-400 hover:bg-amber-500/30 disabled:opacity-50"
+  1582→  1582→                    >
+  1583→  1583→                      {autoFixing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bug className="h-3 w-3" />}
+  1584→  1584→                      {autoFixing ? 'Fixing...' : 'Auto-fix all'}
+  1585→  1585→                    </button>
+  1586→  1586→                  ) : null}
+  1587→  1587→                </div>
+  1588→  1588→                {runtimeErrors.length === 0 && (!probeResult || probeResult.errors.length === 0) ? (
+  1589→  1589→                  <div className="flex items-center gap-2 text-[11px] text-emerald-400">
+  1590→  1590→                    <CheckCircle2 className="h-3.5 w-3.5" />
+  1591→  1591→                    <span>No runtime errors detected. The app runs cleanly.</span>
+  1592→  1592→                    {probeResult && (
+  1593→  1593→                      <span className="text-muted-foreground/60">
+  1594→  1594→                        ({probeResult.buttonsClicked} buttons clicked, {probeResult.inputsTested} inputs tested
+  1595→  1595→                        {probeResult.gameKeysDispatched ? ', arrow keys dispatched' : ''})
+  1596→  1596→                      </span>
+  1597→  1597→                    )}
+  1598→  1598→                  </div>
+  1599→  1599→                ) : (
+  1600→  1600→                  <div className="space-y-1">
+  1601→  1601→                    {/* Live runtime errors from postMessage */}
+  1602→  1602→                    {runtimeErrors.map((err, i) => (
+  1603→  1603→                      <div key={`live-${i}`} className="flex items-start gap-2 text-[11px]">
+  1604→  1604→                        <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-red-400" />
+  1605→  1605→                        <div className="min-w-0 flex-1">
+  1606→  1606→                          <span className="text-red-400">[{err.type}]</span>
+  1607→  1607→                          {err.line > 0 && <span className="text-muted-foreground"> line {err.line}:{err.col}</span>}
+  1608→  1608→                          <span className="text-foreground/80"> {err.msg}</span>
+  1609→  1609→                        </div>
+  1610→  1610→                      </div>
+  1611→  1611→                    ))}
+  1612→  1612→                    {/* Probe errors (from interaction testing) */}
+  1613→  1613→                    {probeResult?.errors.map((err, i) => (
+  1614→  1614→                      <div key={`probe-${i}`} className="flex items-start gap-2 text-[11px]">
+  1615→  1615→                        <Bug className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+  1616→  1616→                        <div className="min-w-0 flex-1">
+  1617→  1617→                          <span className="text-amber-400">[{err.type}]</span>
+  1618→  1618→                          {err.line > 0 && <span className="text-muted-foreground"> line {err.line}:{err.col}</span>}
+  1619→  1619→                          <span className="text-foreground/80"> {err.msg}</span>
+  1620→  1620→                        </div>
+  1621→  1621→                      </div>
+  1622→  1622→                    ))}
+  1623→  1623→                  </div>
+  1624→  1624→                )}
+  1625→  1625→              </div>
+  1626→  1626→            )}
+  1627→  1627→
+  1628→  1628→            {/* Code analysis panel — collapsible, shows quality metrics breakdown */}
+  1629→  1629→            {showCodeAnalysis && qualityMetrics && (
+  1630→  1630→              <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2">
+  1631→  1631→                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">Code Analysis</p>
+  1632→  1632→                <p className="text-[11px] text-muted-foreground font-mono">{qualityMetrics}</p>
+  1633→  1633→                {qualityScore > 0 && (
+  1634→  1634→                  <div className="mt-1.5 flex items-center gap-2">
+  1635→  1635→                    <div className="flex-1 h-1.5 rounded-full bg-muted-foreground/20 overflow-hidden">
+  1636→  1636→                      <div
+  1637→  1637→                        className={`h-full transition-all ${qualityScore >= 70 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+  1638→  1638→                        style={{ width: `${qualityScore}%` }}
+  1639→  1639→                      />
+  1640→  1640→                    </div>
+  1641→  1641→                    <span className={`text-[10px] font-mono ${qualityScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>
+  1642→  1642→                      {qualityScore}/100
+  1643→  1643→                    </span>
+  1644→  1644→                  </div>
+  1645→  1645→                )}
+  1646→  1646→              </div>
+  1647→  1647→            )}
+  1648→  1648→
+  1649→  1649→            {/* Preview iframe — single iframe handles both live preview and final result.
+  1650→  1650→                During build/refine, srcDoc shows livePreviewHtml (partial HTML as tokens arrive).
+  1651→  1651→                When idle, srcDoc shows the final result.html.
+  1652→  1652→                bg-neutral-950 prevents white flash before the LLM's CSS loads.
+  1653→  1653→                The preview wrapper centers the iframe when a specific width is selected. */}
+  1654→  1654→            <div className="relative min-h-0 flex-1 bg-neutral-950 overflow-auto">
+  1655→  1655→              {/* Loading overlay (shown when building/refining and no live preview yet) */}
+  1656→  1656→              {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
+  1657→  1657→                <div role="status" aria-live="polite" className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+  1658→  1658→                  <div className="flex flex-col items-center gap-3 text-neutral-400">
+  1659→  1659→                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  1660→  1660→                    <p className="text-xs font-medium text-foreground/80">
+  1661→  1661→                      {getThinkingText()}
+  1662→  1662→                    </p>
+  1663→  1663→                    <div className="flex gap-1">
+  1664→  1664→                      {buildSteps.map((_, i) => (
+  1665→  1665→                        <div
+  1666→  1666→                          key={i}
+  1667→  1667→                          className={`h-1 rounded-full transition-all ${
+  1668→  1668→                            i <= thinkingStep ? 'w-3 bg-primary' : 'w-1 bg-muted-foreground/20'
+  1669→  1669→                          }`}
+  1670→  1670→                        />
+  1671→  1671→                      ))}
+  1672→  1672→                    </div>
+  1673→  1673→                    {elapsed > 0 && <p className="text-[10px] text-muted-foreground/50">{elapsed}s</p>}
+  1674→  1674→                  </div>
+  1675→  1675→                </div>
+  1676→  1676→              )}
+  1677→  1677→              {/* Responsive preview wrapper — centers iframe when a specific width is selected */}
+  1678→  1678→              <div className={`flex min-h-full ${previewWidth === 'full' ? 'w-full' : 'justify-center pt-4 pb-4'}`}>
+  1679→  1679→                <iframe
+  1680→  1680→                  key={result?.id ?? 'loading'}
+  1681→  1681→                  srcDoc={(loading || refining) && livePreviewHtml ? injectCsp(livePreviewHtml) : (result?.html ?? '')}
+  1682→  1682→                  title="Preview"
+  1683→  1683→                  sandbox="allow-scripts"
+  1684→  1684→                  className={`h-full border-0 bg-neutral-950 transition-all ${
+  1685→  1685→                    previewWidth === 'full' ? 'w-full' :
+  1686→  1686→                    previewWidth === 'desktop' ? 'w-[1280px] max-w-full' :
+  1687→  1687→                    previewWidth === 'tablet' ? 'w-[768px] max-w-full' :
+  1688→  1688→                    'w-[375px] max-w-full'
+  1689→  1689→                  }`}
+  1690→  1690→                  style={previewWidth !== 'full' ? { minHeight: 'calc(100% - 2rem)' } : undefined}
+  1691→  1691→                />
+  1692→  1692→              </div>
+  1693→  1693→            </div>
+  1694→  1694→          </section>
+  1695→  1695→        )}
+  1696→  1696→      </main>
+  1697→  1697→
+  1698→  1698→      {/* Keyboard shortcuts help panel — press ? to toggle */}
+  1699→  1699→      {showShortcuts && (
+  1700→  1700→        <div
+  1701→  1701→          role="dialog"
+  1702→  1702→          aria-label="Keyboard shortcuts"
+  1703→  1703→          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+  1704→  1704→          onClick={() => setShowShortcuts(false)}
+  1705→  1705→        >
+  1706→  1706→          <div
+  1707→  1707→            className="w-full max-w-md rounded-lg border border-border/40 bg-card p-6 shadow-xl"
+  1708→  1708→            onClick={(e) => e.stopPropagation()}
+  1709→  1709→          >
+  1710→  1710→            <div className="mb-4 flex items-center justify-between">
+  1711→  1711→              <h2 className="text-sm font-semibold">Keyboard Shortcuts</h2>
+  1712→  1712→              <button
+  1713→  1713→                type="button"
+  1714→  1714→                onClick={() => setShowShortcuts(false)}
+  1715→  1715→                className="text-muted-foreground hover:text-foreground"
+  1716→  1716→                aria-label="Close shortcuts"
+  1717→  1717→              >
+  1718→  1718→                <X className="h-4 w-4" />
+  1719→  1719→              </button>
+  1720→  1720→            </div>
+  1721→  1721→            <div className="space-y-2">
+  1722→  1722→              {[
+  1723→  1723→                { keys: ['⌘', 'Enter'], label: 'Build the app' },
+  1724→  1724→                { keys: ['⌘', 'S'], label: 'Download HTML file' },
+  1725→  1725→                { keys: ['⌘', 'N'], label: 'Start a new build' },
+  1726→  1726→                { keys: ['Esc'], label: 'Cancel build/refine' },
+  1727→  1727→                { keys: ['?'], label: 'Show/hide this help' },
+  1728→  1728→              ].map((shortcut) => (
+  1729→  1729→                <div key={shortcut.label} className="flex items-center justify-between">
+  1730→  1730→                  <span className="text-xs text-muted-foreground">{shortcut.label}</span>
+  1731→  1731→                  <div className="flex gap-1">
+  1732→  1732→                    {shortcut.keys.map((k) => (
+  1733→  1733→                      <kbd key={k} className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-foreground">
+  1734→  1734→                        {k}
+  1735→  1735→                      </kbd>
+  1736→  1736→                    ))}
+  1737→  1737→                  </div>
+  1738→  1738→                </div>
+  1739→  1739→              ))}
+  1740→  1740→            </div>
+  1741→  1741→          </div>
+  1742→  1742→        </div>
+  1743→  1743→      )}
+  1744→  1744→
+  1745→  1745→      {/* Footer */}
+  1746→  1746→      <footer className="mt-auto shrink-0 border-t border-border/40 px-4 py-2">
+  1747→  1747→        <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
+  1748→  1748→          <span>NOVA · prompt-to-app</span>
+  1749→  1749→          <span className="hidden sm:inline">
+  1750→  1750→            <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
+  1751→  1751→            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
+  1752→  1752→            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+N</kbd> new ·
+  1753→  1753→            <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel ·
+  1754→  1754→            <kbd className="ml-1 rounded border border-border/40 px-1">?</kbd> help
+  1755→  1755→          </span>
+  1756→  1756→          <span className="sm:hidden">⌘+Enter to build</span>
+  1757→  1757→        </div>
+  1758→  1758→      </footer>
+  1759→  1759→    </div>
+  1760→  1760→  )
+  1761→  1761→}
+  1762→  1762→
