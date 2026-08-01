@@ -1,101 +1,196 @@
-# NOVA — Describe it. Build it.
+# NOVA — Prompt-to-App Generator
 
-A prompt-to-iframe generator. Type what you want to build, an LLM generates a complete single-file HTML app, you see it in a sandboxed preview, and you can download it.
+> Describe it. Build it. NOVA generates a working, single-file HTML app from a natural language prompt — with live token streaming, runtime error detection, auto-fix loop, and cross-build memory.
 
-## Quick start
+## Features
+
+### Core
+- **Prompt-to-HTML** — Type what you want, get a complete working HTML app
+- **Live token streaming** — Watch the code appear character by character
+- **Two-stage pipeline** — Architect (plan) → Coder (generate) with real-time progress
+- **Sandboxed preview** — Strict CSP, null-origin iframe (no access to parent storage)
+- **Chat refine** — Ask NOVA to change anything ("make it blue", "add dark mode")
+
+### Quality Pipeline
+- **Static analysis** — Catches 10+ bug types before the user sees them (missing IDs, undefined functions, infinite loops, uncleared intervals, JSON.parse without try/catch, missing await, empty listeners)
+- **Interaction probe** — Clicks buttons, types in inputs, checks DOM state changes
+- **Auto-fix loop** — Automatically fixes runtime errors (up to 3 iterations)
+- **Quality scoring** — 0-100 score based on HTML structure, functions, CSS, listeners
+
+### Resilience
+- **SSE recovery** — If the stream drops, polls the server for the result
+- **Circuit breaker** — Disables failing models after consecutive failures
+- **Graceful degradation** — Architect failure doesn't block the build (proceeds without plan)
+- **Client-side timeout** — Detects half-open connections (90s)
+
+### Memory
+- **Cross-build memory** — IndexedDB cache for instant rebuild (0ms vs 30-60s)
+- **Similar builds** — Shows "⚡ Similar builds from memory" as you type
+- **History** — Last 10 builds in localStorage
+
+### UI
+- **Dark/light mode** — Toggle for the NOVA UI itself
+- **10 color themes** — Slate, midnight, ocean, forest, sunset, amber, rose, violet, emerald, cyan
+- **Responsive preview** — Full / Desktop (1280px) / Tablet (768px) / Mobile (375px)
+- **Pipeline progress** — Visual stage tracker (Plan → Code → Analyze → Validate → Done)
+- **Diff view** — Compare current build with previous (line-based LCS diff)
+- **Multi-file viewer** — File tree + syntax highlighting for Python/React/Node output
+- **ZIP download** — Download multi-file output as a real ZIP (dependency-free encoder)
+
+### LLM Backends
+- **Z.AI** — Primary model (fast, ~30-50s per build)
+- **Kimi K3** — Free reasoning model via TokenRouter (slower but sometimes higher quality)
+- **Automatic fallback** — If one fails, the other takes over
+
+## Tech Stack
+
+- **Next.js 16** with App Router + Turbopack
+- **TypeScript 5** (strict mode)
+- **Tailwind CSS 4** with shadcn/ui (New York style)
+- **Z.AI SDK** — Primary LLM backend
+- **TokenRouter** — Kimi K3 (OpenAI-compatible, free)
+- **IndexedDB** — Cross-build memory cache
+- **SSE** — Server-Sent Events for real-time streaming
+
+## Quick Start
 
 ```bash
-# 1. Install dependencies
+# Install dependencies
 bun install
 
-# 2. Copy env file
+# Set up environment variables
 cp .env.example .env
+# Edit .env and add your API keys:
+#   ZAI_API_KEY=your-z-ai-key (usually pre-configured)
+#   TOKENROUTER_API_KEY=your-tokenrouter-key (for Kimi K3)
 
-# 3. Start the dev server
+# Push database schema (if using Prisma)
+bun run db:push
+
+# Start development server
 bun run dev
+
+# Open http://localhost:3000
 ```
 
-The app runs on port 3000. Use the **Preview Panel** in the Z.ai interface to view it (do not navigate to `http://localhost:3000` directly — it's internal). Click **Open in New Tab** above the Preview Panel if you want a separate browser tab.
+## Environment Variables
 
-## What it does
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ZAI_API_KEY` | Yes* | Z.AI SDK API key (usually pre-configured in sandbox) |
+| `TOKENROUTER_API_KEY` | No | TokenRouter API key for Kimi K3 (free tier available) |
 
-1. Type a mission (e.g., "Build a snake game with score and game-over")
-2. Click Build (or press ⌘+Enter / Ctrl+Enter)
-3. Wait 20-60 seconds — the LLM writes a complete HTML app
-4. See it live in a sandboxed iframe preview
-5. Download the HTML file, or rebuild with a fresh generation
+*In the Z.ai sandbox, the Z.AI SDK is pre-configured and doesn't need an explicit key.
 
-## Architecture
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `bun run dev` | Start dev server on port 3000 |
+| `bun run build` | Production build |
+| `bun run start` | Start production server |
+| `bun run lint` | Run ESLint |
+| `bun test` | Run all tests |
+| `bun run db:push` | Push Prisma schema to database |
+
+## Project Structure
 
 ```
 src/
-  app/
-    api/build/route.ts   — POST handler: validate → LLM → return HTML with CSP injected
-    layout.tsx           — Root layout, dark theme, ErrorBoundary, Toaster, viewport
-    page.tsx             — Single-page UI: textarea + preview + history
-    globals.css          — Tailwind + prefers-reduced-motion
-  components/
-    ErrorBoundary.tsx    — Catches render errors, shows fallback with error ID
-    ui/                  — shadcn/ui components (pre-installed)
-  lib/
-    llm.ts               — LLM wrapper, mission validation, CSP injection, HTML sanity check
-    rate-limit.ts        — RateLimiter class (per-IP sliding window, in-memory)
-    logger.ts            — Structured JSON logger with LOG_LEVEL filtering
-    utils.ts             — cn() helper
-tests/
-  llm.test.ts            — validateMission, stripCodeFences, looksLikeHtml
-  csp.test.ts            — injectCsp
-  rate-limit.test.ts     — RateLimiter
-  rate-limit-concurrency.test.ts — RateLimiter edge cases
-  build-route.test.ts    — POST /api/build with mocked llmChat
-  build-id.test.ts       — newBuildId uniqueness
-  edge-cases.test.ts     — fence/HTML edge cases
-  edge-cases-2.test.ts   — more edge cases
-  cycle-8.test.ts        — injectCsp case-insensitivity, logger, filename
-  cycle-9.test.ts        — 4+ backticks, logger levels, defensive CSP
-  cycle-10.test.ts       — non-html language fences, extended control chars
+├── app/
+│   ├── api/
+│   │   ├── build/
+│   │   │   ├── architect/route.ts   # Stage 1: Plan generation
+│   │   │   ├── code/route.ts        # Stage 2: Code generation (SSE)
+│   │   │   └── result/route.ts      # Polling fallback endpoint
+│   │   └── refine/route.ts          # Chat-driven refinement (SSE)
+│   ├── layout.tsx                   # Root layout with ThemeProvider
+│   └── page.tsx                     # Main UI (prompt, preview, chat)
+├── components/
+│   ├── ui/                          # shadcn/ui components
+│   ├── theme-toggle.tsx             # Dark/light toggle
+│   ├── file-viewer.tsx              # Multi-file code viewer
+│   ├── diff-viewer.tsx              # Build comparison view
+│   ├── pipeline-progress.tsx        # Stage progress tracker
+│   └── preview-error-boundary.tsx   # Error boundary for preview
+├── lib/
+│   ├── llm.ts                       # Z.AI SDK wrapper
+│   ├── tokenrouter.ts               # Kimi K3 wrapper
+│   ├── model-circuit-breaker.ts     # Failure tracking + cooldown
+│   ├── llm-fallback.ts              # Multi-model fallback executor
+│   ├── build-store.ts               # In-memory result store (SSE recovery)
+│   ├── build-memory.ts              # IndexedDB cache
+│   ├── sse-reader.ts                # Shared SSE reading utility
+│   ├── golden-templates.ts          # Pre-built app templates
+│   ├── static-analysis.ts           # Bug detection engine
+│   ├── interaction-probe.ts         # Runtime testing
+│   ├── error-recovery.ts            # Smart error messages
+│   ├── multi-file.ts                # Multi-file output parsing
+│   ├── diff.ts                      # LCS diff engine
+│   ├── zip.ts                       # ZIP encoder (no deps)
+│   └── ...                          # Other utilities
+└── tests/                           # 726 tests, 0 failures
 ```
 
-## Commands
+## Testing
 
-| Command | Description |
-|---|---|
-| `bun run dev` | Start dev server on port 3000 |
-| `bun run lint` | Run ESLint |
-| `bun run test` | Run unit tests (235 tests) |
-| `npx tsc --noEmit` | Type check |
+```bash
+# Run all tests
+bun test
 
-## Security
+# Run specific test file
+bun test tests/static-analysis.test.ts
 
-- **Sandboxed iframe**: `sandbox="allow-scripts"` — no `allow-same-origin`, so the iframe gets an opaque origin and cannot access parent DOM, cookies, or localStorage.
-- **CSP injection**: A `Content-Security-Policy` meta tag is injected into the LLM-generated HTML before it reaches the iframe. This blocks external network requests (`connect-src 'none'`), external scripts, external stylesheets, etc.
-- **Rate limiting**: 10 builds/hour in production, 100/hour in development (per IP, in-memory, resets on server restart).
-- **Request body size limit**: 10KB max (413 response if exceeded).
-- **Mission validation**: Length (3-500 chars), no control characters (including DEL and extended control chars).
-- **Error sanitization**: LLM SDK errors are never leaked to the client — human-friendly messages only.
-- **Abort support**: Client disconnects abort the server-side LLM call via `request.signal`.
+# Run with parallelism
+bun test --parallel
+```
 
-## Environment variables
+**Current status: 726 tests, 0 failures, 1269 assertions**
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | `file:./db/custom.db` | SQLite path (unused by NOVA v1 core, required by scaffold) |
-| `LOG_LEVEL` | `info` (dev), `warn` (prod) | Log level: `debug`, `info`, `warn`, `error` |
-| `NODE_ENV` | — | Set by Next.js. Affects rate limit and log level defaults |
+## Architecture
 
-## Limitations
+### Build Pipeline
 
-- No database — history is stored in localStorage (last 10 builds, per-browser).
-- No authentication — single-user sandbox.
-- No streaming — the build is synchronous (one fetch, one response).
-- No multi-file output — the LLM returns one complete HTML file.
-- In-memory rate limiting resets on server restart.
+```
+User types mission
+       ↓
+[Architect] → Plan (JSON with features, colors, layout)
+       ↓
+[Coder] → HTML (streamed token-by-token via SSE)
+       ↓
+[Static Analysis] → Bug detection (missing IDs, undefined functions, etc.)
+       ↓  (if bugs found, retry with hints)
+[Validation] → Quality score (0-100)
+       ↓
+[CSP + Runtime Error Capture] → Injected into HTML
+       ↓
+[Result Store] → Saved for polling fallback
+       ↓
+[IndexedDB Cache] → Saved for instant rebuild
+       ↓
+[Probe] → Clicks buttons, checks state changes
+       ↓  (if errors found)
+[Auto-fix Loop] → Sends errors to LLM, repeats up to 3×
+```
 
-## Tech stack
+### SSE Recovery
 
-- Next.js 16 (App Router)
-- TypeScript 5
-- Tailwind CSS 4
-- shadcn/ui (New York style)
-- z-ai-web-dev-sdk (LLM provider)
-- bun test (unit tests)
+If the SSE stream drops (gateway timeout, proxy limit):
+
+```
+Client detects stream end without result
+       ↓
+Polls GET /api/build/result?id=xxx (3 attempts, 3s apart)
+       ↓
+Server returns stored result from in-memory Map
+       ↓
+Client receives result → same as if SSE worked
+```
+
+## License
+
+MIT — Build anything, share everything.
+
+## Credits
+
+Built with [Z.ai](https://z.ai) — AI-powered development.
