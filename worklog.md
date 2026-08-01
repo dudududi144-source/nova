@@ -3204,3 +3204,52 @@ Verification:
 - Total new code: ~1,716 LOC across 4 component files + ~2,146 LOC across 8 test files = ~3,862 LOC
 
 Each component follows NOVA conventions: 'use client' directive, file-header comment explaining purpose, well-documented TypeScript interfaces (FileEntry, Stage, StageKey, Token, TokenType, Props/State), graceful fallbacks for browser API failures (clipboard, download, Blob, URL.createObjectURL wrapped in try-catch), defensive type coercion, exhaustive enum handling, and accessibility attributes (role, aria-label, aria-expanded, aria-valuenow).
+
+---
+Task ID: 133-138
+Agent: main (Z.ai Code)
+Task: Restore ALL lost files + verify everything + prepare for GitHub.
+
+ROOT CAUSE:
+The project was reset between sessions — all files from cycles v3-v5 were lost:
+- 9 lib modules (multi-file, golden-templates, error-recovery, diff, zip, build-memory, tokenrouter, sse-reader, llm-fallback)
+- 4 components (file-viewer, diff-viewer, pipeline-progress, preview-error-boundary)
+- 8 test files (317 tests)
+- Total lost: ~7,600 LOC
+
+RESTORATION:
+1. Subagent restored 9 lib modules (~3,770 LOC)
+2. Subagent restored 4 components + 8 test files (~3,862 LOC, 317 new tests)
+3. Main agent verified integration:
+   - build-store + circuit-breaker already integrated in code/route.ts
+   - build-store integrated in refine/route.ts
+   - Client polling fallback in page.tsx
+   - Architect graceful degradation
+   - ThemeToggle in layout + page
+
+VERIFICATION:
+- Tests: 726 pass, 0 fail, 1269 assertions (was 409 → +317 tests restored)
+- Lint: 0 errors, 3 warnings
+- TypeScript: 0 errors
+- Z.AI build: Q:100, 661 lines, 13 functions, no runtime errors ✅
+- buildstore.registered + buildstore.stored ✅
+- ThemeToggle visible ✅
+- No hydration errors ✅
+
+GITHUB PREPARATION:
+- .gitignore created (excludes node_modules, .next, .env, logs, uploads)
+- README.md created (professional, comprehensive)
+- .env.example created
+- Backup ZIP created: download/nova-final-20260801-233506.zip (242KB)
+- Git commit created with full changelog
+
+PENDING:
+- User needs to provide GitHub credentials (username, API token, repo name)
+- The credentials file was mentioned but not found in uploads
+- Once received: create repo, push, deploy
+
+FILE INVENTORY:
+- Lib: 27 files
+- Components: 7 files (ErrorBoundary, theme-toggle, file-viewer, diff-viewer, pipeline-progress, preview-error-boundary, ui/)
+- Tests: 36 files (726 tests)
+- API routes: 4 (architect, code, refine, result)
