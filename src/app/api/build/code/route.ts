@@ -21,6 +21,9 @@ import { checkPlanAdherence } from '@/lib/plan-adherence'
 import { analyzeHtml } from '@/lib/static-analysis'
 import { registerBuild, storeResult, storeError } from '@/lib/build-store'
 import { recordSuccess, recordFailure } from '@/lib/model-circuit-breaker'
+import { findTemplate, buildSeededPrompt } from '@/lib/golden-templates'
+import { parseOutput } from '@/lib/multi-file'
+import { isTokenRouterConfigured, tokenRouterStream } from '@/lib/tokenrouter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -151,9 +154,17 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('code.started', { ip, mission: mission.slice(0, 80), hasPlan: !!plan })
 
+  // v10: Golden template seeding — find a matching template and use it as starting point
+  const template = findTemplate(mission)
+  if (template) {
+    logger.info('code.template_seeded', { ip, template: template.id })
+  }
+
   const planContext = plan
     ? `Plan:\n${JSON.stringify(plan, null, 2)}\n\nMission: ${mission}`
-    : `Mission: ${mission}`
+    : template
+      ? buildSeededPrompt(mission, template)
+      : `Mission: ${mission}`
 
   // Create SSE stream with keepalive
   const encoder = new TextEncoder()
@@ -379,11 +390,22 @@ export async function POST(request: NextRequest): Promise<Response> {
         logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: html.length, score: validation.score, metrics: metrics.summary })
         recordSuccess('z-ai')
 
+        // v10: Multi-file support — parse output for files array
+        const multiFileResult = parseOutput(html)
+        const resultData: Record<string, unknown> = {
+          type: 'result', html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary,
+        }
+        if (multiFileResult.files.length > 1 || multiFileResult.type !== 'html-app') {
+          resultData.files = multiFileResult.files
+          resultData.outputType = multiFileResult.type
+          resultData.previewable = multiFileResult.previewable
+        }
+
         // v10: Store result for polling fallback
         storeResult(buildId, { html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })
 
         // Send the final result with quality score and metrics
-        safeEnqueue(`data: ${JSON.stringify({ type: 'result', html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`)
+        safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
         safeClose()
       } catch (err: unknown) {
         if (keepAliveInterval) clearInterval(keepAliveInterval)
