@@ -19,6 +19,8 @@ import { generateDesignTokens, DESIGN_TOKENS_INSTRUCTION } from '@/lib/design-to
 import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
 import { checkPlanAdherence } from '@/lib/plan-adherence'
 import { analyzeHtml } from '@/lib/static-analysis'
+import { registerBuild, storeResult, storeError } from '@/lib/build-store'
+import { recordSuccess, recordFailure } from '@/lib/model-circuit-breaker'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -157,6 +159,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const encoder = new TextEncoder()
   const startTime = Date.now()
 
+  // v10: Generate build ID for polling fallback (SSE recovery)
+  const buildId = `build_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  registerBuild(buildId)
+
   const stream = new ReadableStream({
     async start(controller) {
       let keepAliveInterval: ReturnType<typeof setInterval> | null = null
@@ -185,6 +191,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           controller.close()
         } catch {}
       }
+
+      // v10: Send buildId to client immediately (for polling fallback)
+      safeEnqueue(`data: ${JSON.stringify({ type: 'buildId', buildId })}\n\n`)
 
       // Send keepalive progress events every 3 seconds
       // This prevents proxy/browser timeout during long LLM calls
@@ -368,6 +377,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         // ── INTELLIGENCE: Quality metrics ──
         const metrics = analyzeQuality(html)
         logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: html.length, score: validation.score, metrics: metrics.summary })
+        recordSuccess('z-ai')
+
+        // v10: Store result for polling fallback
+        storeResult(buildId, { html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })
 
         // Send the final result with quality score and metrics
         safeEnqueue(`data: ${JSON.stringify({ type: 'result', html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`)
@@ -378,8 +391,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         // Don't log AbortError as an error — it's a normal cancellation (client disconnect or cancel)
         if (err instanceof DOMException && err.name === 'AbortError') {
           logger.info('code.aborted', { ip })
+          storeError(buildId, 'Build was cancelled')
         } else {
           logger.error('code.exception', { ip, error: errorMsg })
+          storeError(buildId, errorMsg)
+          recordFailure('z-ai', errorMsg)
           // Only send error to client if it wasn't an abort (client may already be gone)
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`)
         }

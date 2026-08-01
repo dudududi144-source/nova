@@ -11,6 +11,7 @@ import { formatTokens, BUILD_STAGES, getCurrentStage } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
 import { probeApp, type ProbeResult } from '@/lib/interaction-probe'
 import { THEMES } from '@/lib/design-tokens'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 interface BuildResponse {
   ok: boolean
@@ -87,6 +88,8 @@ export default function Home() {
   const [autoFixing, setAutoFixing] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // v10: Build ID for polling fallback (SSE recovery)
+  const buildIdRef = useRef<string | null>(null)
   const refineAbortRef = useRef<AbortController | null>(null)
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
   // This prevents build from being re-created on every result change (every build).
@@ -352,6 +355,8 @@ export default function Home() {
 
     // Helper: set error state consistently (replaces 6 repeated blocks)
     const fail = (msg: string) => {
+      // v10: Don't call fail() if this build was aborted (a new build started)
+      if (controller.signal.aborted) return
       setError(msg)
       setFailedMission(m)
       if (!resultRef.current) toast.error(msg)
@@ -463,6 +468,9 @@ export default function Home() {
                 if (prev.length <= 2) return [evt.step, 'Generating code...', 'Finalizing...']
                 return [prev[0], evt.step, ...prev.slice(2)]
               })
+            } else if (evt.type === 'buildId') {
+              // v10: Save build ID for polling fallback
+              buildIdRef.current = evt.buildId
             } else if (evt.type === 'token') {
               // REAL TOKEN STREAMING — accumulate in ref for throttled flush.
               // We DON'T call setLivePreviewHtml here (would reload iframe on every token).
@@ -528,8 +536,41 @@ export default function Home() {
         return
       }
 
+      // v10: Polling fallback — if SSE dropped without a result, try polling the server
+      if (!finalHtml && buildIdRef.current) {
+        console.log('[NOVA] SSE stream dropped, polling for result...', { buildId: buildIdRef.current })
+        try {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            await new Promise(r => setTimeout(r, 3000))
+            if (controller.signal.aborted) return
+            const pollRes = await fetch(`/api/build/result?id=${encodeURIComponent(buildIdRef.current!)}`, {
+              signal: controller.signal,
+            })
+            if (pollRes.ok) {
+              const pollData = await pollRes.json()
+              if (pollData.status === 'completed' && pollData.html) {
+                finalHtml = pollData.html
+                finalTokens = pollData.tokens ?? 0
+                finalMs = pollData.ms ?? 0
+                finalQuality = pollData.quality ?? 0
+                finalMetrics = pollData.metrics ?? ''
+                break
+              } else if (pollData.status === 'failed') {
+                fail(pollData.error || 'Build failed on server')
+                return
+              }
+            }
+          }
+        } catch (pollErr) {
+          if (!(pollErr instanceof DOMException && pollErr.name === 'AbortError')) {
+            console.error('[NOVA] Poll failed:', String(pollErr))
+          }
+        }
+        if (controller.signal.aborted) return
+      }
+
       if (!finalHtml) {
-        fail('Server returned empty HTML')
+        fail('Server returned empty HTML. The build may have timed out.')
         return
       }
 
@@ -649,6 +690,7 @@ export default function Home() {
           mission: currentResult.mission,
           html: currentResult.html,
           message: fixMessage,
+          theme: selectedTheme,
         }),
         signal: controller.signal,
       })
@@ -826,6 +868,7 @@ export default function Home() {
             mission: current.mission,
             html: current.html,
             message: fixMessage,
+            theme: selectedTheme,
           }),
           signal: controller.signal,
         })
@@ -1022,7 +1065,7 @@ export default function Home() {
       const res = await fetch('/api/refine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg }),
+        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg, theme: selectedTheme }),
         signal: controller.signal,
       })
 
@@ -1292,6 +1335,8 @@ export default function Home() {
               ))}
             </div>
           </div>
+          {/* v10: Dark/light mode toggle for NOVA UI */}
+          <ThemeToggle />
           {(result || loading) && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               {loading || !result ? (

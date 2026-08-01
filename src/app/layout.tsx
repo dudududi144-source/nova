@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ThemeProvider } from "next-themes";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,14 +31,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // v1 is dark-only. No theme toggle. Keeps things simple and honest.
+  // v10: Added ThemeProvider for dark/light mode toggle
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <ErrorBoundary>{children}</ErrorBoundary>
-        <Toaster theme="dark" position="top-right" />
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          <ErrorBoundary>{children}</ErrorBoundary>
+          <Toaster position="top-right" />
+        </ThemeProvider>
         <noscript>
           <div style={{ padding: '2rem', textAlign: 'center', color: '#e2e8f0', fontFamily: 'monospace' }}>
             <h1>NOVA requires JavaScript</h1>

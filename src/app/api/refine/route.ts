@@ -17,6 +17,7 @@ import { validateOutput, estimateTokenBudget, analyzeQuality } from '@/lib/build
 import { generateDesignTokens } from '@/lib/design-tokens'
 import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
 import { analyzeHtml } from '@/lib/static-analysis'
+import { registerBuild, storeResult, storeError } from '@/lib/build-store'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -62,12 +63,13 @@ interface RefineBody {
   mission?: unknown
   html?: unknown
   message?: unknown
+  theme?: unknown  // v10 fix: accept theme from request
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
   const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10)
   if (contentLength > MAX_BODY_BYTES) {
-    return Response.json({ ok: false, error: 'Request body too large (max 50KB)' }, { status: 413 })
+    return Response.json({ ok: false, error: 'Request body too large (max 200KB)' }, { status: 413 })
   }
 
   let body: RefineBody
@@ -104,6 +106,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const encoder = new TextEncoder()
   const startTime = Date.now()
 
+  // v10: Generate build ID for polling fallback
+  const buildId = `refine_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  registerBuild(buildId)
+
   const stream = new ReadableStream({
     async start(controller) {
       let keepAliveInterval: ReturnType<typeof setInterval> | null = null
@@ -126,6 +132,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         controllerClosed = true
         try { controller.close() } catch {}
       }
+
+      // v10: Send buildId to client for polling fallback
+      safeEnqueue(`data: ${JSON.stringify({ type: 'buildId', buildId })}\n\n`)
 
       keepAliveInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - startTime) / 1000)
@@ -215,7 +224,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         // ═══ POST-PROCESSING: Inject design tokens, CSP, and runtime error capture (same as code route) ═══
-        const designTokens = generateDesignTokens('slate') // TODO: accept theme from request
+        // v10 fix: use theme from request (was hardcoded 'slate')
+        const VALID_THEMES = new Set(['slate', 'midnight', 'ocean', 'forest', 'sunset', 'amber', 'rose', 'violet', 'emerald', 'cyan'])
+        const themeName = typeof body?.theme === 'string' && VALID_THEMES.has(body.theme) ? body.theme : 'slate'
+        const designTokens = generateDesignTokens(themeName)
         let finalHtml = rawHtml
         const headMatch = finalHtml.match(/<head[^>]*>/i)
         if (headMatch) {
@@ -285,6 +297,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         const metrics = analyzeQuality(finalHtml)
         logger.info('refine.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: finalHtml.length, score: validation.score, metrics: metrics.summary })
 
+        // v10: Store result for polling fallback
+        storeResult(buildId, { html: finalHtml, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })
+
         safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: finalHtml, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })}\n\n`)
         safeClose()
       } catch (err: unknown) {
@@ -292,8 +307,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error'
         if (err instanceof DOMException && err.name === 'AbortError') {
           logger.info('refine.aborted', { ip })
+          storeError(buildId, 'Refine was cancelled')
         } else {
           logger.error('refine.exception', { ip, error: errorMsg })
+          storeError(buildId, errorMsg)
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`)
         }
         safeClose()

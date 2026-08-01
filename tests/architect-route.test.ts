@@ -73,14 +73,16 @@ describe('POST /api/build/architect', () => {
     expect(data.ms).toBe(2000)
   })
 
-  it('returns 502 when LLM fails', async () => {
+  it('returns 200 with null plan when LLM fails (graceful degradation)', async () => {
+    // v10: architect no longer returns 502 — it returns 200 with plan:null
     mockLlmChat.mockImplementation(async () => ({
       ok: false, text: '', tokens: 0, ms: 100, error: 'LLM error',
     }))
     const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(200)
     const data = await res.json()
-    expect(data.error).toBe('LLM error')
+    expect(data.ok).toBe(true)
+    expect(data.plan).toBeNull()
   })
 
   it('handles malformed JSON from LLM gracefully', async () => {

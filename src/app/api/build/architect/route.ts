@@ -73,7 +73,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   if (!result.ok) {
     logger.error('architect.failed', { ip, error: result.error, ms: result.ms })
-    return Response.json({ ok: false, error: result.error ?? 'Architect failed' }, { status: 502 })
+    // v10: Don't return 502 — return 200 with plan:null so the code route can proceed without a plan.
+    // This prevents 502 errors from blocking the entire build.
+    return Response.json({ ok: true, plan: null, tokens: 0, ms: 0, warning: 'Architect skipped — proceeding without plan' })
   }
 
   // Parse the plan — use brace-balanced extraction (more robust than indexOf/lastIndexOf).
