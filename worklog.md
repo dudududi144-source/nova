@@ -3375,3 +3375,33 @@ SUMMARY:
 - No fixed patterns: each app is completely unique ✅
 - 0 errors across all tests ✅
 - 726 tests pass ✅
+
+---
+Task ID: 215-218
+Agent: main (Z.ai Code)
+Task: E2E verification — weather dashboard + refine
+
+E2E TEST:
+
+Build: "Build a weather forecast dashboard with 5-day forecast, hourly temperature chart, air quality index, and city search"
+- Model: Z.AI
+- Result: Q:100, 1299 lines, 18 functions, 46KB
+- App name: "London" (weather for London)
+- Features: city search, 5-day forecast, hourly temperature, air quality, sun & moon
+- 0 runtime errors, 0 console errors
+
+Refine: "add a weather radar visualization and severe weather alerts panel"
+- Result: Q:100, 1702 lines, 23 functions, 59KB
+- Added: "Weather Radar" heading + "Severe Weather Alerts" heading
+- buildstore.stored for refine ✅
+- 0 runtime errors
+
+VERIFICATION:
+- No old examples anywhere (tip calc, BMI, snake, todo — all gone) ✅
+- No dual progress display ✅
+- No stream timeout (180s timeout works) ✅
+- Theme selector: 10 colorful gradient circles ✅
+- Single unified progress display ✅
+- 726 tests pass ✅
+- 0 TypeScript errors ✅
+- 0 lint errors ✅
