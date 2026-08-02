@@ -1480,7 +1480,7 @@ export default function Home() {
           {/* v3: Theme selector — always visible, not just in showExamples */}
           <div className="flex items-center gap-1">
             <Palette className="h-3 w-3 text-muted-foreground/60" />
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
               {THEMES.map((theme) => (
                 <button
                   key={theme.name}
@@ -1490,11 +1490,11 @@ export default function Home() {
                     try { localStorage.setItem('nova_theme', theme.name) } catch {}
                     toast.info(`Theme: ${theme.name}`)
                   }}
-                  className={`h-4 w-4 rounded-full border transition-transform hover:scale-125 ${
-                    selectedTheme === theme.name ? 'border-primary ring-1 ring-primary/30' : 'border-border/40'
+                  className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-125 ${
+                    selectedTheme === theme.name ? 'border-white ring-2 ring-primary/50' : 'border-border/40'
                   }`}
-                  style={{ background: theme.colors.bg }}
-                  title={`${theme.name} theme — bg: ${theme.colors.bg}, primary: ${theme.colors.primary}`}
+                  style={{ background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.accent})` }}
+                  title={`${theme.name} theme — primary: ${theme.colors.primary}, accent: ${theme.colors.accent}`}
                   aria-label={`Select ${theme.name} theme`}
                 />
               ))}
