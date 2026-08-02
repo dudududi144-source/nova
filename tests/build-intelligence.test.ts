@@ -11,8 +11,8 @@ describe('enrichMission', () => {
   it('detects snake/game missions', () => {
     const result = enrichMission('Build a snake game')
     expect(result.detectedType).toBe('game')
-    expect(result.hints).toContain('Use HTML5 Canvas for rendering')
-    expect(result.hints).toContain('Game loop with requestAnimationFrame at 10-15 FPS')
+    // v10: hints are now generic (not snake-specific) — LLM decides the approach
+    expect(result.hints.length).toBeGreaterThan(0)
     expect(result.enriched).toContain('Implementation hints')
   })
 

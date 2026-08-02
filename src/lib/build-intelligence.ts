@@ -24,17 +24,14 @@ export function enrichMission(mission: string): EnrichedMission {
   const hints: string[] = []
   let detectedType = 'app'
 
-  if (lower.includes('snake') || lower.includes('game')) {
-    // Note: card games, word games, text adventures also match 'game' — that's fine.
-    // The snake-specific hints (canvas, grid movement) may not apply to all games,
-    // but the architect LLM adapts based on the mission text.
+  if (lower.includes('game') || lower.includes('play')) {
+    // v10 fix: Don't prescribe snake-specific hints for all games.
+    // Let the LLM decide the best approach based on the actual game type.
     detectedType = 'game'
-    hints.push('Use HTML5 Canvas for rendering')
-    hints.push('Game loop with requestAnimationFrame at 10-15 FPS')
-    hints.push('Grid-based movement (e.g., 20x20 cells)')
-    hints.push('Arrow keys for direction, prevent reverse')
-    hints.push('Score display, food collision, growing mechanic')
-    hints.push('Game-over screen with restart button')
+    hints.push('Choose the best rendering method (Canvas, DOM, or SVG) based on the game type')
+    hints.push('Implement smooth gameplay with appropriate input methods')
+    hints.push('Show score/status clearly')
+    hints.push('Include start and game-over states')
   } else if (lower.includes('todo') || lower.includes('task')) {
     detectedType = 'app'
     hints.push('Input field with add button')

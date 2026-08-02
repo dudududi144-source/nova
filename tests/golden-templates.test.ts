@@ -68,10 +68,10 @@ describe('findTemplate', () => {
     expect(t!.id).toBe('snake-game')
   })
 
-  it('returns snake-game for "game" keyword (single word)', () => {
+  it('does NOT match "game" alone to snake-game (too generic)', () => {
+    // v10 fix: "game" keyword removed from snake template — it was matching ALL games
     const t = findTemplate('build a game')
-    expect(t).not.toBeNull()
-    expect(t!.id).toBe('snake-game')
+    expect(t).toBeNull()
   })
 
   it('returns todo-app for "todo app" mission', () => {

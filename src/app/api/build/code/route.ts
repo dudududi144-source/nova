@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 180 // generous — keepalive prevents proxy timeout
 
-const CODER_PROMPT = `You are an expert front-end engineer. Output the complete HTML app.
+const CODER_PROMPT = `You are an expert software engineer who builds complete, working web applications.
 
 OUTPUT FORMAT:
 - Output ONLY raw HTML. No explanation, no markdown, no code fences.
@@ -40,69 +40,24 @@ OUTPUT FORMAT:
 
 ${DESIGN_TOKENS_INSTRUCTION}
 
-PLAN:
-- If a Plan is provided in the user message, follow it closely:
-  implement every listed feature, use the suggested approach, apply the suggested
-  colors, and structure the UI per the suggested layout.
-- The plan was created by an architect — trust its feature list and key functions.
+You decide HOW to build the app. Choose the best approach based on what the user wants:
+- Pick the right rendering method (Canvas, DOM, SVG — whatever fits)
+- Pick the right architecture (state management, event handling, UI structure)
+- Pick the right visual design (colors, layout, typography, animations)
+- Don't follow a fixed pattern — adapt to the specific request
 
-QUALITY:
+QUALITY REQUIREMENTS:
 - The app MUST work fully. Every button, input, interaction.
-- Professional UI: use the design tokens, gradients, shadows, rounded corners, responsive layout.
-
-GAME-SPECIFIC (if building a game):
-- Use HTML5 Canvas for rendering (not DOM elements for game objects).
-- Game loop with requestAnimationFrame (not setInterval for rendering).
-- Implement: start screen, gameplay, game-over screen, restart button.
-- Score display, lives/health, level progression if applicable.
-- Keyboard controls (arrow keys, WASD, space) with preventDefault.
-- Collision detection and response.
-- Pause functionality (P key or button).
-- Sound effects using Web Audio API (oscillator, no external files).
-
-TOOL-SPECIFIC (if building a tool like calculator, converter, etc.):
-- Clear input/output areas with proper labeling.
-- Input validation with user-friendly error messages.
-- Copy-to-clipboard functionality where appropriate.
-- Keyboard support for all inputs.
-- Reset/clear button.
-- History of recent operations (in-memory).
-
-APP-SPECIFIC (if building an app like todo, notes, etc.):
-- CRUD operations: create, read, update, delete.
-- Filter/search functionality.
-- Empty state with helpful message.
+- Professional, polished UI with good design sense.
 - Responsive layout that works on mobile and desktop.
-- Form validation with inline error messages.
-- Confirmation dialogs for destructive actions.
+- Semantic HTML with aria-labels for accessibility.
+- Wrap logic in try-catch to prevent crashes.
+- Handle edge cases gracefully.
 
-ACCESSIBILITY (REQUIRED):
-- Add lang="en" to the <html> tag.
-- Use semantic HTML: <main>, <nav>, <header>, <section>, <article>, <footer>.
-- Add aria-label to every <button>, <input>, and icon-only element.
-- Ensure keyboard navigation: all interactive elements reachable via Tab.
-- Use sufficient color contrast (minimum 4.5:1 for text).
+If a Plan is provided, use it as guidance but adapt as needed.
+If a template is provided, modify it to match the user's actual request — don't force the template's design.
 
-PERFORMANCE & POLISH:
-- Add CSS transitions on interactive elements (hover, focus, active states).
-- Debounce scroll/resize event listeners (100ms).
-- Use requestAnimationFrame for animations, not setInterval when possible.
-- Add :focus-visible styles for keyboard users.
-- Add hover effects on buttons and cards.
-
-ERROR HANDLING:
-- Wrap game/app logic in try-catch to prevent crashes.
-- Handle edge cases: empty input, game-over state, division by zero.
-- Validate user input before processing.
-- If an error occurs, show a user-friendly message, don't let the app freeze.
-
-OUTPUT LENGTH:
-- For simple apps (calculator, timer): ~200-400 lines is fine.
-- For medium apps (todo, editor): ~400-800 lines.
-- For complex apps (games, music): ~800-2000 lines. Don't truncate — output the COMPLETE app.
-- If you're running out of space, prioritize working core features over polish.
-
-Keep it concise but complete. Output the HTML now:`
+Output the complete HTML now:`
 
 const codeLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
 const MAX_BODY_BYTES = 200_000

@@ -811,7 +811,7 @@ export const GOLDEN_TEMPLATES: GoldenTemplate[] = [
   {
     id: 'snake-game',
     name: 'Snake Game',
-    keywords: ['snake', 'snake game', 'game', 'arcade', 'canvas game'],
+    keywords: ['snake', 'snake game'],
     description: 'Classic Snake game on HTML5 Canvas with score, high-score, pause, and game-over screen.',
     html: SNAKE_GAME_HTML,
   },
