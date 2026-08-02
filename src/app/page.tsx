@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle, GitCompare, Share2 } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -11,7 +11,6 @@ import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
 import { probeApp, type ProbeResult } from '@/lib/interaction-probe'
-import { THEMES } from '@/lib/design-tokens'
 import { ThemeToggle } from '@/components/theme-toggle'
 // v4: Build memory — IndexedDB cache for instant restores of past builds.
 import { findCachedBuildNormalized, cacheBuild, findSimilarBuilds, type CachedBuild } from '@/lib/build-memory'
@@ -96,7 +95,8 @@ export default function Home() {
   const [runtimeErrors, setRuntimeErrors] = useState<ProbeError[]>([])
   const [showRuntimeErrors, setShowRuntimeErrors] = useState(false)
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
-  const [selectedTheme, setSelectedTheme] = useState<string>('slate')
+  // v10.11: Theme selector removed — always use 'slate' for generated apps
+  const selectedTheme = 'slate'
   // v10.9: Model selector — Z.AI (default), Qwen (free), Kimi (reasoning)
   const [selectedModel, setSelectedModel] = useState<'z-ai' | 'qwen' | 'kimi'>('z-ai')
   const selectedModelRef = useRef<'z-ai' | 'qwen' | 'kimi'>('z-ai')
@@ -246,12 +246,8 @@ export default function Home() {
     }
   }, [])
 
-  // Load saved theme from localStorage after mount (avoids SSR hydration mismatch)
+  // Load saved model from localStorage after mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('nova_theme')
-      if (saved && saved !== selectedTheme) setSelectedTheme(saved)
-    } catch {}
     // v10.9: Load saved model
     try {
       const savedModel = localStorage.getItem('nova_model')
@@ -1203,19 +1199,35 @@ export default function Home() {
 
   const download = useCallback(() => {
     if (!result?.html) return
-    const blob = new Blob([result.html], { type: 'text/html' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    const filename = sanitizeFilename(result.mission)
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    // Delay revocation — Safari <16 and Firefox with large blobs read asynchronously.
-    // Revoking immediately can produce 0-byte files.
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-    toast.success(`Downloaded ${filename}`)
+    // v10.11: ZIP download using dependency-free encoder
+    import('@/lib/zip').then(({ createZip }) => {
+      const files = result.files && result.files.length > 0
+        ? result.files.map(f => ({ name: f.path, content: f.content }))
+        : [{ name: sanitizeFilename(result.mission).replace('.html', '') + '/index.html', content: result.html }]
+      const zipBytes = createZip(files)
+      const blob = new Blob([zipBytes as BlobPart], { type: 'application/zip' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = sanitizeFilename(result.mission).replace('.html', '') + '.zip'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast.success(`Downloaded ${a.download}`)
+    }).catch(() => {
+      // Fallback: plain HTML download
+      const blob = new Blob([result.html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = sanitizeFilename(result.mission)
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast.success(`Downloaded ${a.download}`)
+    })
   }, [result])
 
   // Copy HTML to clipboard
@@ -1590,29 +1602,7 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* v3: Theme selector — always visible, not just in showExamples */}
-          <div className="flex items-center gap-1">
-            <Palette className="h-3 w-3 text-muted-foreground/60" />
-            <div className="flex items-center gap-1">
-              {THEMES.map((theme) => (
-                <button
-                  key={theme.name}
-                  type="button"
-                  onClick={() => {
-                    setSelectedTheme(theme.name)
-                    try { localStorage.setItem('nova_theme', theme.name) } catch {}
-                    toast.info(`Theme: ${theme.name}`)
-                  }}
-                  className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-125 ${
-                    selectedTheme === theme.name ? 'border-white ring-2 ring-primary/50' : 'border-border/40'
-                  }`}
-                  style={{ background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.accent})` }}
-                  title={`${theme.name} theme — primary: ${theme.colors.primary}, accent: ${theme.colors.accent}`}
-                  aria-label={`Select ${theme.name} theme`}
-                />
-              ))}
-            </div>
-          </div>
+          {/* v10.11: Theme color selector removed — dark/light toggle is enough */}
           {/* v10.9: Model selector — Z.AI (default), Qwen (free), Kimi (reasoning) */}
           <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
             <button
@@ -1669,7 +1659,7 @@ export default function Home() {
             ) : (
               <>
                 <Zap className="h-3 w-3" />
-                <span>{(result.ms / 1000).toFixed(1)}s · {formatTokens(result.tokens)} tokens</span>
+                <span>{(result.ms / 1000).toFixed(1)}s · {formatTokens(result.tokens)} tokens · ~${(result.tokens * 0.000002).toFixed(3)}</span>
                 {qualityScore > 0 && (
                   <span className={`ml-1 rounded px-1 ${qualityScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`} title={qualityMetrics}>
                     Q:{qualityScore}
@@ -2081,9 +2071,9 @@ export default function Home() {
                   <ExternalLink className="h-3.5 w-3.5" />
                   Open
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result} title="Download HTML file">
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={download} disabled={!result} title="Download as ZIP">
                   <Download className="h-3.5 w-3.5" />
-                  Download
+                  ZIP
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining} title="Rebuild from scratch">
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
