@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle, GitCompare } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle, GitCompare, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -1234,6 +1234,46 @@ export default function Home() {
     }
   }, [result])
 
+  // v10.10: Share via URL — encode build in URL hash
+  const shareUrl = useCallback(() => {
+    if (!result?.html) return
+    try {
+      // Encode mission + html as base64 in URL hash
+      const payload = JSON.stringify({ m: result.mission, h: result.html })
+      const encoded = btoa(unescape(encodeURIComponent(payload)))
+      const url = `${window.location.origin}${window.location.pathname}#s=${encoded}`
+      navigator.clipboard.writeText(url)
+      toast.success('Share link copied to clipboard!')
+    } catch {
+      toast.error('Failed to create share link')
+    }
+  }, [result])
+
+  // v10.10: Load shared build from URL hash on mount
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.startsWith('#s=')) return
+    try {
+      const encoded = hash.slice(3)
+      const payload = JSON.parse(decodeURIComponent(escape(atob(encoded))))
+      if (payload.h && payload.m) {
+        const shared: BuildResult = {
+          id: newBuildId(),
+          html: payload.h,
+          tokens: 0,
+          ms: 0,
+          mission: payload.m,
+        }
+        setResult(shared)
+        resultRef.current = shared
+        setMission(payload.m)
+        toast.info('Loaded shared build')
+        // Clear the hash so it doesn't reload on refresh
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    } catch {}
+  }, [])
+
   // Open the HTML in a new browser tab (full-screen preview)
   const openInNewTab = useCallback(() => {
     if (!result?.html) return
@@ -1492,6 +1532,20 @@ export default function Home() {
           e.preventDefault()
           setShowShortcuts(prev => !prev)
           return
+        }
+      }
+      // v10.10: M cycles through models (only when not typing)
+      if (e.key === 'm' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && !loading && !refining) {
+          e.preventDefault()
+          const models: Array<'z-ai' | 'qwen' | 'kimi'> = ['z-ai', 'qwen', 'kimi']
+          const next = models[(models.indexOf(selectedModelRef.current) + 1) % models.length]
+          setSelectedModel(next)
+          selectedModelRef.current = next
+          try { localStorage.setItem('nova_model', next) } catch {}
+          toast.info(`Model: ${next === 'z-ai' ? 'Z.AI' : next === 'qwen' ? 'Qwen' : 'Kimi K3'}`)
         }
       }
       // Escape closes shortcuts panel if open
@@ -2016,6 +2070,13 @@ export default function Home() {
                   <Copy className="h-3.5 w-3.5" />
                   Copy
                 </Button>
+                {/* v10.10: Share via URL — encodes build in URL hash */}
+                {result && !loading && (
+                  <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={shareUrl} title="Share via URL">
+                    <Share2 className="h-3.5 w-3.5" />
+                    Share
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={openInNewTab} disabled={!result || loading} title="Open in new tab">
                   <ExternalLink className="h-3.5 w-3.5" />
                   Open
@@ -2295,6 +2356,7 @@ export default function Home() {
                 { keys: ['⌘', 'Enter'], label: 'Build the app' },
                 { keys: ['⌘', 'S'], label: 'Download HTML file' },
                 { keys: ['⌘', 'N'], label: 'Start a new build' },
+                { keys: ['M'], label: 'Cycle AI model (Z.AI → Qwen → Kimi)' },
                 { keys: ['Esc'], label: 'Cancel build/refine' },
                 { keys: ['?'], label: 'Show/hide this help' },
               ].map((shortcut) => (
@@ -2321,7 +2383,7 @@ export default function Home() {
           <span className="hidden sm:inline">
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
-            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+N</kbd> new ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">M</kbd> model ·
             <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel ·
             <kbd className="ml-1 rounded border border-border/40 px-1">?</kbd> help
           </span>
