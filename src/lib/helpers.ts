@@ -9,6 +9,14 @@ export interface BuildResult {
   tokens: number
   ms: number
   mission: string
+  /** Optional: multi-file output (when LLM emits multiple files instead of single HTML).
+   *  Populated by the SSE result handler when the server returns evt.files. */
+  files?: { path: string; content: string; language: string }[]
+  /** Optional: detected output type (e.g. 'html-app', 'html-multi', 'react', 'python'). */
+  outputType?: string
+  /** Optional: whether this build can be previewed in NOVA's sandboxed iframe.
+   *  false for non-HTML outputs (React/Python/Node) — show FileViewer instead. */
+  previewable?: boolean
 }
 
 export function newBuildId(): string {

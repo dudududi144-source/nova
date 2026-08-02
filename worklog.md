@@ -3287,3 +3287,50 @@ FINAL STATUS:
 - Lint: 0 errors, 3 warnings
 - TypeScript: 0 errors
 - GitHub: https://github.com/rabotatony/nova ✅
+
+---
+Task ID: 144
+Agent: general-purpose
+Task: Integrate all restored features into page.tsx
+
+Work Log:
+- Extended `BuildResult` interface in `src/lib/helpers.ts` with optional `files`, `outputType`, and `previewable` fields (kept optional so all existing tests/usages stay valid).
+- Imported `next/dynamic` and dynamically loaded `FileViewer` and `DiffViewer` (ssr: false) to keep them out of the server bundle.
+- Imported `findCachedBuildNormalized`, `cacheBuild`, `findSimilarBuilds`, `CachedBuild` from `@/lib/build-memory`.
+- Imported `analyzeError`, `suggestRelatedMissions`, `ErrorAnalysis` from `@/lib/error-recovery`.
+- Imported `inlineForPreview` from `@/lib/multi-file`.
+- Imported `PipelineProgress`, `stageFromProgressStep`, `StageKey` from `@/components/pipeline-progress`.
+- Imported `PreviewErrorBoundary` from `@/components/preview-error-boundary`.
+- Added new state: `memoryHit`, `similarBuilds`, `errorAnalysis`, `showDiff`, `previousBuild`, `pipelineStage`, `pipelineLiveText` (and a `pipelineLiveTextRef` mirror to avoid re-creating the build callback on every token).
+- Added a debounced (400 ms) `findSimilarBuilds` effect keyed on `mission`.
+- Added a 200 ms flush interval that mirrors `pipelineLiveTextRef` into `pipelineLiveText` state (same cadence as the live-preview accumulator).
+- In `build()`:
+  - Reset `errorAnalysis`, `pipelineStage`, `pipelineLiveText` at the start.
+  - Save the current `resultRef.current` into `previousBuild` so the user can diff the new build against it.
+  - Before calling the architect, call `findCachedBuildNormalized(m)`. If found, restore instantly (`setResult`, `addBuildToHistory`, `setMemoryHit(true)`, toast "⚡ Restored from memory") and `return`.
+  - In `fail()`: still guards with `if (controller.signal.aborted) return`, and now also calls `setErrorAnalysis(analyzeError(msg, m))`.
+  - In the SSE `progress` handler: `setPipelineStage(stageFromProgressStep(evt.step))`.
+  - In the SSE `token` handler: feed `pipelineLiveTextRef` and force `setPipelineStage('code')` on first token.
+  - In the SSE `result` handler (both inline and final-flush branches) and in the polling-fallback branch: capture `evt.files`, `evt.outputType`, `evt.previewable` into `finalFiles`, `finalOutputType`, `finalPreviewable`.
+  - After streaming completes (no error, has HTML): `setPipelineStage('validate')`.
+  - Stash `files`, `outputType`, `previewable` on the `BuildResult`.
+  - Call `cacheBuild(buildResult, finalQuality).catch(() => {})` (fire-and-forget).
+  - `setPipelineStage('done')` on success.
+- In `loadFromHistory` and `reset`: reset all new state (`memoryHit`, `errorAnalysis`, `showDiff`, `previousBuild`, `pipelineStage`, `pipelineLiveText`, `pipelineLiveTextRef`, plus `similarBuilds` in `reset`).
+- Header: added a "⚡ memory" badge visible when `memoryHit && result`.
+- Left panel loading card: added a `PipelineProgress` (full mode) under the StageRail so the user sees Plan → Code → Analyze → Validate → Done with live token text.
+- First-build error panel: when `errorAnalysis` exists, show its `title`, `message`, bullet-list `suggestions`, and a "Try instead" section that calls `suggestRelatedMissions(failedMission ?? mission)` and renders each suggestion as a button that calls `build(rel)`.
+- Examples panel: appended a "⚡ Similar builds from memory" sub-panel when `similarBuilds.length > 0`, each entry clickable via `loadFromHistory`.
+- Toolbar: added a "Diff" toggle button (visible when `previousBuild && result && !loading && !refining`) that flips `showDiff`.
+- Output area: wrapped the entire preview region (iframe + FileViewer + DiffViewer + loading overlay) in `<PreviewErrorBoundary>` so a render crash no longer white-screens the whole app.
+- When `showDiff && previousBuild && result`: render `<DiffViewer oldText={previousBuild.html} newText={result.html} />` instead of the iframe.
+- Else when `result.previewable === false && result.files?.length > 0`: render `<FileViewer files={result.files} />` instead of the iframe.
+- Else (default): render the iframe. Its `srcDoc` now uses `injectCsp(inlineForPreview(result.files))` when `result.files` has more than one entry, so multi-file HTML+CSS+JS output inlines correctly for srcdoc preview.
+- Loading overlay inside the preview area: added a `PipelineProgress` block alongside the existing spinner + dots.
+- Removed an unused `History as HistoryIcon` import that I'd added speculatively.
+- Verified: `npx tsc --noEmit` → 0 errors. `bun run lint` → 0 errors (3 pre-existing warnings, all unrelated to this task — confirmed by stashing my changes and re-linting). `bun test` → 726 pass, 0 fail, 1269 assertions (same as baseline). `bun run build` → compiled successfully and all routes prerendered.
+
+Stage Summary:
+- `src/lib/helpers.ts`: `BuildResult` extended with optional `files`/`outputType`/`previewable`.
+- `src/app/page.tsx`: 1972 → 2287 lines. All 8 features wired into the live UI without restructuring the existing layout or breaking the SSE/probe/auto-fix/chat flows. Dynamic imports keep FileViewer & DiffViewer out of the SSR bundle. New state is reset on history-load and reset. `fail()` keeps its abort guard plus the new `analyzeError` call.
+- Tests still green: 726/726 pass. Lint: 0 errors. TypeScript: 0 errors. Production build: OK.

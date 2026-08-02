@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, Palette, CheckCircle2, XCircle, GitCompare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -12,6 +13,23 @@ import { injectCsp } from '@/lib/html-utils'
 import { probeApp, type ProbeResult } from '@/lib/interaction-probe'
 import { THEMES } from '@/lib/design-tokens'
 import { ThemeToggle } from '@/components/theme-toggle'
+// v4: Build memory — IndexedDB cache for instant restores of past builds.
+import { findCachedBuildNormalized, cacheBuild, findSimilarBuilds, type CachedBuild } from '@/lib/build-memory'
+// v4: Error recovery — structured error analysis and related-mission suggestions.
+import { analyzeError, suggestRelatedMissions, type ErrorAnalysis } from '@/lib/error-recovery'
+// v4: Multi-file support — inline external CSS/JS refs into a single HTML doc for preview.
+import { inlineForPreview } from '@/lib/multi-file'
+// v4: Pipeline progress — visual stage indicator (Plan → Code → Analyze → Validate → Done).
+import { PipelineProgress, stageFromProgressStep, type StageKey } from '@/components/pipeline-progress'
+// v4: Preview error boundary — catches render crashes in the preview area so they
+// don't white-screen the whole app.
+import { PreviewErrorBoundary } from '@/components/preview-error-boundary'
+
+// v4: Dynamic-import FileViewer & DiffViewer (ssr: false) — they use browser-only
+// APIs (clipboard, Blob, URL.createObjectURL) and add significant bundle weight,
+// so we only load them when actually needed.
+const FileViewer = dynamic(() => import('@/components/file-viewer').then(m => m.FileViewer), { ssr: false })
+const DiffViewer = dynamic(() => import('@/components/diff-viewer').then(m => m.DiffViewer), { ssr: false })
 
 interface BuildResponse {
   ok: boolean
@@ -86,11 +104,25 @@ export default function Home() {
   const [selectedTheme, setSelectedTheme] = useState<string>('slate')
   const [planFeatures, setPlanFeatures] = useState<{name: string; found: boolean}[]>([])
   const [autoFixing, setAutoFixing] = useState(false)
+  // v4: Build memory — instant restore from IndexedDB + similar-builds suggestions
+  const [memoryHit, setMemoryHit] = useState(false)
+  const [similarBuilds, setSimilarBuilds] = useState<CachedBuild[]>([])
+  // v4: Error recovery — structured analysis shown in the error panel
+  const [errorAnalysis, setErrorAnalysis] = useState<ErrorAnalysis | null>(null)
+  // v4: Diff viewer — show before/after comparison between two builds
+  const [showDiff, setShowDiff] = useState(false)
+  const [previousBuild, setPreviousBuild] = useState<BuildResult | null>(null)
+  // v4: Pipeline progress — current build stage + live token text
+  const [pipelineStage, setPipelineStage] = useState<StageKey | null>(null)
+  const [pipelineLiveText, setPipelineLiveText] = useState('')
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   // v10: Build ID for polling fallback (SSE recovery)
   const buildIdRef = useRef<string | null>(null)
   const refineAbortRef = useRef<AbortController | null>(null)
+  // v4: Pipeline progress ref mirror — used inside the SSE token handler to
+  // update the live text without re-creating the build callback on every token.
+  const pipelineLiveTextRef = useRef('')
   // Ref mirror of `result` so build() doesn't need it in useCallback deps.
   // This prevents build from being re-created on every result change (every build).
   // Updated in a useEffect (not during render — that's a side effect).
@@ -273,6 +305,42 @@ export default function Home() {
     }
   }, [])
 
+  // ═══ v4: Debounced similar-builds search (400ms after mission stops changing) ═══
+  // Queries IndexedDB for past builds whose missions share words with the current
+  // mission. Shown as a small panel under the prompt — helps users discover that
+  // they (or someone else on this browser) have built something similar before.
+  useEffect(() => {
+    const m = mission.trim()
+    if (!m || m.length < 6) {
+      setSimilarBuilds([])
+      return
+    }
+    const handle = setTimeout(() => {
+      findSimilarBuilds(m, 3)
+        .then(setSimilarBuilds)
+        .catch(() => setSimilarBuilds([]))
+    }, 400)
+    return () => clearTimeout(handle)
+  }, [mission])
+
+  // ═══ v4: Sync pipelineLiveText state with its ref (called from the SSE reader) ═══
+  // The ref lets the SSE reader update text without triggering re-renders on every
+  // token; this effect flushes the ref to state on a 200ms cadence (same as the
+  // livePreviewHtml accumulator) so the PipelineProgress UI updates smoothly.
+  useEffect(() => {
+    if (!loading && !refining) {
+      pipelineLiveTextRef.current = ''
+      setPipelineLiveText('')
+      return
+    }
+    const id = setInterval(() => {
+      if (pipelineLiveTextRef.current !== '') {
+        setPipelineLiveText(pipelineLiveTextRef.current)
+      }
+    }, 200)
+    return () => clearInterval(id)
+  }, [loading, refining])
+
   // Ref mirror of buildSteps so the elapsed-time effect doesn't need buildSteps in its deps.
   // If buildSteps is in the deps, the effect tears down and re-runs on every token event
   // (because setBuildSteps is called on every token), resetting startTime and thinkingStep.
@@ -345,6 +413,49 @@ export default function Home() {
     setChatMessages([])
     setConfirmClear(false) // Hide confirm-clear UI if it was visible
 
+    // v4: Reset error analysis and pipeline state for the new build
+    setErrorAnalysis(null)
+    setPipelineStage('plan')
+    setPipelineLiveText('')
+    pipelineLiveTextRef.current = ''
+
+    // v4: Save the current result as previousBuild so the user can diff the new build against it.
+    // Only set it if there's an existing result with non-empty HTML (a real previous build).
+    if (resultRef.current && resultRef.current.html) {
+      setPreviousBuild(resultRef.current)
+      setShowDiff(false)
+    }
+
+    // v4: Build memory — check IndexedDB for a cached build matching this mission.
+    // Word-order independent ("snake game" == "game snake"). If found, restore instantly
+    // and skip the LLM call entirely. The user sees their app in <50ms.
+    //
+    // We do this AFTER setting loading=true so the UI shows the loading state briefly,
+    // then flips to the restored result. The visual continuity feels intentional, not jarring.
+    try {
+      const cached = await findCachedBuildNormalized(m)
+      if (cached) {
+        // Don't restore if the user started another build in the meantime
+        if (controller.signal.aborted) return
+        setResult(cached)
+        resultRef.current = cached
+        addBuildToHistory(cached)
+        setMemoryHit(true)
+        setQualityScore(cached.quality ?? 0)
+        setQualityMetrics('')
+        setPipelineStage('done')
+        toast.success('⚡ Restored from memory', { description: `Cached build from ${new Date(cached.timestamp).toLocaleString()}` })
+        if (abortRef.current === controller) {
+          abortRef.current = null
+          setLoading(false)
+        }
+        return
+      }
+    } catch {
+      // IndexedDB unavailable (private mode, old browser) — fall through to LLM build
+    }
+    setMemoryHit(false)
+
     // Extract dynamic steps from the mission IMMEDIATELY — not pre-canned
     const steps = extractStepsFromMission(m)
     setBuildSteps(steps)
@@ -359,6 +470,8 @@ export default function Home() {
       if (controller.signal.aborted) return
       setError(msg)
       setFailedMission(m)
+      // v4: Analyze the error so the error panel can show structured suggestions
+      setErrorAnalysis(analyzeError(msg, m))
       if (!resultRef.current) toast.error(msg)
     }
 
@@ -441,6 +554,10 @@ export default function Home() {
       let finalQuality = 0
       let finalMetrics = ''
       let streamError: string | null = null
+      // v4: Multi-file capture — server may send files array, outputType, and previewable flag
+      let finalFiles: { path: string; content: string; language: string }[] | undefined
+      let finalOutputType: string | undefined
+      let finalPreviewable: boolean | undefined
 
       while (true) {
         const { done, value } = await reader.read()
@@ -468,6 +585,10 @@ export default function Home() {
                 if (prev.length <= 2) return [evt.step, 'Generating code...', 'Finalizing...']
                 return [prev[0], evt.step, ...prev.slice(2)]
               })
+              // v4: Map progress step to a pipeline stage (Plan/Code/Analyze/Validate/Done)
+              if (typeof evt.step === 'string') {
+                setPipelineStage(stageFromProgressStep(evt.step))
+              }
             } else if (evt.type === 'buildId') {
               // v10: Save build ID for polling fallback
               buildIdRef.current = evt.buildId
@@ -476,6 +597,8 @@ export default function Home() {
               // We DON'T call setLivePreviewHtml here (would reload iframe on every token).
               // The 200ms flush interval picks up the accumulated text.
               livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
+              // v4: Feed the live token text to the pipeline progress component
+              pipelineLiveTextRef.current = livePreviewAccumulatorRef.current
               // Throttle setBuildSteps: only update the "Generating: N chars..." text
               // when the char count crosses a 500-char threshold (not on every token).
               // This prevents ~2000 setBuildSteps calls (each creating a new array) per build.
@@ -492,12 +615,18 @@ export default function Home() {
                   return [...prev, newLast]
                 })
               }
+              // v4: First token = we're in the Code stage
+              setPipelineStage('code')
             } else if (evt.type === 'result') {
               finalHtml = evt.html ?? ''
               finalTokens = evt.tokens ?? 0
               finalMs = evt.ms ?? 0
               finalQuality = evt.quality ?? 0
               finalMetrics = evt.metrics ?? ''
+              // v4: Capture multi-file fields if present
+              if (Array.isArray(evt.files)) finalFiles = evt.files
+              if (typeof evt.outputType === 'string') finalOutputType = evt.outputType
+              if (typeof evt.previewable === 'boolean') finalPreviewable = evt.previewable
             } else if (evt.type === 'error') {
               streamError = evt.error ?? 'Unknown error'
             }
@@ -524,11 +653,20 @@ export default function Home() {
               finalMs = evt.ms ?? 0
               finalQuality = evt.quality ?? 0
               finalMetrics = evt.metrics ?? ''
+              // v4: Capture multi-file fields if present (final flush)
+              if (Array.isArray(evt.files)) finalFiles = evt.files
+              if (typeof evt.outputType === 'string') finalOutputType = evt.outputType
+              if (typeof evt.previewable === 'boolean') finalPreviewable = evt.previewable
             } else if (evt.type === 'error') {
               streamError = evt.error ?? 'Unknown error'
             }
           } catch {}
         }
+      }
+
+      // v4: Mark the pipeline as in validation stage after streaming completes
+      if (!streamError && finalHtml) {
+        setPipelineStage('validate')
       }
 
       if (streamError) {
@@ -554,6 +692,10 @@ export default function Home() {
                 finalMs = pollData.ms ?? 0
                 finalQuality = pollData.quality ?? 0
                 finalMetrics = pollData.metrics ?? ''
+                // v4: Capture multi-file fields from poll response too
+                if (Array.isArray(pollData.files)) finalFiles = pollData.files
+                if (typeof pollData.outputType === 'string') finalOutputType = pollData.outputType
+                if (typeof pollData.previewable === 'boolean') finalPreviewable = pollData.previewable
                 break
               } else if (pollData.status === 'failed') {
                 fail(pollData.error || 'Build failed on server')
@@ -580,11 +722,22 @@ export default function Home() {
         tokens: finalTokens,
         ms: finalMs,
         mission: m,
+        // v4: Multi-file metadata — used by the FileViewer and inlineForPreview path
+        files: finalFiles,
+        outputType: finalOutputType,
+        previewable: finalPreviewable,
       }
 
       setResult(buildResult)
       resultRef.current = buildResult // Update ref synchronously
       addBuildToHistory(buildResult)
+
+      // v4: Cache the build in IndexedDB for instant restore next time.
+      // Fire-and-forget — failures (private mode, quota) are silently ignored.
+      cacheBuild(buildResult, finalQuality).catch(() => {})
+
+      // v4: Mark the pipeline as done
+      setPipelineStage('done')
 
       toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
       setQualityScore(finalQuality)
@@ -623,6 +776,14 @@ export default function Home() {
     setPlanSummary(null)
     setLivePreviewHtml(null)
     setConfirmClear(false)
+    // v4: Reset new state for build-memory, error analysis, diff, and pipeline
+    setMemoryHit(false)
+    setErrorAnalysis(null)
+    setShowDiff(false)
+    setPreviousBuild(null)
+    setPipelineStage(null)
+    setPipelineLiveText('')
+    pipelineLiveTextRef.current = ''
   }, [])
 
   const cancelBuild = useCallback(() => {
@@ -972,6 +1133,15 @@ export default function Home() {
     setLivePreviewHtml(null)
     setPlanSummary(null)
     setConfirmClear(false)
+    // v4: Reset new state for build-memory, error analysis, diff, and pipeline
+    setMemoryHit(false)
+    setErrorAnalysis(null)
+    setShowDiff(false)
+    setPreviousBuild(null)
+    setPipelineStage(null)
+    setPipelineLiveText('')
+    pipelineLiveTextRef.current = ''
+    setSimilarBuilds([])
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -1337,6 +1507,16 @@ export default function Home() {
           </div>
           {/* v10: Dark/light mode toggle for NOVA UI */}
           <ThemeToggle />
+          {/* v4: Build-memory badge — shown when the current result was restored from IndexedDB */}
+          {memoryHit && result && (
+            <span
+              className="flex items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-400"
+              title="This build was restored from local memory (IndexedDB) — no LLM call was made"
+            >
+              <Zap className="h-3 w-3" />
+              memory
+            </span>
+          )}
           {(result || loading) && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               {loading || !result ? (
@@ -1452,6 +1632,17 @@ export default function Home() {
                   {livePreviewHtml && ` · ${livePreviewHtml.length} chars generated`}
                 </span>
               </div>
+              {/* v4: PipelineProgress — richer stage indicator with live token text */}
+              {pipelineStage && (
+                <div className="mt-2 rounded-md border border-border/40 bg-card/30 p-2">
+                  <PipelineProgress
+                    currentStage={pipelineStage}
+                    liveText={pipelineLiveText}
+                    elapsedSeconds={elapsed}
+                    mode="full"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1461,7 +1652,47 @@ export default function Home() {
               <div className="flex items-start gap-2">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                 <div className="flex-1">
-                  <p className="text-xs text-destructive">{error}</p>
+                  {/* v4: Structured error analysis — title + message + suggestions + related missions */}
+                  {errorAnalysis ? (
+                    <>
+                      <p className="text-xs font-semibold text-destructive">{errorAnalysis.title}</p>
+                      <p className="mt-0.5 text-[11px] text-destructive/80">{errorAnalysis.message}</p>
+                      {errorAnalysis.suggestions.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {errorAnalysis.suggestions.map((s, i) => (
+                            <li key={i} className="flex items-start gap-1.5 text-[10px] text-muted-foreground">
+                              <span className="mt-px text-muted-foreground/50">•</span>
+                              <span>{s}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {/* "Try instead" — related missions the user might have better luck with */}
+                      {(() => {
+                        const related = suggestRelatedMissions(failedMission ?? mission)
+                        if (related.length === 0) return null
+                        return (
+                          <div className="mt-3">
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Try instead</p>
+                            <div className="mt-1 space-y-1">
+                              {related.map((rel, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => build(rel)}
+                                  className="block w-full rounded border border-border/40 bg-card/40 px-2 py-1 text-left text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                                >
+                                  {rel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </>
+                  ) : (
+                    <p className="text-xs text-destructive">{error}</p>
+                  )}
                   <p className="mt-1 text-[10px] text-muted-foreground/60">
                     The AI sometimes returns incomplete output. Try again, or simplify your request.
                   </p>
@@ -1498,6 +1729,33 @@ export default function Home() {
                   {ex}
                 </button>
               ))}
+
+              {/* v4: Similar builds from IndexedDB memory — shown when the user types something
+                  that matches past builds (by word overlap). Helps discover cached builds. */}
+              {similarBuilds.length > 0 && (
+                <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">
+                  <p className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-amber-400/80">
+                    <Zap className="h-3 w-3" />
+                    ⚡ Similar builds from memory
+                  </p>
+                  <div className="mt-1.5 space-y-1">
+                    {similarBuilds.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => loadFromHistory(b)}
+                        className="block w-full rounded border border-border/40 bg-card/40 px-2 py-1 text-left text-[10px] text-muted-foreground transition-colors hover:border-amber-500/40 hover:text-foreground"
+                        title={`Cached ${new Date(b.timestamp).toLocaleString()} · quality ${b.quality}`}
+                      >
+                        <span className="truncate">{b.mission}</span>
+                        {b.quality > 0 && (
+                          <span className="ml-1 text-amber-400/60">Q:{b.quality}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1681,6 +1939,20 @@ export default function Home() {
                     {autoFixLoopRunning ? `Fixing (${autoFixIterations}/3)...` : 'Fixing...'}
                   </span>
                 )}
+                {/* v4: Diff viewer toggle — compare current build against the previous one.
+                    Visible only when both previousBuild and result exist, and not loading/refining. */}
+                {previousBuild && result && !loading && !refining && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={`h-7 gap-1.5 text-xs ${showDiff ? 'bg-primary/20 text-primary' : ''}`}
+                    onClick={() => setShowDiff(!showDiff)}
+                    title={showDiff ? 'Hide diff' : 'Compare with previous build'}
+                  >
+                    <GitCompare className="h-3.5 w-3.5" />
+                    Diff
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={copyHtml} disabled={!result || loading} title="Copy HTML to clipboard">
                   <Copy className="h-3.5 w-3.5" />
                   Copy
@@ -1861,47 +2133,90 @@ export default function Home() {
                 During build/refine, srcDoc shows livePreviewHtml (partial HTML as tokens arrive).
                 When idle, srcDoc shows the final result.html.
                 bg-neutral-950 prevents white flash before the LLM's CSS loads.
-                The preview wrapper centers the iframe when a specific width is selected. */}
-            <div className="relative min-h-0 flex-1 bg-neutral-950 overflow-auto">
-              {/* Loading overlay (shown when building/refining and no live preview yet) */}
-              {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
-                <div role="status" aria-live="polite" className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-3 text-neutral-400">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    <p className="text-xs font-medium text-foreground/80">
-                      {getThinkingText()}
-                    </p>
-                    <div className="flex gap-1">
-                      {buildSteps.map((_, i) => (
-                        <div
-                          key={i}
-                          className={`h-1 rounded-full transition-all ${
-                            i <= thinkingStep ? 'w-3 bg-primary' : 'w-1 bg-muted-foreground/20'
-                          }`}
-                        />
-                      ))}
+                The preview wrapper centers the iframe when a specific width is selected.
+
+                v4: Wrapped in PreviewErrorBoundary so render crashes don't white-screen the app.
+                v4: If result.previewable === false and files exist, show FileViewer instead of iframe.
+                v4: If showDiff is true and previousBuild exists, show DiffViewer instead of iframe. */}
+            <PreviewErrorBoundary className="min-h-0 flex-1">
+              <div className="relative min-h-0 flex-1 bg-neutral-950 overflow-auto">
+                {/* Loading overlay (shown when building/refining and no live preview yet) */}
+                {(loading || refining) && (!livePreviewHtml || livePreviewHtml.length <= 50) && (
+                  <div role="status" aria-live="polite" className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+                    <div className="flex w-full max-w-md flex-col items-center gap-3 px-6 text-neutral-400">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      <p className="text-xs font-medium text-foreground/80">
+                        {getThinkingText()}
+                      </p>
+                      {/* v4: PipelineProgress — visual stage indicator (Plan → Code → Analyze → Validate → Done) */}
+                      {pipelineStage && (
+                        <div className="w-full rounded-md border border-border/40 bg-card/30 p-2">
+                          <PipelineProgress
+                            currentStage={pipelineStage}
+                            liveText={pipelineLiveText}
+                            elapsedSeconds={elapsed}
+                            mode="full"
+                          />
+                        </div>
+                      )}
+                      <div className="flex gap-1">
+                        {buildSteps.map((_, i) => (
+                          <div
+                            key={i}
+                            className={`h-1 rounded-full transition-all ${
+                              i <= thinkingStep ? 'w-3 bg-primary' : 'w-1 bg-muted-foreground/20'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      {elapsed > 0 && <p className="text-[10px] text-muted-foreground/50">{elapsed}s</p>}
                     </div>
-                    {elapsed > 0 && <p className="text-[10px] text-muted-foreground/50">{elapsed}s</p>}
                   </div>
-                </div>
-              )}
-              {/* Responsive preview wrapper — centers iframe when a specific width is selected */}
-              <div className={`flex min-h-full ${previewWidth === 'full' ? 'w-full' : 'justify-center pt-4 pb-4'}`}>
-                <iframe
-                  key={result?.id ?? 'loading'}
-                  srcDoc={(loading || refining) && livePreviewHtml ? injectCsp(livePreviewHtml) : (result?.html ?? '')}
-                  title="Preview"
-                  sandbox="allow-scripts"
-                  className={`h-full border-0 bg-neutral-950 transition-all ${
-                    previewWidth === 'full' ? 'w-full' :
-                    previewWidth === 'desktop' ? 'w-[1280px] max-w-full' :
-                    previewWidth === 'tablet' ? 'w-[768px] max-w-full' :
-                    'w-[375px] max-w-full'
-                  }`}
-                  style={previewWidth !== 'full' ? { minHeight: 'calc(100% - 2rem)' } : undefined}
-                />
+                )}
+                {/* v4: DiffViewer — show before/after comparison instead of the iframe.
+                    Only when showDiff is true AND we have both previous and current builds. */}
+                {showDiff && previousBuild && result ? (
+                  <div className="h-full min-h-[400px] p-2">
+                    <DiffViewer
+                      oldText={previousBuild.html}
+                      newText={result.html}
+                      title={`Diff: ${previousBuild.mission.slice(0, 40)} → ${result.mission.slice(0, 40)}`}
+                      className="h-full"
+                    />
+                  </div>
+                ) : result && result.previewable === false && result.files && result.files.length > 0 ? (
+                  /* v4: FileViewer — multi-file output (React/Python/Node) can't be previewed in iframe */
+                  <div className="h-full min-h-[400px] p-2">
+                    <FileViewer
+                      files={result.files}
+                      title={result.outputType ? `Files · ${result.outputType}` : 'Files'}
+                      className="h-full"
+                    />
+                  </div>
+                ) : (
+                  /* Responsive preview wrapper — centers iframe when a specific width is selected */
+                  <div className={`flex min-h-full ${previewWidth === 'full' ? 'w-full' : 'justify-center pt-4 pb-4'}`}>
+                    <iframe
+                      key={result?.id ?? 'loading'}
+                      srcDoc={(loading || refining) && livePreviewHtml
+                        ? injectCsp(livePreviewHtml)
+                        : (result && result.files && result.files.length > 1
+                            ? injectCsp(inlineForPreview(result.files))
+                            : (result?.html ?? ''))}
+                      title="Preview"
+                      sandbox="allow-scripts"
+                      className={`h-full border-0 bg-neutral-950 transition-all ${
+                        previewWidth === 'full' ? 'w-full' :
+                        previewWidth === 'desktop' ? 'w-[1280px] max-w-full' :
+                        previewWidth === 'tablet' ? 'w-[768px] max-w-full' :
+                        'w-[375px] max-w-full'
+                      }`}
+                      style={previewWidth !== 'full' ? { minHeight: 'calc(100% - 2rem)' } : undefined}
+                    />
+                  </div>
+                )}
               </div>
-            </div>
+            </PreviewErrorBoundary>
           </section>
         )}
       </main>
