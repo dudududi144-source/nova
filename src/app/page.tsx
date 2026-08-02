@@ -57,23 +57,18 @@ interface ChatMessage {
 // adapted for NOVA's prompt-to-app model).
 // More presets = lower barrier to entry. Users click and build immediately.
 const EXAMPLES: readonly string[] = [
-  'Build a snake game with score and game-over',
-  'Build a todo app with add, complete, and delete',
-  'Build a calculator with keyboard support',
-  'Build a color palette generator with copy-to-clipboard',
-  'Build a pomodoro timer with start/pause/reset',
-  'Build a markdown editor with live preview',
-  'Build a drawing canvas with brush size and color',
-  'Build a quiz app with multiple choice and score',
+  'Build a crypto trading dashboard with live charts, order book, and portfolio tracker',
+  'Build a mobile OS simulator with home screen, app grid, notifications, and settings',
+  'Build a banking dashboard with accounts, transfers, transaction history, and analytics',
+  'Build a 3D solar system explorer with orbital mechanics and planet info',
+  'Build a music production studio with multi-track sequencer, effects, and mixer',
+  'Build a data visualization dashboard with real-time charts, filters, and KPIs',
 ]
 
 const REFINE_THINKING_STEPS: readonly string[] = [
-  'Analyzing current code...',
-  'Understanding your request...',
-  'Planning the changes...',
-  'Applying modifications...',
-  'Verifying everything still works...',
-  'Finalizing the update...',
+  'Processing your request...',
+  'Making changes...',
+  'Finalizing...',
 ]
 
 export default function Home() {
@@ -1567,7 +1562,7 @@ export default function Home() {
                 build()
               }
             }}
-            placeholder="Build a snake game with score and game-over..."
+            placeholder="Describe anything — a crypto dashboard, a mobile OS, a 3D explorer..."
             className="min-h-[120px] resize-none font-mono text-sm"
           />
           <div className="mt-1 flex items-center justify-between">

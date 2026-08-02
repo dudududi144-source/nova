@@ -21,7 +21,6 @@ import { checkPlanAdherence } from '@/lib/plan-adherence'
 import { analyzeHtml } from '@/lib/static-analysis'
 import { registerBuild, storeResult, storeError } from '@/lib/build-store'
 import { recordSuccess, recordFailure } from '@/lib/model-circuit-breaker'
-import { findTemplate, buildSeededPrompt } from '@/lib/golden-templates'
 import { parseOutput } from '@/lib/multi-file'
 import { isTokenRouterConfigured, tokenRouterStream } from '@/lib/tokenrouter'
 
@@ -29,46 +28,29 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 180 // generous — keepalive prevents proxy timeout
 
-const CODER_PROMPT = `You are an expert software engineer who builds complete, working web applications.
+const CODER_PROMPT = `You are an elite software engineer. You build complete, production-quality web applications from a single prompt.
 
-OUTPUT FORMAT:
-- Output ONLY raw HTML. No explanation, no markdown, no code fences.
-- Complete document: <!DOCTYPE html>, <html lang="en">, <head>, <body>.
-- All CSS in <style>, all JS in <script>. Everything inline. One file.
-- Do NOT use localStorage, sessionStorage, or document.cookie. Use in-memory variables.
-- No external resources (no fetch, no CDN scripts, no external fonts/images).
+OUTPUT: A single complete HTML file. All CSS and JS inline. No external resources. No localStorage — use in-memory state.
 
 ${DESIGN_TOKENS_INSTRUCTION}
 
-You decide HOW to build the app. Choose the best approach based on what the user wants:
-- Pick the right rendering method (Canvas, DOM, SVG — whatever fits)
-- Pick the right architecture (state management, event handling, UI structure)
-- Pick the right visual design (colors, layout, typography, animations)
-- Don't follow a fixed pattern — adapt to the specific request
+You have full creative freedom. Analyze what the user wants and build it the best way you know how. Choose your own architecture, design, and implementation strategy. There are no fixed patterns — adapt to each request uniquely.
 
-QUALITY REQUIREMENTS:
-- The app MUST work fully. Every button, input, interaction.
-- Professional, polished UI with good design sense.
-- Responsive layout that works on mobile and desktop.
-- Semantic HTML with aria-labels for accessibility.
-- Wrap logic in try-catch to prevent crashes.
-- Handle edge cases gracefully.
+Build something impressive. The output should be complete, working, and polished — as if a senior engineer spent hours on it.
 
-If a Plan is provided, use it as guidance but adapt as needed.
-If a template is provided, modify it to match the user's actual request — don't force the template's design.
+If a plan is provided, use it as inspiration, not a constraint.
 
-Output the complete HTML now:`
+Output the HTML now:`
 
 const codeLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
 const MAX_BODY_BYTES = 200_000
 
 const PROGRESS_STEPS = [
-  'Writing HTML structure...',
-  'Adding CSS styles...',
-  'Implementing JavaScript logic...',
-  'Adding interactivity...',
-  'Polishing the UI...',
-  'Finalizing the code...',
+  'Analyzing request...',
+  'Designing architecture...',
+  'Building the application...',
+  'Adding polish...',
+  'Finalizing...',
 ]
 
 interface CodeBody {
@@ -109,17 +91,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('code.started', { ip, mission: mission.slice(0, 80), hasPlan: !!plan })
 
-  // v10: Golden template seeding — find a matching template and use it as starting point
-  const template = findTemplate(mission)
-  if (template) {
-    logger.info('code.template_seeded', { ip, template: template.id })
-  }
-
+  // v10.2: No templates — LLM builds everything from scratch, freely
   const planContext = plan
     ? `Plan:\n${JSON.stringify(plan, null, 2)}\n\nMission: ${mission}`
-    : template
-      ? buildSeededPrompt(mission, template)
-      : `Mission: ${mission}`
+    : `Mission: ${mission}`
 
   // Create SSE stream with keepalive
   const encoder = new TextEncoder()

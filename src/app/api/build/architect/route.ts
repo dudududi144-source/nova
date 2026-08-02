@@ -7,29 +7,20 @@ import { llmChat } from '@/lib/llm'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
-import { enrichMission } from '@/lib/build-intelligence'
+// v10.2: enrichMission removed — LLM decides everything freely
 import { extractBalancedJson } from '@/lib/json-extract'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-const ARCHITECT_PROMPT = `You are a software architect. Output a JSON plan for a single-file HTML app. Output ONLY JSON.
+const ARCHITECT_PROMPT = `You are a senior software architect. Analyze what the user wants and output a JSON plan.
 
-{
-  "type": "game|tool|app",
-  "title": "title",
-  "features": ["feature1", "feature2", "feature3"],
-  "approach": "how to build it — be specific about the architecture",
-  "colors": { "bg": "#0f172a", "primary": "#3b82f6", "accent": "#22d3ee" },
-  "layout": "UI layout description — describe the visual structure in detail",
-  "keyFunctions": ["func1", "func2"],
-  "components": ["component1", "component2"],
-  "stateManagement": "how state is managed (in-memory variables, etc.)",
-  "interactions": ["click handler", "keyboard input", "etc."],
-  "edgeCases": ["empty input", "error state", "etc."],
-  "estimatedComplexity": "simple|medium|complex"
-}`
+Output ONLY JSON — no markdown, no explanation. The plan should help the coder understand what to build. Include whatever fields make sense for this specific project — don't follow a rigid template.
+
+Include at minimum: a title, key features, visual design direction, and the main technical approach. Add any other fields that are relevant to this specific project.
+
+Be ambitious — think about what would make this impressive, not just functional.`
 
 const architectLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
 
@@ -60,11 +51,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('architect.started', { ip, mission: mission.slice(0, 80) })
 
-  // Enrich the mission with implementation hints before sending to architect
-  const enriched = enrichMission(mission)
-  logger.info('architect.enriched', { ip, type: enriched.detectedType, hints: enriched.hints.length })
+  // v10.2: No enrichment — send mission directly, LLM decides everything
 
-  const result = await llmChat(ARCHITECT_PROMPT, `Mission: ${enriched.enriched}`, {
+  const result = await llmChat(ARCHITECT_PROMPT, `Mission: ${mission}`, {
     maxTokens: 1000,
     temperature: 0.5,
     timeoutMs: 20_000,

@@ -44,11 +44,10 @@ describe('Architect route characterization', () => {
 describe('Code route characterization (SSE)', () => {
   it('has CODER_PROMPT with quality requirements', () => {
     expect(codeSource).toContain('CODER_PROMPT')
-    // v10: Prompt is now flexible — LLM decides the approach, not prescriptive instructions
-    expect(codeSource).toContain('aria-label')
-    expect(codeSource).toContain('try-catch')
-    expect(codeSource).toContain('Responsive')
-    expect(codeSource).toContain('You decide HOW to build')
+    // v10.2: Prompt is now fully free — no prescriptive instructions
+    expect(codeSource).toContain('elite software engineer')
+    expect(codeSource).toContain('creative freedom')
+    expect(codeSource).toContain('production-quality')
   })
 
   it('returns SSE stream (text/event-stream)', () => {
