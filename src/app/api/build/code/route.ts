@@ -126,10 +126,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
       }
 
-      // Safe close — wraps in try-catch and tracks closed state.
+      // Safe close — wraps in try-catch, tracks closed state, and stops keepalive.
       const safeClose = (): void => {
         if (controllerClosed) return
         controllerClosed = true
+        // v10.6: Stop keepalive when closing — ensures no orphan intervals
+        if (keepAliveInterval) { clearInterval(keepAliveInterval); keepAliveInterval = null }
         try {
           controller.close()
         } catch {}
@@ -214,9 +216,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
         }
 
-        // Stop keepalive
-        if (keepAliveInterval) clearInterval(keepAliveInterval)
-
+        // v10.6: DON'T stop keepalive yet — post-processing takes time (retry, analysis, validation)
+        // The keepalive continues sending progress events so the client knows we're still alive.
+        // It will be stopped after the result/error is sent.
         if (streamError) {
           logger.error('code.failed', { ip, error: streamError, ms: llmMs })
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: streamError })}\n\n`)
@@ -251,6 +253,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           return
         }
 
+        // v10.6: Send progress events for post-processing stages
+        safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Analyzing code...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+
         // ═══ POST-PROCESSING: Inject design tokens, CSP, and runtime error capture ═══
         // 1. Design tokens — CSS custom properties for consistent theming
         // 2. CSP — blocks external network requests
@@ -281,6 +286,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         } else {
           logger.info('code.static_analysis_passed', { ip })
         }
+
+        // v10.6: Progress for validation stage
+        safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Validating quality...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
 
         // ── INTELLIGENCE: Validate output quality ──
         const validation = validateOutput(html, mission)
@@ -338,6 +346,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
           // Retry didn't help — use original
         }
+
+        // v10.6: Progress — almost done
+        safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Finalizing...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
 
         // ── INTELLIGENCE: Quality metrics ──
         const metrics = analyzeQuality(html)
