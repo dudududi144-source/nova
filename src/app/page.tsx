@@ -555,7 +555,20 @@ export default function Home() {
       let finalPreviewable: boolean | undefined
 
       while (true) {
-        const { done, value } = await reader.read()
+        // v10.5: 180s timeout — if no data arrives, the connection is dead
+        let readResult: ReadableStreamReadResult<Uint8Array>
+        try {
+          readResult = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
+            )
+          ]) as ReadableStreamReadResult<Uint8Array>
+        } catch {
+          streamError = 'Connection timed out — no data for 180s'
+          break
+        }
+        const { done, value } = readResult
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
@@ -877,7 +890,20 @@ export default function Home() {
       let streamError: string | null = null
 
       while (true) {
-        const { done, value } = await reader.read()
+        // v10.5: 180s timeout — if no data arrives, the connection is dead
+        let readResult: ReadableStreamReadResult<Uint8Array>
+        try {
+          readResult = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
+            )
+          ]) as ReadableStreamReadResult<Uint8Array>
+        } catch {
+          streamError = 'Connection timed out — no data for 180s'
+          break
+        }
+        const { done, value } = readResult
         if (done) break
         buffer += decoder.decode(value, { stream: true })
         const normalized = buffer.replace(/\r\n/g, '\n')
@@ -1043,7 +1069,19 @@ export default function Home() {
         let finalMetrics = ''
 
         while (true) {
-          const { done, value } = await reader.read()
+          // v10.5: 180s timeout
+          let readResult: ReadableStreamReadResult<Uint8Array>
+          try {
+            readResult = await Promise.race([
+              reader.read(),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
+              )
+            ]) as ReadableStreamReadResult<Uint8Array>
+          } catch {
+            break
+          }
+          const { done, value } = readResult
           if (done) break
           buffer += decoder.decode(value, { stream: true })
           const events = buffer.replace(/\r\n/g, '\n').split('\n\n')
@@ -1269,7 +1307,20 @@ export default function Home() {
       let streamError: string | null = null
 
       while (true) {
-        const { done, value } = await reader.read()
+        // v10.5: 180s timeout — if no data arrives, the connection is dead
+        let readResult: ReadableStreamReadResult<Uint8Array>
+        try {
+          readResult = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
+            )
+          ]) as ReadableStreamReadResult<Uint8Array>
+        } catch {
+          streamError = 'Connection timed out — no data for 180s'
+          break
+        }
+        const { done, value } = readResult
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
@@ -1592,7 +1643,7 @@ export default function Home() {
             )}
           </Button>
 
-          {/* First-build loading (no prior result) — with StageRail stolen from TFA */}
+          {/* Loading state — single unified progress */}
           {loading && !result && (
             <div role="status" aria-live="polite" className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1600,44 +1651,19 @@ export default function Home() {
                 <span className="font-medium text-foreground/80">
                   {getThinkingText()}
                 </span>
-              </div>
-              {/* StageRail — visual progress bar (stolen from TFA Evolution Studio) */}
-              <div className="mt-3 flex items-center">
-                {BUILD_STAGES.map((stage, i) => {
-                  const done = i < BUILD_STAGES.indexOf(currentStage)
-                  const active = stage.key === currentStage.key
-                  const color = done || active ? 'bg-primary' : 'bg-muted-foreground/20'
-                  return (
-                    <div key={stage.key} className="flex flex-1 items-center">
-                      {i > 0 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
-                      <div className={`h-2.5 w-2.5 rounded-full ${color} ${active ? 'ring-2 ring-primary/30' : ''}`} title={stage.label} />
-                      {i < BUILD_STAGES.length - 1 && <div className={`h-0.5 flex-1 ${done ? 'bg-primary' : 'bg-muted-foreground/20'}`} />}
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground/50">
-                {BUILD_STAGES.map(s => <span key={s.key}>{s.short}</span>)}
-              </div>
-              <div className="mt-2 flex items-center gap-2 pl-0">
-                <span className="text-[10px] text-muted-foreground/50">
+                <span className="ml-auto text-[10px] text-muted-foreground/50">
                   {elapsed > 0 && `${elapsed}s`}
-                  {elapsed > 60 && ' · taking longer than expected'}
-                  {planSummary && ` · ${planSummary}`}
-                  {livePreviewHtml && ` · ${livePreviewHtml.length} chars generated`}
                 </span>
               </div>
-              {/* v4: PipelineProgress — richer stage indicator with live token text */}
-              {pipelineStage && (
-                <div className="mt-2 rounded-md border border-border/40 bg-card/30 p-2">
-                  <PipelineProgress
-                    currentStage={pipelineStage}
-                    liveText={pipelineLiveText}
-                    elapsedSeconds={elapsed}
-                    mode="full"
-                  />
-                </div>
-              )}
+              {/* Single progress display */}
+              <div className="mt-2">
+                <PipelineProgress
+                  currentStage={pipelineStage ?? 'plan'}
+                  liveText={pipelineLiveText || (livePreviewHtml ? `${livePreviewHtml.length} chars generated` : '')}
+                  elapsedSeconds={elapsed}
+                  mode="full"
+                />
+              </div>
             </div>
           )}
 
@@ -2143,28 +2169,15 @@ export default function Home() {
                       <p className="text-xs font-medium text-foreground/80">
                         {getThinkingText()}
                       </p>
-                      {/* v4: PipelineProgress — visual stage indicator (Plan → Code → Analyze → Validate → Done) */}
-                      {pipelineStage && (
-                        <div className="w-full rounded-md border border-border/40 bg-card/30 p-2">
-                          <PipelineProgress
-                            currentStage={pipelineStage}
-                            liveText={pipelineLiveText}
-                            elapsedSeconds={elapsed}
-                            mode="full"
-                          />
-                        </div>
-                      )}
-                      <div className="flex gap-1">
-                        {buildSteps.map((_, i) => (
-                          <div
-                            key={i}
-                            className={`h-1 rounded-full transition-all ${
-                              i <= thinkingStep ? 'w-3 bg-primary' : 'w-1 bg-muted-foreground/20'
-                            }`}
-                          />
-                        ))}
+                      {/* Single progress display */}
+                      <div className="w-full">
+                        <PipelineProgress
+                          currentStage={pipelineStage ?? 'code'}
+                          liveText={pipelineLiveText}
+                          elapsedSeconds={elapsed}
+                          mode="compact"
+                        />
                       </div>
-                      {elapsed > 0 && <p className="text-[10px] text-muted-foreground/50">{elapsed}s</p>}
                     </div>
                   </div>
                 )}

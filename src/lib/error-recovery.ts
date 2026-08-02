@@ -215,7 +215,7 @@ export function assessMissionVagueness(mission: string): ErrorAnalysis | null {
       message: `"${trimmed}" is too short — the AI doesn't have enough to go on.`,
       suggestions: [
         'Describe what the app should DO, not just what it is.',
-        'Example: "build a snake game with score and pause" instead of "snake".',
+        'Example: "build a crypto dashboard with live charts" instead of "dashboard".',
       ],
       canRetry: false,
       retryDelayMs: 0,
@@ -231,8 +231,8 @@ export function assessMissionVagueness(mission: string): ErrorAnalysis | null {
       title: 'Mission too vague',
       message: 'The mission doesn\'t specify enough details. Try naming the app type AND a feature.',
       suggestions: [
-        'Example: "todo app with filters" instead of "todo".',
-        'Example: "calculator with history" instead of "calc".',
+        'Example: "mobile OS with app grid and notifications" instead of "OS".',
+        'Example: "banking dashboard with transfers" instead of "banking".',
       ],
       canRetry: false,
       retryDelayMs: 0,
@@ -248,8 +248,8 @@ export function assessMissionVagueness(mission: string): ErrorAnalysis | null {
       title: 'Mission too vague',
       message: 'The mission uses generic phrasing — specify what to build.',
       suggestions: [
-        'Example: "build a pomodoro timer with start/pause/reset".',
-        'Example: "build a color palette generator with copy-to-clipboard".',
+        'Example: "build a music studio with multi-track sequencer".',
+        'Example: "build a 3D solar system with orbital mechanics".',
       ],
       canRetry: false,
       retryDelayMs: 0,
@@ -357,54 +357,11 @@ export function simplifyMission(mission: string): string {
  */
 export function suggestRelatedMissions(mission: string): string[] {
   const lower = (mission ?? '').toLowerCase()
-
-  if (lower.includes('snake') || lower.includes('game')) {
-    return [
-      'Build a Pong game with two paddles and a bouncing ball',
-      'Build a memory matching game with a 4x4 card grid',
-      'Build a Tetris-style block game with line clearing',
-    ]
-  }
-  if (lower.includes('todo') || lower.includes('task')) {
-    return [
-      'Build a sticky notes app with colorful draggable notes',
-      'Build a habit tracker with weekly streaks',
-      'Build a Kanban board with three columns (To Do, Doing, Done)',
-    ]
-  }
-  if (lower.includes('calc')) {
-    return [
-      'Build a tip calculator with bill split and percentage slider',
-      'Build a unit converter for length, weight, and temperature',
-      'Build a BMI calculator with metric and imperial units',
-    ]
-  }
-  if (lower.includes('clock') || lower.includes('timer') || lower.includes('stopwatch')) {
-    return [
-      'Build a pomodoro timer with 25/5 minute cycles and a start/pause button',
-      'Build a world clock showing 4 different timezones',
-      'Build a countdown timer to a specific date',
-    ]
-  }
-  if (lower.includes('color') || lower.includes('palette')) {
-    return [
-      'Build a random color generator with hex display and copy button',
-      'Build a gradient maker with two color pickers',
-      'Build a color picker that shows complementary colors',
-    ]
-  }
-  if (lower.includes('markdown') || lower.includes('editor') || lower.includes('text')) {
-    return [
-      'Build a markdown editor with live preview',
-      'Build a rich text editor with bold, italic, and heading buttons',
-      'Build a code snippet editor with syntax highlighting',
-    ]
-  }
-  // Generic fallback
+  // Ambitious, high-level suggestions — no basic apps
   return [
-    'Build a snake game with score and game-over screen',
-    'Build a todo app with add, complete, and delete',
-    'Build a calculator with keyboard support',
+    'Build a crypto trading dashboard with live charts and order book',
+    'Build a mobile OS simulator with app grid and notifications',
+    'Build a banking dashboard with transfers and analytics',
   ]
 }
 

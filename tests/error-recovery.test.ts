@@ -250,42 +250,43 @@ describe('suggestRelatedMissions', () => {
     expect(suggestRelatedMissions('snake')).toHaveLength(3)
   })
 
-  it('returns game suggestions for "snake"', () => {
+  it('returns ambitious suggestions for "snake"', () => {
     const suggestions = suggestRelatedMissions('build a snake game')
     expect(suggestions.length).toBe(3)
-    // At least one should mention a game
-    expect(suggestions.some(s => /game/i.test(s))).toBe(true)
+    // All suggestions should be ambitious/high-level
+    expect(suggestions.some(s => /dashboard|simulator|banking/i.test(s))).toBe(true)
   })
 
-  it('returns todo suggestions for "task"', () => {
+  it('returns ambitious suggestions for "task"', () => {
     const suggestions = suggestRelatedMissions('build a task tracker')
     expect(suggestions.length).toBe(3)
   })
 
-  it('returns calculator suggestions for "calc"', () => {
+  it('returns ambitious suggestions for "calc"', () => {
     const suggestions = suggestRelatedMissions('build a calc')
     expect(suggestions.length).toBe(3)
   })
 
-  it('returns timer suggestions for "timer"', () => {
+  it('returns ambitious suggestions for "timer"', () => {
     const suggestions = suggestRelatedMissions('build a timer')
     expect(suggestions.length).toBe(3)
   })
 
-  it('returns color suggestions for "palette"', () => {
+  it('returns ambitious suggestions for "palette"', () => {
     const suggestions = suggestRelatedMissions('build a palette generator')
     expect(suggestions.length).toBe(3)
   })
 
-  it('returns editor suggestions for "markdown"', () => {
+  it('returns ambitious suggestions for "markdown"', () => {
     const suggestions = suggestRelatedMissions('build a markdown editor')
     expect(suggestions.length).toBe(3)
   })
 
-  it('returns generic fallback for unrelated mission', () => {
+  it('returns ambitious fallback for unrelated mission', () => {
     const suggestions = suggestRelatedMissions('build a quantum physics simulator')
     expect(suggestions.length).toBe(3)
-    expect(suggestions[0]).toContain('snake') // fallback includes snake
+    // No basic apps in fallback — only ambitious ones
+    expect(suggestions.some(s => /dashboard|simulator|banking/i.test(s))).toBe(true)
   })
 
   it('returns non-empty strings', () => {
