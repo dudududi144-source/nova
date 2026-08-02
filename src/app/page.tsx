@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -82,6 +82,8 @@ export default function Home() {
   const [thinkingStep, setThinkingStep] = useState(0)
   const [buildSteps, setBuildSteps] = useState<string[]>(['Building...'])
   const [previewWidth, setPreviewWidth] = useState<'full' | 'desktop' | 'tablet' | 'mobile'>('full')
+  // v10.13: Fullscreen preview mode
+  const [fullscreen, setFullscreen] = useState(false)
   const [showCodeAnalysis, setShowCodeAnalysis] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
@@ -1561,6 +1563,11 @@ export default function Home() {
         }
       }
       // Escape closes shortcuts panel if open
+      // v10.13: Esc exits fullscreen
+      if (e.key === 'Escape' && fullscreen) {
+        setFullscreen(false)
+        return
+      }
       if (e.key === 'Escape' && showShortcuts) {
         setShowShortcuts(false)
         return
@@ -1991,6 +1998,18 @@ export default function Home() {
                     aria-label="Mobile width preview"
                   >M</button>
                 </div>
+                {/* v10.13: Fullscreen preview toggle */}
+                {result && !loading && !refining && (
+                  <button
+                    type="button"
+                    onClick={() => setFullscreen(!fullscreen)}
+                    className={`rounded-md px-2 py-1 text-[10px] transition-colors ${fullscreen ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    title={fullscreen ? 'Exit fullscreen' : 'Fullscreen preview'}
+                    aria-label="Toggle fullscreen preview"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                  </button>
+                )}
                 {qualityScore > 0 && (
                   <button
                     type="button"
@@ -2335,6 +2354,33 @@ export default function Home() {
           </section>
         )}
       </main>
+
+      {/* v10.13: Fullscreen preview overlay */}
+      {fullscreen && result && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950">
+          <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-2">
+            <span className="truncate text-xs text-muted-foreground">{result.mission}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground/50">{(result.ms / 1000).toFixed(1)}s · {formatTokens(result.tokens)} tokens</span>
+              {qualityScore > 0 && (
+                <span className={`rounded px-1 text-[10px] ${qualityScore >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>Q:{qualityScore}</span>
+              )}
+              <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => setFullscreen(false)} title="Exit fullscreen">
+                <X className="h-3.5 w-3.5" />
+                Exit
+              </Button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1">
+            <iframe
+              srcDoc={result.html}
+              title="Fullscreen Preview"
+              sandbox="allow-scripts"
+              className="h-full w-full border-0 bg-neutral-950"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Keyboard shortcuts help panel — press ? to toggle */}
       {showShortcuts && (
