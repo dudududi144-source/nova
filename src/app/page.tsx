@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2 } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -2079,6 +2079,24 @@ export default function Home() {
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Rebuild
                 </Button>
+                {/* v10.12: Fork — copy mission to textarea for a new variation */}
+                {result && !loading && !refining && (
+                  <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => {
+                    setMission(result.mission)
+                    setResult(null)
+                    resultRef.current = null
+                    setRuntimeErrors([])
+                    setProbeResult(null)
+                    setQualityScore(0)
+                    setQualityMetrics('')
+                    setChatMessages([])
+                    setLivePreviewHtml(null)
+                    toast.info('Forked — modify the prompt and build a new variation')
+                  }} title="Fork — modify prompt and build a variation">
+                    <GitBranch className="h-3.5 w-3.5" />
+                    Fork
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : refining ? cancelRefine : reset} title={loading ? 'Cancel build' : refining ? 'Cancel refine' : 'Start new'}>
                   {(loading || refining) ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                   {(loading || refining) ? 'Cancel' : 'New'}
