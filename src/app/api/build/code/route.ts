@@ -219,6 +219,46 @@ export async function POST(request: NextRequest): Promise<Response> {
         // v10.6: DON'T stop keepalive yet — post-processing takes time (retry, analysis, validation)
         // The keepalive continues sending progress events so the client knows we're still alive.
         // It will be stopped after the result/error is sent.
+
+        // v10.7: Automatic fallback to Qwen if Z.AI fails
+        if (streamError && !useKimi && !useQwen && isDashScopeConfigured()) {
+          logger.info('code.fallback_qwen', { ip, reason: streamError })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Qwen AI...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+
+          // Reset state for retry
+          fullText = ''
+          totalTokens = 0
+          llmMs = 0
+          streamError = null
+
+          for await (const chunk of dashscopeStream(CODER_PROMPT, planContext, {
+            maxTokens: tokenBudget,
+            temperature: 0.4,
+            timeoutMs: 150_000,
+            signal: request.signal,
+          })) {
+            if (chunk.error) {
+              streamError = chunk.error
+              break
+            }
+            if (chunk.done) {
+              totalTokens = chunk.tokens
+              llmMs = chunk.ms
+              break
+            }
+            if (chunk.text) {
+              fullText = chunk.fullText
+              if (!safeEnqueue(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`)) {
+                break
+              }
+            }
+          }
+
+          if (!streamError && fullText.trim()) {
+            logger.info('code.fallback_qwen_success', { ip, tokens: totalTokens })
+          }
+        }
+
         if (streamError) {
           logger.error('code.failed', { ip, error: streamError, ms: llmMs })
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: streamError })}\n\n`)

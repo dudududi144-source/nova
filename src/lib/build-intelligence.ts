@@ -267,20 +267,18 @@ export function validateOutput(html: string, mission: string): ValidationResult 
 // Instead of fixed maxTokens, estimate based on plan complexity.
 
 export function estimateTokenBudget(plan: unknown): number {
-  // No plan or invalid plan — use the same default as the "has plan but missing fields" case
-  // (3 features + 2 functions = 18000). Previously returned 16000 here but 18000 for
-  // objects missing fields — two different defaults was confusing.
-  if (!plan || typeof plan !== 'object') return 18000
+  // v10.7: Reduced defaults for faster builds
+  if (!plan || typeof plan !== 'object') return 12000
 
   const p = plan as Record<string, unknown>
   const features = Array.isArray(p.features) ? p.features.length : 3
   const keyFunctions = Array.isArray(p.keyFunctions) ? p.keyFunctions.length : 2
 
-  // Base: 4000 tokens per feature + 2000 per function + 2000 overhead
-  const estimated = 4000 * features + 2000 * keyFunctions + 2000
+  // Base: 2500 tokens per feature + 1500 per function + 1500 overhead
+  const estimated = 2500 * features + 1500 * keyFunctions + 1500
 
-  // Clamp: 8000 minimum, 64000 maximum (was 32000 — too low for complex apps like music looper)
-  return Math.max(8000, Math.min(64000, estimated))
+  // Clamp: 8000 minimum, 32000 maximum (was 64000 — too slow)
+  return Math.max(8000, Math.min(32000, estimated))
 }
 
 // ── 4. Quality Metrics ──
