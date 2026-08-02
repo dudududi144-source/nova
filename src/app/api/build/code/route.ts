@@ -23,6 +23,7 @@ import { registerBuild, storeResult, storeError } from '@/lib/build-store'
 import { recordSuccess, recordFailure } from '@/lib/model-circuit-breaker'
 import { parseOutput } from '@/lib/multi-file'
 import { isTokenRouterConfigured, tokenRouterStream } from '@/lib/tokenrouter'
+import { isDashScopeConfigured, dashscopeStream } from '@/lib/dashscope'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -57,6 +58,7 @@ interface CodeBody {
   mission?: unknown
   plan?: unknown
   theme?: unknown
+  model?: unknown  // 'z-ai' (default), 'kimi', or 'qwen'
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -165,12 +167,34 @@ export async function POST(request: NextRequest): Promise<Response> {
         let llmMs = 0
         let streamError: string | null = null
 
-        for await (const chunk of llmChatStream(CODER_PROMPT, planContext, {
-          maxTokens: tokenBudget,
-          temperature: 0.4,
-          timeoutMs: 150_000,
-          signal: request.signal,
-        })) {
+        // v10.3: Multi-model support — Z.AI (default), Kimi K3, or Qwen
+        const useKimi = body?.model === 'kimi' && isTokenRouterConfigured()
+        const useQwen = body?.model === 'qwen' && isDashScopeConfigured()
+
+        logger.info('code.model', { ip, model: useQwen ? 'qwen' : useKimi ? 'kimi' : 'z-ai', tokenBudget })
+
+        const streamGenerator = useQwen
+          ? dashscopeStream(CODER_PROMPT, planContext, {
+              maxTokens: tokenBudget,
+              temperature: 0.4,
+              timeoutMs: 150_000,
+              signal: request.signal,
+            })
+          : useKimi
+            ? tokenRouterStream(CODER_PROMPT, planContext, {
+                maxTokens: tokenBudget,
+                temperature: 0.4,
+                timeoutMs: 150_000,
+                signal: request.signal,
+              })
+            : llmChatStream(CODER_PROMPT, planContext, {
+                maxTokens: tokenBudget,
+                temperature: 0.4,
+                timeoutMs: 150_000,
+                signal: request.signal,
+              })
+
+        for await (const chunk of streamGenerator) {
           if (chunk.error) {
             streamError = chunk.error
             break

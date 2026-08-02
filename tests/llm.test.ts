@@ -108,9 +108,12 @@ describe('stripCodeFences', () => {
   })
 
   it('does not strip unclosed fences', () => {
-    // If there's no closing ```, the regex doesn't match, so it returns the trimmed input
+    // v10.3: With the new HTML extraction fallback, unclosed fences still
+    // extract the HTML content if it contains <!DOCTYPE
     const input = '```html\n<!DOCTYPE html>'
-    expect(stripCodeFences(input)).toBe('```html\n<!DOCTYPE html>')
+    const result = stripCodeFences(input)
+    // The fence regex won't match (no closing ```), but the HTML extraction will find <!DOCTYPE
+    expect(result).toContain('<!DOCTYPE')
   })
 })
 

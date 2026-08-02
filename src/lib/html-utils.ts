@@ -15,12 +15,22 @@
 export function stripCodeFences(text: string): string {
   // Find all fence blocks. Allow any language identifier (or none).
   // Handles 3+ backticks (``` or ```` or more).
-  // Language identifier is matched permissively: [a-zA-Z0-9_-]*
+  // v10.3: Also handles prose before/after fences (Qwen adds explanations)
   const fenceRegex = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
   let match
   while ((match = fenceRegex.exec(text)) !== null) {
     const content = match[1].trim()
     if (content) return content
+  }
+  // v10.3: No fences found — try to extract HTML directly from prose
+  // Look for <!DOCTYPE or <html anywhere in the text
+  const htmlStart = text.search(/<!DOCTYPE\s+html/i)
+  if (htmlStart >= 0) {
+    const htmlEnd = text.search(/<\/html>\s*$/i)
+    if (htmlEnd >= 0) {
+      return text.slice(htmlStart, htmlEnd + 7).trim()
+    }
+    return text.slice(htmlStart).trim()
   }
   return text.trim()
 }
