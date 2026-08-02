@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NOVA — Describe it. Build it.",
-  description: "Type what you want to build. NOVA generates a working, single-file HTML app you can preview and download.",
+  title: "NOVA — The Prompt-to-Reality Engine",
+  description: "Describe anything. Get everything. NOVA transforms a single sentence into a complete, production-grade web application — live, interactive, and fully functional.",
 }
 
 export const viewport: Viewport = {

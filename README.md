@@ -1,196 +1,238 @@
-# NOVA — Prompt-to-App Generator
+<div align="center">
 
-> Describe it. Build it. NOVA generates a working, single-file HTML app from a natural language prompt — with live token streaming, runtime error detection, auto-fix loop, and cross-build memory.
+# NOVA
 
-## Features
+### The Prompt-to-Reality Engine
 
-### Core
-- **Prompt-to-HTML** — Type what you want, get a complete working HTML app
-- **Live token streaming** — Watch the code appear character by character
-- **Two-stage pipeline** — Architect (plan) → Coder (generate) with real-time progress
-- **Sandboxed preview** — Strict CSP, null-origin iframe (no access to parent storage)
-- **Chat refine** — Ask NOVA to change anything ("make it blue", "add dark mode")
+**Describe anything. Get everything.**
 
-### Quality Pipeline
-- **Static analysis** — Catches 10+ bug types before the user sees them (missing IDs, undefined functions, infinite loops, uncleared intervals, JSON.parse without try/catch, missing await, empty listeners)
-- **Interaction probe** — Clicks buttons, types in inputs, checks DOM state changes
-- **Auto-fix loop** — Automatically fixes runtime errors (up to 3 iterations)
-- **Quality scoring** — 0-100 score based on HTML structure, functions, CSS, listeners
+NOVA transforms a single sentence into a complete, production-grade web application — live, interactive, and fully functional. No templates. No constraints. No fixed patterns. Just pure creative intelligence that adapts to whatever you imagine.
 
-### Resilience
-- **SSE recovery** — If the stream drops, polls the server for the result
-- **Circuit breaker** — Disables failing models after consecutive failures
-- **Graceful degradation** — Architect failure doesn't block the build (proceeds without plan)
-- **Client-side timeout** — Detects half-open connections (90s)
+</div>
 
-### Memory
-- **Cross-build memory** — IndexedDB cache for instant rebuild (0ms vs 30-60s)
-- **Similar builds** — Shows "⚡ Similar builds from memory" as you type
-- **History** — Last 10 builds in localStorage
+---
 
-### UI
-- **Dark/light mode** — Toggle for the NOVA UI itself
-- **10 color themes** — Slate, midnight, ocean, forest, sunset, amber, rose, violet, emerald, cyan
-- **Responsive preview** — Full / Desktop (1280px) / Tablet (768px) / Mobile (375px)
-- **Pipeline progress** — Visual stage tracker (Plan → Code → Analyze → Validate → Done)
-- **Diff view** — Compare current build with previous (line-based LCS diff)
-- **Multi-file viewer** — File tree + syntax highlighting for Python/React/Node output
-- **ZIP download** — Download multi-file output as a real ZIP (dependency-free encoder)
+## What NOVA Does
 
-### LLM Backends
-- **Z.AI** — Primary model (fast, ~30-50s per build)
-- **Kimi K3** — Free reasoning model via TokenRouter (slower but sometimes higher quality)
-- **Automatic fallback** — If one fails, the other takes over
+You type a description. NOVA thinks, designs, and builds — in real-time, token by token, right before your eyes. What you get back isn't a mockup or a wireframe. It's a working application with real logic, real interactivity, and real polish.
 
-## Tech Stack
+**"Build a crypto trading dashboard with live charts and order book"** → You get a fully interactive trading terminal with simulated live data, candlestick charts, a working order book, and portfolio tracking.
 
-- **Next.js 16** with App Router + Turbopack
-- **TypeScript 5** (strict mode)
-- **Tailwind CSS 4** with shadcn/ui (New York style)
-- **Z.AI SDK** — Primary LLM backend
-- **TokenRouter** — Kimi K3 (OpenAI-compatible, free)
-- **IndexedDB** — Cross-build memory cache
-- **SSE** — Server-Sent Events for real-time streaming
+**"Build a mobile OS simulator with app grid and notifications"** → You get a phone-like interface with swiping home screens, opening apps, a notification center, and settings panels.
 
-## Quick Start
+**"Build a 3D solar system explorer"** → You get orbiting planets with realistic mechanics, clickable bodies with info panels, and camera controls.
 
-```bash
-# Install dependencies
-bun install
+NOVA doesn't pick from templates. It doesn't follow fixed patterns. It analyzes what you want and decides — on its own — the best architecture, design, and implementation strategy for that specific request.
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env and add your API keys:
-#   ZAI_API_KEY=your-z-ai-key (usually pre-configured)
-#   TOKENROUTER_API_KEY=your-tokenrouter-key (for Kimi K3)
+---
 
-# Push database schema (if using Prisma)
-bun run db:push
+## How It Works
 
-# Start development server
-bun run dev
+### The Pipeline
 
-# Open http://localhost:3000
+```
+Your words
+    ↓
+┌─────────────────────────────────────────────────┐
+│  ARCHITECT                                      │
+│  Analyzes your request, designs a plan          │
+│  Decides: features, architecture, visual design │
+└──────────────────────┬──────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────┐
+│  CODER                                          │
+│  Builds the complete application                │
+│  Streams code live — you watch it appear        │
+└──────────────────────┬──────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────┐
+│  ANALYZER                                       │
+│  Static analysis — catches bugs before you do   │
+│  10+ bug types detected in <1ms                 │
+└──────────────────────┬──────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────┐
+│  PROBE                                          │
+│  Actually clicks buttons, types in inputs       │
+│  Verifies the app works — not just "no errors"  │
+└──────────────────────┬──────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────┐
+│  AUTO-FIX (if needed)                           │
+│  Sends found errors back to the AI              │
+│  Iterates up to 3× until clean                  │
+└──────────────────────┬──────────────────────────┘
+                       ↓
+              Working application
 ```
 
-## Environment Variables
+### What Makes NOVA Different
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ZAI_API_KEY` | Yes* | Z.AI SDK API key (usually pre-configured in sandbox) |
-| `TOKENROUTER_API_KEY` | No | TokenRouter API key for Kimi K3 (free tier available) |
+**No fixed patterns.** Most AI builders have presets: "if game → use Canvas", "if todo → use checklist". NOVA has none of that. The AI analyzes each request uniquely and chooses its own approach. A dice game gets dice. A trading dashboard gets charts. A solar system gets orbital mechanics. The AI decides.
 
-*In the Z.ai sandbox, the Z.AI SDK is pre-configured and doesn't need an explicit key.
+**Live token streaming.** You don't wait 60 seconds for a spinner. You watch the code appear character by character — HTML structure, CSS styling, JavaScript logic — all flowing in real-time. The preview updates as the code arrives.
 
-## Scripts
+**It actually verifies.** NOVA doesn't just generate and hope. After building, it loads the app in a sandbox, clicks every button, types in every input, and checks if the DOM actually changes. If something's broken, it sends the errors back to the AI and tries again. Up to 3 times.
 
-| Command | Description |
-|---------|-------------|
-| `bun run dev` | Start dev server on port 3000 |
-| `bun run build` | Production build |
-| `bun run start` | Start production server |
-| `bun run lint` | Run ESLint |
-| `bun test` | Run all tests |
-| `bun run db:push` | Push Prisma schema to database |
+**Cross-build memory.** Build something, then rebuild it later? Instant. NOVA caches every build in IndexedDB. Rebuilding a previous request takes 0ms instead of 60s. It also suggests similar past builds as you type.
 
-## Project Structure
+**Survives anything.** SSE stream drops? NOVA polls the server and recovers the result. AI model fails? Circuit breaker disables it and falls back to the other model. Architect fails? The coder proceeds without a plan. Network timeout? Client-side detection kicks in at 90s.
+
+---
+
+## Capabilities
+
+### What You Can Build
+
+| Request | What NOVA Delivers |
+|---------|-------------------|
+| Crypto trading dashboard | Live charts, order book, portfolio tracker, simulated market data |
+| Mobile OS simulator | Home screen, app grid, notifications, settings, app switching |
+| Banking dashboard | Accounts, transfers, transaction history, spending analytics |
+| 3D solar system | Orbital mechanics, planet info, camera controls, starfield |
+| Music production studio | Multi-track sequencer, effects, mixer, waveform visualization |
+| Data visualization dashboard | Real-time charts, KPI cards, filters, responsive layout |
+| Dice game | Roll animation, two-player scoring, game-over screen |
+| Snake game | Canvas rendering, score, game-over, restart |
+| Anything you can describe | The AI decides the best approach |
+
+### Quality Pipeline
+
+- **Static Analysis** — Detects missing element IDs, undefined functions, infinite loops, uncleared intervals, missing try/catch, missing await, empty event listeners — all in <1ms, before you see the result
+- **Interaction Probe** — Actually runs the app, clicks buttons, types text, verifies state changes occur
+- **Auto-Fix Loop** — If errors are found, sends them back to the AI with full context and retries — up to 3 iterations
+- **Quality Scoring** — 0-100 score based on structure, functions, CSS rules, event listeners, and accessibility
+
+### Resilience Layer
+
+- **SSE Recovery** — If the stream drops, client polls `/api/build/result` to recover the completed build
+- **Circuit Breaker** — Tracks model failures; after 5 consecutive failures, temporarily disables the model (2-min cooldown)
+- **Graceful Degradation** — Architect failure returns `plan:null` (not 502); the coder proceeds without a plan
+- **Client Timeout** — 90-second read timeout detects half-open TCP connections
+- **Multi-Model Fallback** — Z.AI ↔ Kimi K3 automatic failover
+
+### Memory System
+
+- **IndexedDB Cache** — Every build stored for instant rebuild (0ms vs 30-60s)
+- **Similar Build Search** — Reverse cursor scans recent builds, fuzzy matches by mission keywords
+- **Normalized Matching** — Word-order independent: "build snake game" = "game snake build"
+- **30-day TTL** — Old builds auto-pruned; max 200 entries
+
+### User Experience
+
+- **Dark/Light Mode** — CSS-only toggle, zero hydration mismatch
+- **10 Color Themes** — Slate, midnight, ocean, forest, sunset, amber, rose, violet, emerald, cyan
+- **Responsive Preview** — Full / Desktop (1280px) / Tablet (768px) / Mobile (375px)
+- **Live Pipeline Progress** — Visual stage tracker with real-time text updates
+- **Diff View** — LCS-based line diff comparing current build with previous
+- **Multi-File Viewer** — Syntax highlighting for 9 languages, file tree, ZIP download
+- **Chat Refine** — "make it blue", "add dark mode", "add a chart" — iterative refinement
+- **Sandboxed Preview** — Strict CSP, null-origin iframe, no access to parent storage
+
+---
+
+## Architecture
 
 ```
 src/
 ├── app/
 │   ├── api/
 │   │   ├── build/
-│   │   │   ├── architect/route.ts   # Stage 1: Plan generation
-│   │   │   ├── code/route.ts        # Stage 2: Code generation (SSE)
-│   │   │   └── result/route.ts      # Polling fallback endpoint
-│   │   └── refine/route.ts          # Chat-driven refinement (SSE)
-│   ├── layout.tsx                   # Root layout with ThemeProvider
-│   └── page.tsx                     # Main UI (prompt, preview, chat)
+│   │   │   ├── architect/route.ts    → Stage 1: Plan generation
+│   │   │   ├── code/route.ts         → Stage 2: Code generation (SSE streaming)
+│   │   │   └── result/route.ts       → Polling fallback endpoint
+│   │   └── refine/route.ts           → Chat-driven refinement (SSE)
+│   ├── layout.tsx                    → Root layout + ThemeProvider
+│   └── page.tsx                      → Main UI
 ├── components/
-│   ├── ui/                          # shadcn/ui components
-│   ├── theme-toggle.tsx             # Dark/light toggle
-│   ├── file-viewer.tsx              # Multi-file code viewer
-│   ├── diff-viewer.tsx              # Build comparison view
-│   ├── pipeline-progress.tsx        # Stage progress tracker
-│   └── preview-error-boundary.tsx   # Error boundary for preview
+│   ├── theme-toggle.tsx              → Dark/light CSS-only toggle
+│   ├── file-viewer.tsx               → Multi-file code viewer + syntax highlighting
+│   ├── diff-viewer.tsx               → LCS diff viewer
+│   ├── pipeline-progress.tsx         → Visual stage tracker
+│   └── preview-error-boundary.tsx    → Crash protection
 ├── lib/
-│   ├── llm.ts                       # Z.AI SDK wrapper
-│   ├── tokenrouter.ts               # Kimi K3 wrapper
-│   ├── model-circuit-breaker.ts     # Failure tracking + cooldown
-│   ├── llm-fallback.ts              # Multi-model fallback executor
-│   ├── build-store.ts               # In-memory result store (SSE recovery)
-│   ├── build-memory.ts              # IndexedDB cache
-│   ├── sse-reader.ts                # Shared SSE reading utility
-│   ├── golden-templates.ts          # Pre-built app templates
-│   ├── static-analysis.ts           # Bug detection engine
-│   ├── interaction-probe.ts         # Runtime testing
-│   ├── error-recovery.ts            # Smart error messages
-│   ├── multi-file.ts                # Multi-file output parsing
-│   ├── diff.ts                      # LCS diff engine
-│   ├── zip.ts                       # ZIP encoder (no deps)
-│   └── ...                          # Other utilities
-└── tests/                           # 726 tests, 0 failures
+│   ├── llm.ts                        → Z.AI SDK wrapper
+│   ├── tokenrouter.ts                → Kimi K3 backend
+│   ├── model-circuit-breaker.ts      → Failure tracking + auto-disable
+│   ├── llm-fallback.ts               → Multi-model fallback executor
+│   ├── build-store.ts                → In-memory result store (SSE recovery)
+│   ├── build-memory.ts               → IndexedDB cross-build cache
+│   ├── sse-reader.ts                 → Shared SSE reading utility
+│   ├── static-analysis.ts            → 10+ bug type detector
+│   ├── interaction-probe.ts          → Runtime testing (clicks, types, verifies)
+│   ├── error-recovery.ts             → Smart error categorization
+│   ├── multi-file.ts                 → Multi-file output parsing
+│   ├── diff.ts                       → LCS diff engine
+│   ├── zip.ts                        → Dependency-free ZIP encoder
+│   ├── golden-templates.ts           → Pre-built templates (available, not forced)
+│   └── ...                           → Utilities
+└── tests/                            → 726 tests, 0 failures
 ```
+
+---
+
+## Quick Start
+
+```bash
+bun install
+cp .env.example .env    # Add TOKENROUTER_API_KEY for Kimi K3 (optional)
+bun run dev             # Open http://localhost:3000
+```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ZAI_API_KEY` | Auto | Pre-configured in Z.ai sandbox |
+| `TOKENROUTER_API_KEY` | Optional | For Kimi K3 fallback (free at tokenrouter.com) |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 + App Router + Turbopack |
+| Language | TypeScript 5 (strict) |
+| Styling | Tailwind CSS 4 + shadcn/ui |
+| Primary AI | Z.AI SDK |
+| Fallback AI | Kimi K3 via TokenRouter (free, OpenAI-compatible) |
+| Memory | IndexedDB |
+| Streaming | Server-Sent Events (SSE) |
+| Testing | Bun test — 726 tests, 1269 assertions |
+
+---
 
 ## Testing
 
 ```bash
-# Run all tests
-bun test
-
-# Run specific test file
-bun test tests/static-analysis.test.ts
-
-# Run with parallelism
-bun test --parallel
+bun test    # 726 tests, 0 failures
 ```
 
-**Current status: 726 tests, 0 failures, 1269 assertions**
+---
 
-## Architecture
+## Philosophy
 
-### Build Pipeline
+NOVA is built on a simple principle: **the AI should decide how to build, not follow a script.**
 
-```
-User types mission
-       ↓
-[Architect] → Plan (JSON with features, colors, layout)
-       ↓
-[Coder] → HTML (streamed token-by-token via SSE)
-       ↓
-[Static Analysis] → Bug detection (missing IDs, undefined functions, etc.)
-       ↓  (if bugs found, retry with hints)
-[Validation] → Quality score (0-100)
-       ↓
-[CSP + Runtime Error Capture] → Injected into HTML
-       ↓
-[Result Store] → Saved for polling fallback
-       ↓
-[IndexedDB Cache] → Saved for instant rebuild
-       ↓
-[Probe] → Clicks buttons, checks state changes
-       ↓  (if errors found)
-[Auto-fix Loop] → Sends errors to LLM, repeats up to 3×
-```
+Most AI app builders have a library of templates and patterns. "If the user says 'game', use Canvas and requestAnimationFrame." "If they say 'todo', use a checklist." This produces predictable, homogeneous output.
 
-### SSE Recovery
+NOVA has no such presets. The AI receives the request, analyzes it, and decides — from scratch — the best architecture, design, and implementation for that specific thing. A dice game gets 3D dice. A trading dashboard gets candlestick charts. A solar system gets orbital mechanics. Each build is unique because the AI adapts.
 
-If the SSE stream drops (gateway timeout, proxy limit):
+The result: you get what you asked for, not what the template dictated.
 
-```
-Client detects stream end without result
-       ↓
-Polls GET /api/build/result?id=xxx (3 attempts, 3s apart)
-       ↓
-Server returns stored result from in-memory Map
-       ↓
-Client receives result → same as if SSE worked
-```
+---
 
 ## License
 
-MIT — Build anything, share everything.
+MIT
 
-## Credits
+---
 
-Built with [Z.ai](https://z.ai) — AI-powered development.
+<div align="center">
+
+**[Live Demo](https://nova.preview)** · **[GitHub](https://github.com/rabotatony/nova)**
+
+Built with Z.ai — AI-powered development.
+
+</div>

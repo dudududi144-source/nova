@@ -1473,7 +1473,7 @@ export default function Home() {
           </div>
           <div>
             <h1 className="text-sm font-semibold">NOVA</h1>
-            <p className="text-[10px] text-muted-foreground">Describe it. Build it.</p>
+            <p className="text-[10px] text-muted-foreground">Prompt to Reality</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -1978,7 +1978,7 @@ export default function Home() {
                 {chatMessages.length === 0 ? (
                   <p className="text-[10px] text-muted-foreground/40">
                     <MessageSquare className="mr-1 inline h-3 w-3" />
-                    Ask NOVA to change something — "make it blue", "add dark mode", "add a high score"
+                    Ask NOVA to change anything — refine, add features, redesign
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -2266,7 +2266,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="mt-auto shrink-0 border-t border-border/40 px-4 py-2">
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
-          <span>NOVA · prompt-to-app</span>
+          <span>NOVA · The Prompt-to-Reality Engine</span>
           <span className="hidden sm:inline">
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
