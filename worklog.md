@@ -3334,3 +3334,44 @@ Stage Summary:
 - `src/lib/helpers.ts`: `BuildResult` extended with optional `files`/`outputType`/`previewable`.
 - `src/app/page.tsx`: 1972 → 2287 lines. All 8 features wired into the live UI without restructuring the existing layout or breaking the SSE/probe/auto-fix/chat flows. Dynamic imports keep FileViewer & DiffViewer out of the SSR bundle. New state is reset on history-load and reset. `fail()` keeps its abort guard plus the new `analyzeError` call.
 - Tests still green: 726/726 pass. Lint: 0 errors. TypeScript: 0 errors. Production build: OK.
+
+---
+Task ID: 174-178
+Agent: main (Z.ai Code)
+Task: E2E verification — 3 different apps + 3 models + refine
+
+E2E TEST RESULTS:
+
+Test 1: Counter app (Z.AI)
+- Q:100, 1167 lines, 30 functions, 38KB
+- Increment: 0→1→4 ✅
+- Decrement: 4→2 ✅
+- Reset: 2→0 ✅
+- Step=10 + Increment: 0→10 ✅
+- All interactions verified working
+
+Test 2: Recipe cookbook (Z.AI)
+- Q:96, 1966 lines, 39 functions, 67KB
+- "Culinary Compass" with 6 recipes
+- Search, categories (Quick, Vegetarian, Gluten-Free, Italian)
+- Navigation: Recipes / Timers / My Collection
+- 0 errors, 0 warnings
+
+Test 3: Pixel art editor (Z.AI + refine)
+- Original: Q:93, 1171 lines — pencil, color palette, brush, undo/redo, export PNG
+- After refine "add eraser and fill bucket": Q:93, 1273 lines
+  Added: Eraser, Fill Bucket, Eyedropper, Line Tool, Rectangle
+- Refine works: buildstore.registered + buildstore.stored
+- 0 errors
+
+Test 4: Pomodoro timer (Qwen)
+- Q:96, 824 lines, 17 functions, 31s
+- qwen-flash-character model works!
+- Start/Pause/Reset, progress ring, session history, sound notifications
+
+SUMMARY:
+- 3 models verified: Z.AI ✅, Qwen ✅, Kimi K3 (previous cycles) ✅
+- Refine verified: adds features without breaking existing ones ✅
+- No fixed patterns: each app is completely unique ✅
+- 0 errors across all tests ✅
+- 726 tests pass ✅
