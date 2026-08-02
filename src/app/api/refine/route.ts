@@ -18,6 +18,7 @@ import { generateDesignTokens } from '@/lib/design-tokens'
 import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
 import { analyzeHtml } from '@/lib/static-analysis'
 import { registerBuild, storeResult, storeError } from '@/lib/build-store'
+import { isDashScopeConfigured, dashscopeStream } from '@/lib/dashscope'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       const safeClose = (): void => {
         if (controllerClosed) return
         controllerClosed = true
+        if (keepAliveInterval) { clearInterval(keepAliveInterval); keepAliveInterval = null }
         try { controller.close() } catch {}
       }
 
@@ -187,8 +189,22 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
         }
 
-        // Stop keepalive
-        if (keepAliveInterval) clearInterval(keepAliveInterval)
+        // v10.8: Qwen fallback for refine + keep keepalive running
+        if (streamError && isDashScopeConfigured()) {
+          logger.info('refine.fallback_qwen', { ip, reason: streamError })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Qwen AI...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+          fullText = ''; totalTokens = 0; llmMs = 0; streamError = null
+          for await (const chunk of dashscopeStream(REFINE_PROMPT, userPrompt, {
+            maxTokens: tokenBudget, temperature: 0.3, timeoutMs: 150_000, signal: request.signal,
+          })) {
+            if (chunk.error) { streamError = chunk.error; break }
+            if (chunk.done) { totalTokens = chunk.tokens; llmMs = chunk.ms; break }
+            if (chunk.text) {
+              fullText = chunk.fullText
+              if (!safeEnqueue(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`)) break
+            }
+          }
+        }
 
         if (streamError) {
           logger.error('refine.failed', { ip, error: streamError, ms: llmMs })

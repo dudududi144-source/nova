@@ -24,6 +24,13 @@ mock.module('@/lib/llm', () => ({
   llmChatStream: (sys: string, user: string, opts?: unknown) => mockStreamFn(sys, user, opts),
 }))
 
+// v10.8: Mock DashScope as not configured — prevents fallback from hanging tests
+mock.module('@/lib/dashscope', () => ({
+  isDashScopeConfigured: () => false,
+  dashscopeStream: async function* () { yield { text: '', fullText: '', done: true, tokens: 0, ms: 0 } },
+  dashscopeChat: async () => ({ ok: false, text: '', tokens: 0, ms: 0 }),
+}))
+
 interface TestRequest {
   headers: Map<string, string>
   json: () => Promise<unknown>

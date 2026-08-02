@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
-import { formatTokens, BUILD_STAGES, getCurrentStage } from '@/lib/format'
+import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
 import { probeApp, type ProbeResult } from '@/lib/interaction-probe'
 import { THEMES } from '@/lib/design-tokens'
@@ -1507,12 +1507,7 @@ export default function Home() {
   // Whether to show first-build error panel (no result, has error, not loading)
   const showFirstError = !result && !!error && !loading
 
-  // Current build stage (stolen from TFA's StageRail concept)
-  const currentStage = loading || refining
-    ? getCurrentStage(elapsed, !!planSummary, !!livePreviewHtml, false)
-    : result
-      ? BUILD_STAGES[6]
-      : BUILD_STAGES[0]
+  // v10.8: Removed dead BUILD_STAGES/currentStage — PipelineProgress handles all UI
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading || refining}>
