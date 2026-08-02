@@ -97,6 +97,9 @@ export default function Home() {
   const [showRuntimeErrors, setShowRuntimeErrors] = useState(false)
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
   const [selectedTheme, setSelectedTheme] = useState<string>('slate')
+  // v10.9: Model selector — Z.AI (default), Qwen (free), Kimi (reasoning)
+  const [selectedModel, setSelectedModel] = useState<'z-ai' | 'qwen' | 'kimi'>('z-ai')
+  const selectedModelRef = useRef<'z-ai' | 'qwen' | 'kimi'>('z-ai')
   const [planFeatures, setPlanFeatures] = useState<{name: string; found: boolean}[]>([])
   const [autoFixing, setAutoFixing] = useState(false)
   // v4: Build memory — instant restore from IndexedDB + similar-builds suggestions
@@ -249,7 +252,17 @@ export default function Home() {
       const saved = localStorage.getItem('nova_theme')
       if (saved && saved !== selectedTheme) setSelectedTheme(saved)
     } catch {}
+    // v10.9: Load saved model
+    try {
+      const savedModel = localStorage.getItem('nova_model')
+      if (savedModel === 'qwen' || savedModel === 'kimi' || savedModel === 'z-ai') {
+        setSelectedModel(savedModel)
+        selectedModelRef.current = savedModel
+      }
+    } catch {}
   }, [])
+  // v10.9: Keep model ref in sync
+  useEffect(() => { selectedModelRef.current = selectedModel }, [selectedModel])
 
   // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
   // to avoid double-firing in React StrictMode.
@@ -477,7 +490,7 @@ export default function Home() {
       const archRes = await fetch('/api/build/architect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mission: m }),
+        body: JSON.stringify({ mission: m, model: selectedModelRef.current }),
         signal: controller.signal,
       })
 
@@ -506,7 +519,7 @@ export default function Home() {
       const codeRes = await fetch('/api/build/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null, theme: selectedTheme }),
+        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null, theme: selectedTheme, model: selectedModelRef.current }),
         signal: controller.signal,
       })
 
@@ -1268,7 +1281,7 @@ export default function Home() {
       const res = await fetch('/api/refine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg, theme: selectedTheme }),
+        body: JSON.stringify({ mission: currentResult.mission, html: currentResult.html, message: msg, theme: selectedTheme, model: selectedModelRef.current }),
         signal: controller.signal,
       })
 
@@ -1545,6 +1558,36 @@ export default function Home() {
                 />
               ))}
             </div>
+          </div>
+          {/* v10.9: Model selector — Z.AI (default), Qwen (free), Kimi (reasoning) */}
+          <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => { setSelectedModel('z-ai'); try { localStorage.setItem('nova_model', 'z-ai') } catch {} }}
+              disabled={loading || refining}
+              className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+                selectedModel === 'z-ai' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Z.AI — fast, reliable (default)"
+            >Z.AI</button>
+            <button
+              type="button"
+              onClick={() => { setSelectedModel('qwen'); try { localStorage.setItem('nova_model', 'qwen') } catch {} }}
+              disabled={loading || refining}
+              className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+                selectedModel === 'qwen' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Qwen — free, fast via DashScope"
+            >Qwen</button>
+            <button
+              type="button"
+              onClick={() => { setSelectedModel('kimi'); try { localStorage.setItem('nova_model', 'kimi') } catch {} }}
+              disabled={loading || refining}
+              className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+                selectedModel === 'kimi' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Kimi K3 — reasoning model, slower but detailed"
+            >Kimi</button>
           </div>
           {/* v10: Dark/light mode toggle for NOVA UI */}
           <ThemeToggle />
