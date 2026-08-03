@@ -4343,3 +4343,48 @@ WHAT I IMPROVED:
 
 Tests: 844 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
 Pushed to GitHub: 621a5bb..827fc65
+
+---
+Task ID: 411-420
+Agent: main (Z.ai Code)
+Task: v26 — Deep chain audit, found and fixed 3 critical bugs
+
+CHAIN AUDIT — examined each step:
+
+STEP 1: User input ✅ — empty/long/unicode all handled
+STEP 2: Mission analysis — FIXED feature counting (was counting "and" in "drag-and-drop")
+STEP 3: Architect — CRITICAL BUG: plan used 'key_features' but code checked 'features'
+  - extractStepsFromPlan: showed 0 features (fixed)
+  - checkPlanAdherence: couldn't verify features (fixed)
+  - estimateTokenBudget: used wrong count (fixed)
+STEP 4: Code generation ✅ — SSE streaming works
+STEP 5: Validation — CRITICAL BUG: score ignored static analysis errors
+  - Apps with 5 undefined functions still got Q:96
+  - Fixed: each static error deducts 10 points (max -50)
+STEP 6: Probe ✅ — fixed in v25 (allow-same-origin)
+STEP 7: Auto-fix ✅ — now includes functional score and dead clicks
+
+CRITICAL BUGS FIXED:
+1. Plan feature extraction: 'features' vs 'key_features' mismatch
+   - Architect returns key_features (underscore)
+   - Code checked features (no underscore)
+   - Result: 0 features detected, 0 plan adherence checks, wrong token budget
+   - Fix: All 3 functions now check both field names
+
+2. Quality score inflation: static errors not deducted
+   - validation.score only counted structural checks (DOCTYPE, tags)
+   - Static analysis (undefined functions) was logged but ignored
+   - Result: Q:96 for apps with 5 broken buttons
+   - Fix: staticErrors * 10 + staticWarnings * 3 deducted from score
+
+3. Retry path: also used raw score without static deduction
+   - Same bug as #2 but in retry path
+   - Fix: retry path now uses same adjustedScore calculation
+
+HONEST SCORING NOW:
+- Before: Q:96 with 5 undefined functions (LIE)
+- After: Q:46 with 5 undefined functions (TRUTH)
+- Q:96 only when 0 static errors (HONEST)
+
+Tests: 844 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+Pushed to GitHub: 4598f1f..a6e161c
