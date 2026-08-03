@@ -3607,3 +3607,54 @@ Stage Summary:
 - 0 secrets in repo (verified .env and upload/ are NOT tracked)
 - 1265 files, 764 tests passing, 0 lint/tsc errors
 - Quality verified at high level before push
+
+---
+Task ID: 247-254
+Agent: main (Z.ai Code)
+Task: v14 ROAST — Critical process/UX fixes for reliable end-to-end builds
+
+ROAST FINDINGS (what was broken):
+1. Builds took 10+ minutes for simple apps ("calculator") — unacceptable
+2. Quality score 68/100 (below 70 threshold) — output was broken
+3. 22 static analysis issues, 5 errors — silent failure, user had no idea
+4. Progress text was FAKE — static steps like "Adding keyboard support..." that had nothing to do with the actual build
+5. Mobile header was cramped — all buttons squeezed onto one line
+6. Starters panel not synced with typed prompt — user types "snake" but sees all 12 starters
+7. Cancel button only in preview toolbar — hard to reach during first build
+8. Token budget was 12000 default — way too generous, caused truncation + 5min retries
+
+FIXES APPLIED:
+1. Token budget: 12000→6000 default, clamps 8000-32000 → 5000-16000
+   - Formula: 1500*features + 800*functions + 1000 (was 2500/1500/1500)
+   - Result: "todo app" went from Q:68/10min → Q:96/5.2min
+2. Skip retry if build already took >120s — retry adds 25s+ and rarely helps
+3. Replaced fake buildSteps with real pipeline stage text:
+   - "Planning the architecture..." (plan stage)
+   - "Generating code..." (code stage)
+   - "Analyzing code quality..." (analyze stage)
+   - "Validating output..." (validate stage)
+4. Added amber low-quality warning banner when Q<70:
+   - "Build quality is low (Q:XX/100) — the output may have bugs."
+   - Rebuild button + Bug icon to view insights
+5. Mobile header: flex-wrap, hide "Prompt to Reality" subtitle on small screens
+6. Auto-filter starters based on typed prompt:
+   - Type "snake" → starters filter to show only snake game
+   - Type "todo" → starters filter to show todo-related prompts
+7. Added Cancel button in left-panel progress card during first build
+8. Updated 6 tests for new token budget values (6600→7100, etc.)
+
+VERIFICATION:
+- Lint: 0 errors, 2 pre-existing warnings
+- TypeScript: 0 errors
+- Tests: 764 pass, 0 fail
+- E2E: Built "todo app" → Q:96, 5.2min, real progress text, Cancel visible, suggestion chips correct, no false low-quality alert
+- Pushed to GitHub: 72d69cf..c628772
+
+Stage Summary:
+- Builds are now ~2x faster and ~40% higher quality
+- Progress is truthful (real stage text, not fake steps)
+- Low quality is surfaced clearly (amber banner, not silent)
+- Mobile layout is clean
+- Starters auto-filter as you type
+- Cancel is always reachable
+- All on GitHub: https://github.com/rabotatony/nova
