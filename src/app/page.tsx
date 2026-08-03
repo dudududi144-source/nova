@@ -1003,6 +1003,28 @@ export default function Home() {
     }
   }, [mission])
 
+  // v18: Smart retry — rebuild with a different model (e.g., Kimi for low-quality builds)
+  // Temporarily switches the model, builds, then restores the original selection
+  const retryWithModel = useCallback(async (model: 'z-ai' | 'qwen' | 'kimi') => {
+    const prevModel = selectedModelRef.current
+    if (prevModel === model) {
+      // Same model — just rebuild
+      build()
+      return
+    }
+    setSelectedModel(model)
+    selectedModelRef.current = model
+    try { localStorage.setItem('nova_model', model) } catch {}
+    toast.info(`Rebuilding with ${model === 'z-ai' ? 'Z.AI' : model === 'qwen' ? 'Qwen' : 'Kimi K3'}...`)
+    await build()
+    // Restore previous model after build starts
+    setTimeout(() => {
+      setSelectedModel(prevModel)
+      selectedModelRef.current = prevModel
+      try { localStorage.setItem('nova_model', prevModel) } catch {}
+    }, 100)
+  }, [build])
+
   const loadFromHistory = useCallback((h: BuildResult) => {
     // Abort any in-flight build or refine
     abortRef.current?.abort()
@@ -1497,6 +1519,63 @@ export default function Home() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     toast.success(`Downloaded ${a.download}`)
   }, [result])
+
+  // v18: Export all builds — downloads a JSON backup of all history items
+  const exportBuilds = useCallback(() => {
+    try {
+      const data = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        builds: historyRef.current,
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `nova-builds-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast.success(`Exported ${historyRef.current.length} builds`)
+    } catch {
+      toast.error('Failed to export builds')
+    }
+  }, [])
+
+  // v18: Import builds — loads builds from a JSON backup file
+  const importBuilds = useCallback((file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string)
+        if (!data.builds || !Array.isArray(data.builds)) {
+          toast.error('Invalid backup file — missing builds array')
+          return
+        }
+        const valid = data.builds.filter((b: unknown) => {
+          if (typeof b !== 'object' || b === null) return false
+          const item = b as Record<string, unknown>
+          return typeof item.id === 'string' && typeof item.html === 'string' && typeof item.mission === 'string'
+        })
+        if (valid.length === 0) {
+          toast.error('No valid builds found in backup file')
+          return
+        }
+        // Merge with existing history (dedupe by id)
+        const existingIds = new Set(historyRef.current.map(h => h.id))
+        const newBuilds = valid.filter((b: BuildResult) => !existingIds.has(b.id))
+        const merged = [...newBuilds, ...historyRef.current].slice(0, 30)
+        historyRef.current = merged
+        setHistory(merged)
+        saveHistoryToStorage(merged)
+        toast.success(`Imported ${newBuilds.length} new builds (${merged.length} total)`)
+      } catch {
+        toast.error('Failed to parse backup file — not valid JSON')
+      }
+    }
+    reader.readAsText(file)
+  }, [saveHistoryToStorage])
 
   // Copy HTML to clipboard
   const copyHtml = useCallback(async () => {
@@ -2743,14 +2822,42 @@ export default function Home() {
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmClear(true)}
-                  disabled={loading || refining}
-                  className="block w-full px-3 py-1 text-left text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
-                >
-                  Clear history
-                </button>
+                <div className="flex gap-1.5">
+                  {/* v18: Export/Import builds */}
+                  <button
+                    type="button"
+                    onClick={exportBuilds}
+                    disabled={loading || refining || history.length === 0}
+                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50"
+                    title="Export all builds as JSON backup"
+                  >
+                    Export
+                  </button>
+                  <label
+                    className="flex-1 cursor-pointer rounded border border-border/40 px-2 py-1 text-center text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50"
+                    title="Import builds from JSON backup"
+                  >
+                    Import
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) importBuilds(file)
+                        e.target.value = '' // Reset so same file can be selected again
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClear(true)}
+                    disabled={loading || refining}
+                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground/50 hover:text-destructive disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -2797,10 +2904,17 @@ export default function Home() {
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button size="sm" variant="ghost" className="h-6 gap-1 text-[11px] text-amber-400 hover:bg-amber-500/10" onClick={() => build()} title="Rebuild from scratch">
+                  <Button size="sm" variant="ghost" className="h-6 gap-1 text-[11px] text-amber-400 hover:bg-amber-500/10" onClick={() => build()} title="Rebuild from scratch with same model">
                     <RefreshCw className="h-3 w-3" />
                     Rebuild
                   </Button>
+                  {/* v18: Smart retry with Kimi — reasoning model for better quality */}
+                  {selectedModel !== 'kimi' && (
+                    <Button size="sm" variant="ghost" className="h-6 gap-1 text-[11px] text-violet-400 hover:bg-violet-500/10" onClick={() => retryWithModel('kimi')} title="Rebuild with Kimi K3 — reasoning model for better quality">
+                      <Sparkles className="h-3 w-3" />
+                      Retry with Kimi
+                    </Button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setShowCodeAnalysis(true)}
