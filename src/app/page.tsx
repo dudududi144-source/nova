@@ -994,7 +994,10 @@ export default function Home() {
 
       // v15: Set build timing breakdown
       const codeMs = Date.now() - codeStartTime
-      setBuildTimings({ architect: archMs, code: codeMs, total: finalMs })
+      const finalTimings = { architect: archMs, code: codeMs, total: finalMs }
+      setBuildTimings(finalTimings)
+      // v23: Save timings on the build result so they persist in history
+      buildResult.timings = finalTimings
 
       toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
       setQualityScore(finalQuality)
@@ -1065,6 +1068,8 @@ export default function Home() {
     // v13: Restore quality + metrics from the build result if it has them (added in v11/v13)
     setQualityScore(h.quality ?? 0)
     setQualityMetrics(h.metrics ?? '')
+    // v23: Restore build timings if available
+    setBuildTimings(h.timings ?? null)
     setPlanSummary(null)
     setLivePreviewHtml(null)
     setConfirmClear(false)

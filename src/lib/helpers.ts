@@ -23,6 +23,8 @@ export interface BuildResult {
   timestamp?: number
   /** Optional: quality metrics string from the analyzer (e.g. "985 lines · 28 functions"). */
   metrics?: string
+  /** Optional: build timing breakdown (architect ms, code ms). */
+  timings?: { architect: number; code: number; total: number }
 }
 
 export function newBuildId(): string {
