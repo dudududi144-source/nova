@@ -47,6 +47,11 @@ CRITICAL RULES (follow strictly — these are the most common bugs):
 4. Do NOT use prompt() or confirm() — they are blocked in the sandbox. Use inline input fields and modals instead.
 5. Do NOT use localStorage — it is blocked. Use in-memory variables only.
 6. If you show an instructions/help overlay, it MUST have a close button that hides it. Do NOT cover interactive elements with static text overlays.
+7. FORMS: If you use a <form> element, you MUST call event.preventDefault() in the submit handler. Without this, the form tries to navigate away and the app breaks. Example:
+   form.addEventListener('submit', function(e) { e.preventDefault(); addTask(); });
+   OR use <button type="button"> instead of submit, and handle click with onclick.
+8. INPUTS: When reading input values, use .value and .trim(). If empty, show a visual error (red border) instead of alert.
+9. LISTS: When adding items to a list, create DOM elements with document.createElement, set their textContent, and append to the list container. Do NOT use innerHTML += (it breaks event listeners).
 
 QUALITY RULES:
 - Build something impressive but CONCISE — aim for 500-1000 lines, not 2000+.
