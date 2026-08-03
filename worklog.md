@@ -3948,3 +3948,56 @@ Stage Summary:
   - Stats button appeared with "1" badge ✅
   - Clicked → modal showed: Total builds:1, Avg Q:71, Best Q:71, Avg time:140s, Total tokens:5.8k, Model: Z.AI:1, Best build: counter ✅
 - Pushed to GitHub: 8021ec4..00c9597
+
+---
+Task ID: 297-302
+Agent: main (Z.ai Code)
+Task: v21 — Prompt templates + keyboard shortcuts S/T
+
+Work Log:
+- Created `src/lib/prompt-templates.ts` with CRUD operations:
+  - `PromptTemplate` interface: id, name, prompt, createdAt, lastUsedAt
+  - `loadTemplates()`: reads from localStorage, validates entries, caps at 50
+  - `saveTemplates()`: persists to localStorage
+  - `addTemplate(name, prompt)`: creates new template, dedupes by name
+  - `deleteTemplate(id)`: removes by id
+  - `markTemplateUsed(id)`: updates lastUsedAt timestamp
+  - `getTemplateById(id)`: lookup helper
+- Added 16 tests for prompt templates:
+  - loadTemplates (empty, stored, corrupted, invalid filtering)
+  - addTemplate (creation, persistence, dedup, trimming, capping)
+  - deleteTemplate (removal, non-existent id)
+  - markTemplateUsed (timestamp update, non-existent id)
+  - getTemplateById (found, not found)
+  - saveTemplates (50-item cap)
+- Added `templates`, `showTemplates`, `saveTemplateName` state to page.tsx
+- Added Templates button (Bookmark icon) next to Enhance:
+  - Shows count badge when templates exist
+  - Toggles templates panel
+- Added templates panel:
+  - "Save current prompt" section: name input + Save button (Enter to save)
+  - "Saved templates" list: each row shows name + prompt preview, click to load, trash icon to delete
+  - Scrollable list (max-h-48)
+  - Empty state message
+- Added functions:
+  - `savePromptTemplate()`: validates prompt length, saves with optional name
+  - `loadPromptTemplate(t)`: sets mission to template prompt, marks as used
+  - `removePromptTemplate(id, name)`: deletes template, shows toast
+- Added keyboard shortcuts:
+  - S = toggle build statistics panel
+  - T = toggle prompt templates panel
+- Updated shortcuts modal: added S and T entries
+- Loaded templates on mount
+
+Stage Summary:
+- `src/lib/prompt-templates.ts`: new file, 75 lines
+- `tests/prompt-templates.test.ts`: new file, 16 tests
+- `src/app/page.tsx`: +templates state, +Templates button, +templates panel, +save/load/delete functions, +S/T shortcuts
+- Tests: 828 → 844 pass (+16 new). 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - Typed "Build a calculator with history and keyboard support"
+  - Saved as "My Calculator" → toast "Saved template \"My Calculator\""
+  - Templates button badge showed "1"
+  - Cleared textarea → clicked template → prompt loaded back ✅
+  - Delete button visible and functional
+- Pushed to GitHub: 00c9597..59e6f17
