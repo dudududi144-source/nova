@@ -4443,3 +4443,45 @@ PROMPT RULES ADDED (total 11):
 11: init() after DOM ready
 
 Pushed to GitHub: 9f92b44..92db8d9
+
+---
+Task ID: 441-450
+Agent: main (Z.ai Code)
+Task: v27 — Math fixer + design excellence + quality improvements
+
+MAJOR CHANGES:
+
+1. MATH FIXER (src/lib/math-fixer.ts):
+   - Scans generated HTML for inverted conversion formulas
+   - Fixes * 1000 → / 1000 in meter/km context
+   - Applied in code route (main + retry) and refine route
+   - VERIFIED: 1000m→1km (was 1000000km), 100°C→212°F ✅
+
+2. NEW PROMPT RULES (12-14):
+   12. MATH: Double-check formulas
+   13. MODALS: Closeable via X, backdrop, Escape
+   14. SEARCH: Update on input event, filter DOM
+
+3. DESIGN EXCELLENCE section added:
+   - Cohesive color palette
+   - Typography hierarchy
+   - Visual depth (shadows, border-radius)
+   - CSS Grid/Flexbox
+   - Micro-interactions
+   - Empty states, loading states
+   - Color coding, icons, responsive
+
+4. VERIFICATION checklist expanded:
+   - Math correct, modals closeable, search filters
+
+RESULTS:
+- Unit converter: math FIXED (1000m→1km) ✅
+- Temperature: 100°C→212°F ✅
+- Build time: 69s (improved from 2-4min)
+- Todo form: still broken (submit handler issue)
+
+STILL NEEDS WORK:
+- Todo form submit not working (preventDefault present but handler not wired)
+- Need post-processing form fixer similar to math fixer
+
+Pushed to GitHub: cc32ccf..1e123de
