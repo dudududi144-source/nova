@@ -3825,3 +3825,42 @@ Stage Summary:
   - I shortcut toggles insights panel ✅
   - F shortcut toggles fullscreen ✅
 - Pushed to GitHub: f3db752..729cc20
+
+---
+Task ID: 279-284
+Agent: main (Z.ai Code)
+Task: v18 — Smart retry with Kimi, Export/Import builds
+
+Work Log:
+- Added `retryWithModel(model)` function — temporarily switches model, builds, restores:
+  - Saves current model, sets new model, calls build(), restores after 100ms
+  - Persists to localStorage so the build uses the right model
+  - Toast notification: "Rebuilding with Kimi K3..."
+- Added "Retry with Kimi" button to low-quality warning banner:
+  - Only appears when qualityScore < 70 AND current model is not Kimi
+  - Violet-colored button with Sparkles icon
+  - Sits next to the existing "Rebuild" button
+- Added Export builds function:
+  - Downloads all history as JSON: { version, exportedAt, builds[] }
+  - Filename: nova-builds-YYYY-MM-DD.json
+  - Toast: "Exported N builds"
+- Added Import builds function:
+  - Reads JSON file via FileReader
+  - Validates each build (checks id, html, mission fields)
+  - Merges with existing history (dedupes by id)
+  - Cap at 30 total builds
+  - Toast: "Imported N new builds (M total)"
+  - Error handling: invalid JSON, missing builds array, no valid builds
+- Replaced single "Clear history" button with 3-button row:
+  - Export | Import | Clear
+  - Import uses hidden file input with label wrapper
+  - All 3 buttons styled consistently
+
+Stage Summary:
+- `src/app/page.tsx`: +retryWithModel, +exportBuilds, +importBuilds, +Retry with Kimi button, +Export/Import/Clear buttons
+- Tests: 802 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - Counter app → Q:96, "A · Excellent" badge ✅
+  - Export → created nova-builds-2026-08-03.json with valid JSON ✅
+  - Export/Import/Clear buttons all visible ✅
+- Pushed to GitHub: 729cc20..770a7b5
