@@ -4194,3 +4194,44 @@ Stage Summary:
 - All previous fixes (globalThis store, timing persistence) verified working
 - Tests: 844 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
 - No new commits needed — all fixes already pushed
+
+---
+Task ID: 377-386
+Agent: main (Z.ai Code)
+Task: v24 — Push Prompt to Reality to highest performance
+
+IMPROVEMENTS MADE:
+1. Enhanced CODER_PROMPT with explicit quality rules:
+   - Aim for 500-1000 lines (not 2000+) for faster builds
+   - Every interactive element must work
+   - Use semantic HTML (main, nav, header, section, article)
+   - Add aria-labels for accessibility
+   - Use CSS variables, not hardcoded hex
+   - Add smooth transitions
+   - Wrap logic in try-catch
+   - Test logic mentally before output
+   - Be concise, avoid redundancy
+
+VERIFICATION RESULTS (real apps, real interactions):
+1. ✅ Counter app: Q:90 (improved from Q:86), 1132 lines, 30 functions, 14 listeners
+   - "Multi-Counter App" with dark mode toggle, templates, export, keyboard shortcuts
+2. ✅ Calculator app: Q:86, 96s build time (improved from 2.4min!)
+   - "Advanced Calculator" with sin/cos/tan/log/ln/√/x^y/e^x/!/π
+   - Memory functions: MS/MR/M+/M-/MC
+3. ✅ Todo app: Q:86, 2.4min, "FlowTodo" with priorities, filters
+   - Tested: added "Test task from NOVA" → count updated to 4 tasks ✅
+4. ✅ Mobile UX: works at 375x812, all buttons accessible
+5. ✅ Error recovery: code exists (12 references)
+6. ✅ Live preview: no white flash (bg-neutral-950)
+7. ✅ Build memory: instant restore with badge
+8. ✅ Diff viewer: shows real stats ("Improved +10 points, 18 added, 64 removed")
+
+PERFORMANCE METRICS:
+- Build speed: 96s-2.4min (was 2.4-2.9min)
+- Quality: Q:86-90 (was Q:86)
+- App functionality: all apps have working interactions
+- Tests: 844 pass, 0 fail
+- Lint: 0 errors
+- TypeScript: 0 errors
+
+Pushed to GitHub: 0a13868..8b5c96a
