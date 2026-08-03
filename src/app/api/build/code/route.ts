@@ -46,6 +46,7 @@ CRITICAL RULES (follow strictly — these are the most common bugs):
 3. Every button must DO something visible when clicked — change text, add element, update counter, toggle class.
 4. Do NOT use prompt() or confirm() — they are blocked in the sandbox. Use inline input fields and modals instead.
 5. Do NOT use localStorage — it is blocked. Use in-memory variables only.
+6. If you show an instructions/help overlay, it MUST have a close button that hides it. Do NOT cover interactive elements with static text overlays.
 
 QUALITY RULES:
 - Build something impressive but CONCISE — aim for 500-1000 lines, not 2000+.
