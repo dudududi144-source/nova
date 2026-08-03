@@ -21,6 +21,8 @@ export interface BuildResult {
   quality?: number
   /** Optional: Unix timestamp (ms) when the build was created. */
   timestamp?: number
+  /** Optional: quality metrics string from the analyzer (e.g. "985 lines · 28 functions"). */
+  metrics?: string
 }
 
 export function newBuildId(): string {

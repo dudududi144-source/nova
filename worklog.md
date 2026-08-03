@@ -3505,3 +3505,68 @@ Stage Summary:
   - Escape closes menu ✅
   - A/B compare: built snake game (v1, Q:83) → rebuilt (memory cache, v2) → refined "add high score + green title" (v3, Q:83, 1455 lines) → expanded versions → clicked GitCompare on v2 → DiffViewer showed HTML diff with +/- lines ✅
   - 0 console errors, 0 runtime errors across all tests ✅
+
+---
+Task ID: 233-240
+Agent: main (Z.ai Code)
+Task: v13 — Quick-refine suggestions, build insights panel, E shortcut, HTML download
+
+Work Log:
+- Refactored `sendChat` to accept an optional `overrideMsg?: string` parameter:
+  - When called with an override (suggestion chip), clears the input immediately.
+  - When called without override (typed input), defers clearing until success.
+  - On error, only restores the input if the user typed it (not a suggestion chip).
+- Added `SUGGESTION_GROUPS` constant with 6 keyword-based groups:
+  - Game (game, snake, tetris, puzzle, arcade, 2048, pong, breakout, memory match, memory card)
+  - Dashboard (dashboard, chart, analytics, stats, tracker, monitor)
+  - Todo (todo, task, note, list, planner, kanban)
+  - Art (art, draw, paint, pixel, canvas, design) — checked BEFORE editor so "pixel art editor" matches art
+  - Editor (editor, markdown, code, text, writer)
+  - Timer (timer, clock, pomodoro, stopwatch, countdown)
+  - Each group has 4 contextual suggestions.
+  - `DEFAULT_SUGGESTIONS` used when no keyword matches.
+  - `getSuggestionsForMission(mission)` returns the first matching group's suggestions.
+- Bug fix: removed "memory" as a standalone game keyword — it matched "in-memory" in todo app missions. Now only "memory match" / "memory card" match.
+- Added suggestion chips UI above the chat input:
+  - Shown when there's a result, no chat messages, and not loading/refining.
+  - 4 rounded-full chips with contextual suggestions.
+  - Clicking a chip calls `sendChat(suggestion)` — triggers a refine with that message.
+  - Chips disappear after the first chat message (suggestions are no longer needed).
+- Enhanced the Build Insights panel (formerly "Code Analysis"):
+  - Renamed from "Code Analysis" to "Build Insights".
+  - Parses the metrics string (e.g. "985 lines · 28 functions · 14 listeners · 47 CSS rules") into individual stat cards.
+  - Each card shows a number (large, bold, mono) + label (small, muted).
+  - Added 3 extra cards from the result object: tokens (formatted), build time (seconds), HTML size (KB).
+  - Quality score bar moved to the header row for a cleaner layout.
+- Added `metrics?: string` field to `BuildResult` interface in helpers.ts.
+  - Populated on all 4 BuildResult constructions (build, auto-fix ×2, refine).
+  - Restored in `loadFromHistory` so the insights panel works for historical builds.
+- Added keyboard shortcut `E` for enhance:
+  - Works only when not typing in a text field, not loading/refining.
+  - Uses `enhancePromptRef` (a ref synced via useEffect) to avoid re-running the keyboard effect on every keystroke.
+  - Updated shortcuts modal: added `E` (Enhance prompt with AI) and `/` (Slash commands menu).
+  - Updated footer: added `E enhance` and `/ commands`.
+- Added direct HTML download (`downloadHtml` function + button):
+  - Downloads a single .html file without ZIP wrapping.
+  - Button sits next to the ZIP button in the toolbar.
+  - "HTML" label hidden on small screens (icon-only on mobile).
+- Added 14 tests for `getSuggestionsForMission` in `tests/suggestions.test.ts`:
+  - Game, dashboard, todo, art, editor, timer, default suggestions.
+  - Case-insensitivity, partial keyword matching, exactly 4 suggestions.
+  - Bug-fix test: "in-memory persistence" does NOT match game group.
+  - "memory card" correctly matches game group.
+
+Stage Summary:
+- `src/lib/helpers.ts`: +metrics field on BuildResult.
+- `src/app/page.tsx`: 2920 → 3102 lines. Quick-refine chips, enhanced insights panel, E shortcut, HTML download, metrics persistence.
+- `tests/suggestions.test.ts`: new file, 14 tests.
+- Tests: 750 → 764 pass (+14 new). 0 fail. Lint: 0 errors, 2 pre-existing warnings. TypeScript: 0 errors.
+- E2E verified via Agent Browser:
+  - E shortcut: typed "todo app" → pressed Tab (blur) → pressed E → enhance preview appeared (387 tokens, 1.3s) ✅
+  - Suggestion chips: built snake game → 4 game-specific chips appeared ("Add sound effects", "Add difficulty levels", etc.) ✅
+  - Suggestion chip refine: clicked "Add sound effects and background music" → refine started → completed Q:83, 1354 lines ✅
+  - Build insights panel: clicked Q:83 badge → panel showed 7 stat cards (1167 lines, 24 functions, 13 listeners, 66 CSS rules, 9.0k tokens, 242.8s build time, 37.7KB HTML size) ✅
+  - HTML download button visible next to ZIP ✅
+  - Footer shows "3 builds · avg Q:83" + new shortcuts (E enhance, / commands) ✅
+  - 0 console errors, 0 runtime errors ✅
+  - Bug fix verified: todo app with "in-memory persistence" shows todo suggestions (not game) ✅

@@ -114,6 +114,95 @@ const REFINE_THINKING_STEPS: readonly string[] = [
   'Finalizing...',
 ]
 
+// v13: Contextual quick-refine suggestions — shown as clickable chips above the
+// chat input after a build completes. Different suggestions for different app types.
+// Detected via keyword matching on the mission string.
+interface SuggestionGroup { match: readonly string[]; suggestions: readonly string[] }
+const SUGGESTION_GROUPS: readonly SuggestionGroup[] = [
+  {
+    match: ['game', 'snake', 'tetris', 'puzzle', 'arcade', '2048', 'pong', 'breakout', 'memory match', 'memory card'],
+    suggestions: [
+      'Add sound effects and background music',
+      'Add difficulty levels (easy, medium, hard)',
+      'Add a high score leaderboard',
+      'Make it mobile-friendly with touch controls',
+    ],
+  },
+  {
+    match: ['dashboard', 'chart', 'analytics', 'stats', 'tracker', 'monitor'],
+    suggestions: [
+      'Add dark mode toggle',
+      'Add data filters and date range selectors',
+      'Add export to CSV',
+      'Make it fully responsive',
+    ],
+  },
+  {
+    match: ['todo', 'task', 'note', 'list', 'planner', 'kanban'],
+    suggestions: [
+      'Add drag-and-drop reordering',
+      'Add categories or tags',
+      'Add a search bar',
+      'Add due dates and priorities',
+    ],
+  },
+  {
+    match: ['art', 'draw', 'paint', 'pixel', 'canvas', 'design'],
+    suggestions: [
+      'Add undo/redo history',
+      'Add a color picker with hex input',
+      'Add export to PNG',
+      'Add brush size and opacity controls',
+    ],
+  },
+  {
+    match: ['editor', 'markdown', 'code', 'text', 'writer'],
+    suggestions: [
+      'Add syntax highlighting',
+      'Add a live preview pane',
+      'Add keyboard shortcuts',
+      'Add word count and reading time',
+    ],
+  },
+  {
+    match: ['timer', 'clock', 'pomodoro', 'stopwatch', 'countdown'],
+    suggestions: [
+      'Add sound notifications',
+      'Add session history and stats',
+      'Add customizable intervals',
+      'Add a visual progress ring',
+    ],
+  },
+  {
+    match: ['art', 'draw', 'paint', 'pixel', 'canvas', 'design'],
+    suggestions: [
+      'Add undo/redo history',
+      'Add a color picker with hex input',
+      'Add export to PNG',
+      'Add brush size and opacity controls',
+    ],
+  },
+]
+
+// Default suggestions when no keyword matches.
+const DEFAULT_SUGGESTIONS: readonly string[] = [
+  'Add dark mode toggle',
+  'Make it mobile-responsive',
+  'Add smooth animations and transitions',
+  'Add keyboard shortcuts',
+]
+
+// Returns up to 4 suggestion chips for the given mission.
+function getSuggestionsForMission(mission: string): readonly string[] {
+  const lower = mission.toLowerCase()
+  for (const group of SUGGESTION_GROUPS) {
+    if (group.match.some(kw => lower.includes(kw))) {
+      return group.suggestions
+    }
+  }
+  return DEFAULT_SUGGESTIONS
+}
+
 export default function Home() {
   const [mission, setMission] = useState('')
   const [loading, setLoading] = useState(false)
@@ -158,6 +247,8 @@ export default function Home() {
   // v10.9: Model selector — Z.AI (default), Qwen (free), Kimi (reasoning)
   const [selectedModel, setSelectedModel] = useState<'z-ai' | 'qwen' | 'kimi'>('z-ai')
   const selectedModelRef = useRef<'z-ai' | 'qwen' | 'kimi'>('z-ai')
+  // v13: Ref for enhancePrompt so the keyboard handler can call it without re-running on every keystroke
+  const enhancePromptRef = useRef<() => void>(() => {})
   const [planFeatures, setPlanFeatures] = useState<{name: string; found: boolean}[]>([])
   const [autoFixing, setAutoFixing] = useState(false)
   // v4: Build memory — instant restore from IndexedDB + similar-builds suggestions
@@ -811,6 +902,8 @@ export default function Home() {
         // v11: Quality + timestamp for version history
         quality: finalQuality,
         timestamp: Date.now(),
+        // v13: Store metrics string for the insights panel
+        metrics: finalMetrics,
       }
 
       setResult(buildResult)
@@ -856,8 +949,9 @@ export default function Home() {
     setFailedMission(null)
     setChatMessages([])
     // Reset all derived state so we don't show the previous build's badges/plan
-    setQualityScore(0)
-    setQualityMetrics('')
+    // v13: Restore quality + metrics from the build result if it has them (added in v11/v13)
+    setQualityScore(h.quality ?? 0)
+    setQualityMetrics(h.metrics ?? '')
     setPlanSummary(null)
     setLivePreviewHtml(null)
     setConfirmClear(false)
@@ -1048,6 +1142,8 @@ export default function Home() {
         // v11: Update quality + timestamp so the fix shows as a new version
         quality: finalQuality,
         timestamp: Date.now(),
+        // v13: Store metrics string for the insights panel
+        metrics: finalMetrics,
       }
       setResult(fixedResult)
       resultRef.current = fixedResult
@@ -1194,6 +1290,8 @@ export default function Home() {
           // v11: Update quality + timestamp for version history
           quality: finalQuality,
           timestamp: Date.now(),
+          // v13: Store metrics string for the insights panel
+          metrics: finalMetrics,
         }
         setResult(fixedResult)
         resultRef.current = fixedResult
@@ -1315,6 +1413,22 @@ export default function Home() {
     })
   }, [result])
 
+  // v13: Direct HTML download — downloads a single .html file without ZIP wrapping.
+  // Useful for quick sharing or when the user just wants the raw HTML.
+  const downloadHtml = useCallback(() => {
+    if (!result?.html) return
+    const blob = new Blob([result.html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = sanitizeFilename(result.mission)
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    toast.success(`Downloaded ${a.download}`)
+  }, [result])
+
   // Copy HTML to clipboard
   const copyHtml = useCallback(async () => {
     if (!result?.html) return
@@ -1407,6 +1521,9 @@ export default function Home() {
     }
   }, [mission, enhancedPreview])
 
+  // v13: Keep the ref in sync so the keyboard handler always calls the latest version
+  useEffect(() => { enhancePromptRef.current = enhancePrompt }, [enhancePrompt])
+
   // v12: Accept the enhanced preview — applies it to the textarea
   const acceptEnhanced = useCallback(() => {
     if (enhancedPreview === null) return
@@ -1486,8 +1603,8 @@ export default function Home() {
   }, [result])
 
   // Chat refine: SSE streaming — same pattern as build/code
-  const sendChat = useCallback(async () => {
-    const msg = chatInput.trim()
+  const sendChat = useCallback(async (overrideMsg?: string) => {
+    const msg = (overrideMsg ?? chatInput).trim()
     const currentResult = resultRef.current
     // Guard against both refining AND loading — defensive (UI also disables, but future
     // refactors might remove the disabled attribute and this prevents a race).
@@ -1499,8 +1616,10 @@ export default function Home() {
 
     const userMsg: ChatMessage = { role: 'user', content: msg, ts: Date.now() }
     setChatMessages(prev => [...prev, userMsg])
-    // Don't clear chatInput yet — clear it only after the refine succeeds.
-    // If the refine fails, we restore the input so the user doesn't lose their message.
+    // v13: If using an override message (suggestion chip), clear the input field now.
+    // If using the typed input, don't clear yet — clear only after success so a
+    // failed refine restores the user's message.
+    if (overrideMsg) setChatInput('')
     setRefining(true)
 
     refineAbortRef.current?.abort()
@@ -1643,6 +1762,8 @@ export default function Home() {
         // v11: Update quality + timestamp so refine shows as a new version
         quality: finalQuality,
         timestamp: Date.now(),
+        // v13: Store metrics string for the insights panel
+        metrics: finalMetrics,
       }
       setResult(refinedResult)
       resultRef.current = refinedResult // Update ref synchronously
@@ -1663,8 +1784,9 @@ export default function Home() {
       const failMsg = err instanceof Error ? err.message : 'Network error'
       setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${failMsg}`, ts: Date.now() }])
       toast.error(failMsg)
-      // Restore the user's message so they can edit and retry — don't lose their input on error
-      setChatInput(msg)
+      // v13: Only restore the input on error if the user typed it (not a suggestion chip).
+      // Suggestion chips don't need restoring — the user can click them again.
+      if (!overrideMsg) setChatInput(msg)
     } finally {
       if (refineAbortRef.current === controller) {
         refineAbortRef.current = null
@@ -1743,6 +1865,15 @@ export default function Home() {
           selectedModelRef.current = next
           try { localStorage.setItem('nova_model', next) } catch {}
           toast.info(`Model: ${next === 'z-ai' ? 'Z.AI' : next === 'qwen' ? 'Qwen' : 'Kimi K3'}`)
+        }
+      }
+      // v13: E triggers prompt enhance (only when not typing, not building, and there's a prompt)
+      if (e.key === 'e' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && !loading && !refining) {
+          e.preventDefault()
+          enhancePromptRef.current()
         }
       }
       // Escape closes shortcuts panel if open
@@ -2545,6 +2676,11 @@ export default function Home() {
                   <Download className="h-3.5 w-3.5" />
                   ZIP
                 </Button>
+                {/* v13: Direct HTML download — single file, no ZIP wrapping */}
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={downloadHtml} disabled={!result} title="Download as single HTML file">
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden lg:inline">HTML</span>
+                </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining} title="Rebuild from scratch">
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Rebuild
@@ -2611,6 +2747,22 @@ export default function Home() {
                   </div>
                 )}
               </div>
+              {/* v13: Quick-refine suggestion chips — contextual based on mission keywords.
+                  Shown when there's a result, no chat messages yet, and not refining. */}
+              {result && !loading && !refining && chatMessages.length === 0 && (
+                <div className="flex flex-wrap gap-1 border-t border-border/40 px-2 py-1.5">
+                  {getSuggestionsForMission(result.mission).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => sendChat(s)}
+                      className="rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] text-foreground/70 transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-foreground"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Chat input */}
               <div className="flex items-center gap-1.5 border-t border-border/40 p-2">
                 <input
@@ -2628,7 +2780,7 @@ export default function Home() {
                   maxLength={2000}
                   className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none disabled:opacity-50"
                 />
-                <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={sendChat} disabled={refining || loading || !chatInput.trim()}>
+                <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={() => sendChat()} disabled={refining || loading || !chatInput.trim()}>
                   {refining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                 </Button>
               </div>
@@ -2708,22 +2860,56 @@ export default function Home() {
 
             {/* Code analysis panel — collapsible, shows quality metrics breakdown */}
             {showCodeAnalysis && qualityMetrics && (
-              <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">Code Analysis</p>
-                <p className="text-[11px] text-muted-foreground font-mono">{qualityMetrics}</p>
-                {qualityScore > 0 && (
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-muted-foreground/20 overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${qualityScore >= 70 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                        style={{ width: `${qualityScore}%` }}
-                      />
+              <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2.5">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Build Insights</p>
+                  {qualityScore > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-24 rounded-full bg-muted-foreground/20 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${qualityScore >= 70 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                          style={{ width: `${qualityScore}%` }}
+                        />
+                      </div>
+                      <span className={`text-[10px] font-mono ${qualityScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {qualityScore}/100
+                      </span>
                     </div>
-                    <span className={`text-[10px] font-mono ${qualityScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {qualityScore}/100
-                    </span>
-                  </div>
-                )}
+                  )}
+                </div>
+                {/* v13: Parse metrics string into individual stat cards.
+                    Format: "985 lines · 28 functions · 14 listeners · 47 CSS rules" */}
+                <div className="flex flex-wrap gap-2">
+                  {qualityMetrics.split('·').map((m, i) => {
+                    const trimmed = m.trim()
+                    const parts = trimmed.match(/^(\d+)\s+(.+)$/)
+                    if (!parts) return null
+                    const [, num, label] = parts
+                    return (
+                      <div key={i} className="rounded border border-border/40 bg-background/40 px-2 py-1">
+                        <span className="font-mono text-[13px] font-semibold text-foreground">{num}</span>
+                        <span className="ml-1 text-[10px] text-muted-foreground/70">{label}</span>
+                      </div>
+                    )
+                  })}
+                  {/* Token + time + size stats from the result object */}
+                  {result && (
+                    <>
+                      <div className="rounded border border-border/40 bg-background/40 px-2 py-1">
+                        <span className="font-mono text-[13px] font-semibold text-foreground">{formatTokens(result.tokens)}</span>
+                        <span className="ml-1 text-[10px] text-muted-foreground/70">tokens</span>
+                      </div>
+                      <div className="rounded border border-border/40 bg-background/40 px-2 py-1">
+                        <span className="font-mono text-[13px] font-semibold text-foreground">{(result.ms / 1000).toFixed(1)}s</span>
+                        <span className="ml-1 text-[10px] text-muted-foreground/70">build time</span>
+                      </div>
+                      <div className="rounded border border-border/40 bg-background/40 px-2 py-1">
+                        <span className="font-mono text-[13px] font-semibold text-foreground">{(result.html.length / 1024).toFixed(1)}KB</span>
+                        <span className="ml-1 text-[10px] text-muted-foreground/70">HTML size</span>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
@@ -2859,9 +3045,11 @@ export default function Home() {
             <div className="space-y-2">
               {[
                 { keys: ['⌘', 'Enter'], label: 'Build the app' },
-                { keys: ['⌘', 'S'], label: 'Download HTML file' },
+                { keys: ['⌘', 'S'], label: 'Download ZIP file' },
                 { keys: ['⌘', 'N'], label: 'Start a new build' },
+                { keys: ['E'], label: 'Enhance prompt with AI' },
                 { keys: ['M'], label: 'Cycle AI model (Z.AI → Qwen → Kimi)' },
+                { keys: ['/'], label: 'Slash commands menu' },
                 { keys: ['Esc'], label: 'Cancel build/refine' },
                 { keys: ['?'], label: 'Show/hide this help' },
               ].map((shortcut) => (
@@ -2907,7 +3095,9 @@ export default function Home() {
           <span className="hidden sm:inline">
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">E</kbd> enhance ·
             <kbd className="ml-1 rounded border border-border/40 px-1">M</kbd> model ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">/</kbd> commands ·
             <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel ·
             <kbd className="ml-1 rounded border border-border/40 px-1">?</kbd> help
           </span>
