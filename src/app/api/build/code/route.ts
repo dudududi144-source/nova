@@ -485,6 +485,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
           storeResult(buildId, { html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics: metrics.summary, files: multiFileResult.files, outputType: multiFileResult.type, previewable: false })
           safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
+          // v28: Wait a bit before closing to ensure client receives the result
+          await new Promise(r => setTimeout(r, 200))
           safeClose()
           return
         }
