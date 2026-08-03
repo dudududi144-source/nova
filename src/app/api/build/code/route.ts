@@ -32,7 +32,40 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 180 // generous — keepalive prevents proxy timeout
 
-const CODER_PROMPT = `You are an elite software engineer and UI/UX designer. You build complete, production-quality web applications from a single prompt.
+// v28: Dynamic prompt — adapts to what the user asks for.
+// If they ask for an HTML app → HTML rules.
+// If they ask for Python/Node/SQL/config → generic code rules.
+// No more forcing everything into HTML.
+
+function isWebAppRequest(mission: string): boolean {
+  const lower = mission.toLowerCase()
+  // Check if the request is for a web app / interactive UI
+  const webAppKeywords = ['app', 'dashboard', 'game', 'tool', 'calculator', 'todo', 'editor',
+    'timer', 'counter', 'player', 'converter', 'board', 'canvas', 'widget', 'visualizer',
+    'tracker', 'planner', 'calendar', 'weather', 'music', 'drawing', 'snake', 'tetris',
+    'puzzle', 'quiz', 'stopwatch', 'pomodoro', 'palette', 'markdown']
+  const nonWebKeywords = ['python', 'script', 'api', 'server', 'sql', 'query', 'database',
+    'config', 'yaml', 'json', 'docker', 'nginx', 'ansible', 'terraform', 'bash', 'shell',
+    'rust', 'go ', 'java ', 'c++', 'c#', 'ruby', 'php', 'swift', 'kotlin', 'dart',
+    '.py', '.js', '.ts', '.go', '.rs', '.java', '.rb', '.php', '.sh', '.sql',
+    'algorithm', 'data structure', 'leetcode', 'code challenge', 'function that',
+    'write a script', 'write a program', 'write a function', 'write a class',
+    'command line', 'cli tool', 'backend', 'endpoint', 'rest api', 'graphql']
+
+  // If explicitly non-web, return false
+  if (nonWebKeywords.some(kw => lower.includes(kw))) return false
+  // If explicitly web, return true
+  if (webAppKeywords.some(kw => lower.includes(kw))) return true
+  // Default: assume web app (most common use case)
+  return true
+}
+
+function buildPrompt(mission: string): string {
+  const isWebApp = isWebAppRequest(mission)
+
+  if (isWebApp) {
+    // HTML app prompt (with all the rules that make web apps work)
+    return `You are an elite software engineer and UI/UX designer. You build complete, production-quality web applications from a single prompt.
 
 OUTPUT: A single complete HTML file. All CSS and JS inline. No external resources. No localStorage — use in-memory state.
 
@@ -94,6 +127,48 @@ VERIFICATION: Before outputting, mentally trace through each button click and ve
 If a plan is provided, use it as inspiration, not a constraint.
 
 Output the HTML now:`
+  } else {
+    // Generic code prompt — for Python, Node, SQL, config, scripts, etc.
+    return `You are an elite software engineer. You write complete, production-quality code from a single prompt.
+
+OUTPUT FORMAT:
+- Output the code directly. No explanations, no markdown wrapping unless needed for multi-file.
+- If the request is for a single file, output just the code.
+- If the request is for multiple files, use this format:
+  \`\`\`file:path/to/file.ext
+  file content here
+  \`\`\`
+  Repeat for each file.
+- If the request is for a web app that needs HTML, output a complete HTML file.
+
+QUALITY RULES:
+- Write clean, idiomatic code following best practices for the language.
+- Add comments for complex logic.
+- Handle errors gracefully — wrap risky operations in try-catch (or language equivalent).
+- Include input validation.
+- Make the code complete and runnable — no placeholders, no TODOs, no "implement here".
+- If writing a script, include a main entry point.
+- If writing an API, include error responses.
+- If writing a query, make it optimized and safe (parameterized).
+
+LANGUAGE-SPECIFIC:
+- Python: Use type hints, docstrings, follow PEP 8. Include requirements if needed.
+- Node.js: Use modern ES modules or CommonJS appropriately. Include package.json if needed.
+- SQL: Use proper indexing, parameterized queries, CTEs for readability.
+- Bash: Use set -e, proper quoting, error handling.
+- Config files: Use proper syntax, add comments explaining each option.
+
+VERIFICATION: Before outputting, mentally trace through the code and verify:
+- All variables are defined before use
+- All functions are called with correct arguments
+- Error handling covers edge cases
+- The code is complete and runnable
+
+If a plan is provided, use it as inspiration, not a constraint.
+
+Output the code now:`
+  }
+}
 
 const codeLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
 const MAX_BODY_BYTES = 200_000
@@ -234,20 +309,20 @@ export async function POST(request: NextRequest): Promise<Response> {
         logger.info('code.model', { ip, model: useQwen ? 'qwen' : useKimi ? 'kimi' : 'z-ai', tokenBudget })
 
         const streamGenerator = useQwen
-          ? dashscopeStream(CODER_PROMPT, planContext, {
+          ? dashscopeStream(buildPrompt(mission), planContext, {
               maxTokens: tokenBudget,
               temperature: 0.4,
               timeoutMs: 150_000,
               signal: request.signal,
             })
           : useKimi
-            ? tokenRouterStream(CODER_PROMPT, planContext, {
+            ? tokenRouterStream(buildPrompt(mission), planContext, {
                 maxTokens: tokenBudget,
                 temperature: 0.4,
                 timeoutMs: 150_000,
                 signal: request.signal,
               })
-            : llmChatStream(CODER_PROMPT, planContext, {
+            : llmChatStream(buildPrompt(mission), planContext, {
                 maxTokens: tokenBudget,
                 temperature: 0.4,
                 timeoutMs: 150_000,
@@ -290,7 +365,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           llmMs = 0
           streamError = null
 
-          for await (const chunk of dashscopeStream(CODER_PROMPT, planContext, {
+          for await (const chunk of dashscopeStream(buildPrompt(mission), planContext, {
             maxTokens: tokenBudget,
             temperature: 0.4,
             timeoutMs: 150_000,
@@ -329,7 +404,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           llmMs = 0
           streamError = null
 
-          for await (const chunk of tokenRouterStream(CODER_PROMPT, planContext, {
+          for await (const chunk of tokenRouterStream(buildPrompt(mission), planContext, {
             maxTokens: tokenBudget,
             temperature: 0.4,
             timeoutMs: 150_000,
@@ -366,7 +441,55 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         let rawHtml = stripCodeFences(fullText)
 
-        // Truncation detection + continuation retry
+        // v28: Check if this is HTML or other code type
+        const isHtmlOutput = looksLikeHtml(rawHtml)
+
+        if (!isHtmlOutput) {
+          // v28: Non-HTML output (Python, Node, SQL, config, etc.)
+          // Don't try to process it as HTML — send it as-is with file info
+          logger.info('code.non_html_output', { ip, ms: llmMs, tokens: totalTokens, outputLen: rawHtml.length })
+
+          // Detect language from mission
+          const missionLower = mission.toLowerCase()
+          let language = 'text'
+          let fileName = 'output.txt'
+          if (missionLower.includes('python') || missionLower.includes('.py')) { language = 'python'; fileName = 'script.py' }
+          else if (missionLower.includes('sql') || missionLower.includes('query')) { language = 'sql'; fileName = 'query.sql' }
+          else if (missionLower.includes('bash') || missionLower.includes('shell') || missionLower.includes('.sh')) { language = 'bash'; fileName = 'script.sh' }
+          else if (missionLower.includes('json')) { language = 'json'; fileName = 'config.json' }
+          else if (missionLower.includes('yaml') || missionLower.includes('yml')) { language = 'yaml'; fileName = 'config.yaml' }
+          else if (missionLower.includes('node') || missionLower.includes('.js')) { language = 'javascript'; fileName = 'script.js' }
+          else if (missionLower.includes('typescript') || missionLower.includes('.ts')) { language = 'typescript'; fileName = 'script.ts' }
+
+          const totalMs = Date.now() - startTime
+          const metrics = { summary: `${rawHtml.split('\n').length} lines · ${language}` }
+          logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: rawHtml.length, score: 100, metrics: metrics.summary })
+
+          // Parse for multi-file output
+          const multiFileResult = parseOutput(rawHtml)
+          const resultData: Record<string, unknown> = {
+            type: 'result',
+            html: rawHtml, // Store as html field for compatibility (used by download, share, etc.)
+            tokens: totalTokens,
+            ms: totalMs,
+            quality: 100,
+            metrics: metrics.summary,
+            outputType: multiFileResult.type,
+            previewable: false, // Non-HTML can't be previewed in iframe
+          }
+          if (multiFileResult.files.length > 1 || multiFileResult.type !== 'html-app') {
+            resultData.files = multiFileResult.files
+            resultData.outputType = multiFileResult.type
+            resultData.previewable = multiFileResult.previewable
+          }
+
+          storeResult(buildId, { html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics: metrics.summary })
+          safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
+          safeClose()
+          return
+        }
+
+        // Truncation detection + continuation retry (only for HTML)
         if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
           logger.warn('code.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
           // Send progress event
@@ -384,12 +507,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
         }
 
-        if (!looksLikeHtml(rawHtml)) {
-          logger.warn('code.invalid_html', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: 'The AI generated invalid output. Try again or simplify your request.' })}\n\n`)
-          safeClose()
-          return
-        }
+        // v28: looksLikeHtml already checked above — if we're here, it's HTML
+        // (non-HTML outputs were handled and returned earlier)
 
         // v10.6: Send progress events for post-processing stages
         safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Analyzing code...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
@@ -464,7 +583,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor(elapsedSoFar / 1000) })}\n\n`)
 
           const retryPrompt = `${planContext}\n\n${combinedHint}\n\nOutput the complete corrected HTML:`
-          const retryResult = await llmChat(CODER_PROMPT, retryPrompt, {
+          const retryResult = await llmChat(buildPrompt(mission), retryPrompt, {
             maxTokens: tokenBudget,
             temperature: 0.3,
             timeoutMs: 25_000,
