@@ -3270,6 +3270,21 @@ export default function Home() {
                     )}
                   </button>
                 )}
+                {/* v25: Functional score badge — shows what % of clicks actually worked */}
+                {result && !loading && !refining && probeResult && probeResult.buttonsClicked > 0 && (
+                  <span
+                    className={`rounded-md px-2 py-1 text-[10px] flex items-center gap-1 ${
+                      probeResult.functionalScore >= 70
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : probeResult.functionalScore >= 40
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'bg-red-500/20 text-red-400'
+                    }`}
+                    title={`${probeResult.functionalScore}% of buttons caused a visible change (${probeResult.functionalClicks || probeResult.buttonsClicked - probeResult.deadClicks}/${probeResult.buttonsClicked} worked, ${probeResult.deadClicks} dead clicks)`}
+                  >
+                    {probeResult.functionalScore}% fn
+                  </span>
+                )}
                 {/* v3: Auto-fix button — appears when runtime errors are found */}
                 {result && !loading && !refining && !autoFixing && (runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)) && (
                   <Button

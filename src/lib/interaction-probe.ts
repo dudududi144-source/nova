@@ -20,6 +20,12 @@ export interface ProbeResult {
   inputsTested: number
   gameKeysDispatched: boolean
   stateChanges: StateChange[]
+  /** v25: Functional score — what % of clicks actually changed something */
+  functionalScore: number
+  /** v25: Dead clicks — buttons that did nothing */
+  deadClicks: number
+  /** v25: Functional clicks — buttons that caused a visible change */
+  functionalClicks: number
   summary: string
 }
 
@@ -54,6 +60,8 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     let inputsTested = 0
     let gameKeysDispatched = false
     let stateChanges: StateChange[] = []
+    let deadClicks = 0 // v25: track buttons that did nothing
+    let functionalClicks = 0 // v25: track buttons that changed something
 
     // Create a hidden iframe
     const iframe = document.createElement('iframe')
@@ -89,10 +97,16 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     function buildResult(): ProbeResult {
       const errorCount = errors.length
       const stateChangeCount = stateChanges.length
+      // v25: Functional score = % of clicks that changed something (0-100)
+      const functionalScore = buttonsClicked > 0
+        ? Math.round((functionalClicks / buttonsClicked) * 100)
+        : 0
       const parts: string[] = [`${interactions} interactions`]
       if (errorCount > 0) parts.push(`${errorCount} error(s)`)
       if (stateChangeCount > 0) parts.push(`${stateChangeCount} state change(s)`)
+      if (deadClicks > 0) parts.push(`${deadClicks} dead click(s)`)
       if (errorCount === 0) parts.push('0 errors')
+      parts.push(`${functionalScore}% functional`)
 
       const summary = parts.join(', ')
 
@@ -103,6 +117,9 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
         inputsTested,
         gameKeysDispatched,
         stateChanges,
+        functionalScore,
+        deadClicks,
+        functionalClicks,
         summary,
       }
     }
@@ -134,11 +151,15 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
             }
 
             // Click every button — with state change tracking
+            // v25: Track DOM mutations (elements added/removed/changed)
             const buttons = doc.querySelectorAll('button')
             buttons.forEach((btn, i) => {
               if (i >= 10) return // Limit to 10 buttons
 
-              // Read state BEFORE click
+              // v25: Capture full DOM state before click (innerHTML hash + element count)
+              const beforeHTML = doc.body?.innerHTML?.length ?? 0
+              const beforeElementCount = doc.querySelectorAll('*').length
+              // Also check specific state selectors
               const before = stateEls.map(s => ({ sel: s.selector, val: s.el.textContent?.trim().slice(0, 100) ?? '' }))
 
               try {
@@ -146,10 +167,14 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
                 buttonsClicked++
                 interactions++
 
-                // Read state AFTER click
+                // v25: Check if ANYTHING changed — DOM size, innerHTML, or state selectors
+                const afterHTML = doc.body?.innerHTML?.length ?? 0
+                const afterElementCount = doc.querySelectorAll('*').length
                 const after = stateEls.map(s => ({ sel: s.selector, val: s.el.textContent?.trim().slice(0, 100) ?? '' }))
 
-                // Check if any state changed
+                let somethingChanged = false
+
+                // Check state selector changes
                 for (let j = 0; j < before.length; j++) {
                   if (before[j].val !== after[j].val) {
                     stateChanges.push({
@@ -158,7 +183,19 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
                       after: after[j].val,
                       changed: true,
                     })
+                    somethingChanged = true
                   }
+                }
+
+                // v25: Check DOM changes (element count or HTML length changed)
+                if (afterElementCount !== beforeElementCount || Math.abs(afterHTML - beforeHTML) > 10) {
+                  somethingChanged = true
+                }
+
+                if (somethingChanged) {
+                  functionalClicks++
+                } else {
+                  deadClicks++
                 }
               } catch (e) {
                 errors.push({
