@@ -70,7 +70,10 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     iframe.style.left = '-9999px'
     iframe.style.width = '1280px'
     iframe.style.height = '720px'
-    iframe.sandbox = 'allow-scripts'
+    // v25: allow-same-origin is needed so the probe can access contentDocument
+    // to click buttons and check state. Without it, the sandbox blocks all access
+    // and the probe silently reports "0 errors" without actually testing anything.
+    iframe.sandbox = 'allow-scripts allow-same-origin'
     iframe.title = 'Probe (hidden)'
 
     // Listen for error messages from the iframe
