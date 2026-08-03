@@ -2454,9 +2454,28 @@ export default function Home() {
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
                     <span title="Estimated build time">~{Math.round(analysis.estimatedTime / 60)}min</span>
                     <span className="text-muted-foreground/30">·</span>
-                    <span title={analysis.modelReason} className="cursor-help">
-                      rec: {analysis.recommendedModel === 'z-ai' ? 'Z.AI' : analysis.recommendedModel === 'qwen' ? 'Qwen' : 'Kimi'}
-                    </span>
+                    {/* v22: Auto-suggest model — clickable button to switch to recommended model */}
+                    {analysis.recommendedModel !== selectedModel ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rec = analysis.recommendedModel
+                          setSelectedModel(rec)
+                          selectedModelRef.current = rec
+                          try { localStorage.setItem('nova_model', rec) } catch {}
+                          toast.info(`Switched to ${rec === 'z-ai' ? 'Z.AI' : rec === 'qwen' ? 'Qwen' : 'Kimi K3'} — ${analysis.modelReason}`)
+                        }}
+                        title={`Click to switch: ${analysis.modelReason}`}
+                        className="flex items-center gap-0.5 rounded px-1 py-0.5 text-violet-400 transition-colors hover:bg-violet-500/10"
+                      >
+                        <Sparkles className="h-2.5 w-2.5" />
+                        use {analysis.recommendedModel === 'z-ai' ? 'Z.AI' : analysis.recommendedModel === 'qwen' ? 'Qwen' : 'Kimi'}
+                      </button>
+                    ) : (
+                      <span title={analysis.modelReason} className="cursor-help text-emerald-400/70">
+                        ✓ {selectedModel === 'z-ai' ? 'Z.AI' : selectedModel === 'qwen' ? 'Qwen' : 'Kimi'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 {/* Warnings */}
@@ -2482,15 +2501,41 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                {/* Suggestions */}
+                {/* v22: Clickable improvement suggestions — when prompt is vague,
+                    offer specific clickable chips that append to the prompt */}
                 {analysis.suggestions.length > 0 && analysis.suggestions[0] !== 'Prompt looks good — ready to build!' && (
-                  <div className="mt-1.5 space-y-0.5">
-                    {analysis.suggestions.slice(0, 2).map((s, i) => (
-                      <p key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground/60">
-                        <span className="mt-px text-muted-foreground/40">→</span>
-                        <span>{s}</span>
-                      </p>
-                    ))}
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {analysis.suggestions.slice(0, 3).map((s, i) => {
+                      // Extract the quoted example from suggestions like: 'Add specific features: "with add, delete..."'
+                      const match = s.match(/"([^"]+)"/)
+                      const clickableText = match ? match[1] : null
+                      if (clickableText) {
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => {
+                              const current = mission.trim()
+                              const addition = clickableText.startsWith('with') || clickableText.startsWith('add')
+                                ? ` ${clickableText}`
+                                : ` with ${clickableText}`
+                              setMission(current + (current.endsWith(addition[0] ?? ' ') ? '' : ' ') + clickableText.trim())
+                              toast.info('Added to prompt')
+                            }}
+                            className="rounded-full border border-violet-500/30 bg-violet-500/5 px-2 py-0.5 text-[10px] text-violet-400/80 transition-colors hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-300"
+                            title={`Click to add: ${clickableText}`}
+                          >
+                            + {clickableText.length > 30 ? clickableText.slice(0, 30) + '...' : clickableText}
+                          </button>
+                        )
+                      }
+                      return (
+                        <p key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground/60">
+                          <span className="mt-px text-muted-foreground/40">→</span>
+                          <span>{s}</span>
+                        </p>
+                      )
+                    })}
                   </div>
                 )}
                 {/* Ready indicator */}
@@ -2761,6 +2806,25 @@ export default function Home() {
           {/* Examples (only when no result, no error, not loading) */}
           {showExamples && (
             <div className="mt-4 space-y-2">
+              {/* v22: Recent prompts — quick-access chips for last 5 prompts */}
+              {promptHistory.length > 0 && starterQuery.trim() === '' && (
+                <div>
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground/60">Recent prompts</p>
+                  <div className="flex flex-wrap gap-1">
+                    {promptHistory.slice(0, 5).map((p, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => { setMission(p); setPromptHistoryIndex(-1) }}
+                        className="max-w-full truncate rounded-full border border-border/40 bg-card/30 px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                        title={p}
+                      >
+                        {p.length > 30 ? p.slice(0, 30) + '...' : p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
                 Try one
               </p>
