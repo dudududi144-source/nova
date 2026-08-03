@@ -483,6 +483,10 @@ export default function Home() {
     return () => clearTimeout(handle)
   }, [mission])
 
+  // ═══ v14 ROAST FIX: Auto-filter starters based on typed prompt ═══
+  // Moved below showExamples definition — see next occurrence.
+  // (kept as placeholder for dependency ordering)
+
   // ═══ v4: Sync pipelineLiveText state with its ref (called from the SSE reader) ═══
   // The ref lets the SSE reader update text without triggering re-renders on every
   // token; this effect flushes the ref to state on a 200ms cadence (same as the
@@ -1894,35 +1898,60 @@ export default function Home() {
   // Helper: get current thinking step text (DYNAMIC — from mission or plan)
   const getThinkingText = useCallback(() => {
     if (loading) {
-      return buildSteps[thinkingStep] ?? buildSteps[buildSteps.length - 1] ?? 'Building...'
+      // v14 ROAST FIX: Show real progress text instead of fake static steps.
+      // Priority: live pipeline text > current build step > stage-based fallback.
+      if (pipelineLiveText) return pipelineLiveText
+      const stageText: Record<StageKey, string> = {
+        plan: 'Planning the architecture...',
+        code: 'Generating code...',
+        analyze: 'Analyzing code quality...',
+        validate: 'Validating output...',
+        done: 'Build complete',
+      }
+      return stageText[pipelineStage ?? 'plan'] ?? buildSteps[thinkingStep] ?? 'Building...'
     }
     if (refining) {
       return REFINE_THINKING_STEPS[thinkingStep] ?? 'Refining...'
     }
     return ''
-  }, [loading, refining, thinkingStep, buildSteps])
+  }, [loading, refining, thinkingStep, buildSteps, pipelineLiveText, pipelineStage])
 
   // Whether to show examples (only when no result, no error, not loading)
   const showExamples = !result && !loading && !error
   // Whether to show first-build error panel (no result, has error, not loading)
   const showFirstError = !result && !!error && !loading
 
+  // ═══ v14 ROAST FIX: Auto-filter starters based on typed prompt ═══
+  // When the user types a prompt, auto-filter the starters panel to show relevant matches.
+  useEffect(() => {
+    if (!showExamples) return
+    const m = mission.trim()
+    if (m.length < 4) return
+    const lower = m.toLowerCase()
+    const hasMatch = STARTER_CATEGORIES
+      .flatMap(c => c.prompts)
+      .some(p => p.toLowerCase().includes(lower))
+    if (hasMatch) {
+      setStarterQuery(lower.slice(0, 20))
+    }
+  }, [mission, showExamples])
+
   // v10.8: Removed dead BUILD_STAGES/currentStage — PipelineProgress handles all UI
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground" aria-busy={loading || refining}>
       {/* Header */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-3">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/40 px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15">
             <Sparkles className="h-4 w-4 text-primary" />
           </div>
           <div>
             <h1 className="text-sm font-semibold">NOVA</h1>
-            <p className="text-[10px] text-muted-foreground">Prompt to Reality</p>
+            <p className="hidden text-[10px] text-muted-foreground sm:block">Prompt to Reality</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* v10.11: Theme color selector removed — dark/light toggle is enough */}
           {/* v10.9: Model selector — Z.AI (default), Qwen (free), Kimi (reasoning) */}
           <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
@@ -2200,6 +2229,21 @@ export default function Home() {
                   elapsedSeconds={elapsed}
                   mode="full"
                 />
+              </div>
+              {/* v14 ROAST FIX: Cancel button visible during first build —
+                  previously the user had to scroll to the preview toolbar to cancel.
+                  Now it's right next to the progress. */}
+              <div className="mt-2 flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1.5 text-[11px] text-muted-foreground hover:text-destructive"
+                  onClick={cancelBuild}
+                  title="Cancel build"
+                >
+                  <X className="h-3 w-3" />
+                  Cancel
+                </Button>
               </div>
             </div>
           )}
@@ -2535,6 +2579,34 @@ export default function Home() {
                     aria-label="Dismiss error"
                   >
                     <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* v14 ROAST FIX: Low-quality warning — shown when build completes but score < 70.
+                Previously the build would silently complete with Q:68 and the user had no idea
+                the output was broken. Now there's a clear amber banner with a Rebuild button. */}
+            {result && !loading && !refining && !error && qualityScore > 0 && qualityScore < 70 && (
+              <div role="alert" className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <span className="truncate text-xs text-amber-400">
+                    Build quality is low (Q:{qualityScore}/100) — the output may have bugs. Try rebuilding or simplifying your request.
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button size="sm" variant="ghost" className="h-6 gap-1 text-[11px] text-amber-400 hover:bg-amber-500/10" onClick={() => build()} title="Rebuild from scratch">
+                    <RefreshCw className="h-3 w-3" />
+                    Rebuild
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCodeAnalysis(true)}
+                    className="text-amber-400/60 transition-colors hover:text-amber-400"
+                    aria-label="View build insights"
+                  >
+                    <Bug className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>

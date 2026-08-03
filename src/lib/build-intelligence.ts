@@ -267,18 +267,21 @@ export function validateOutput(html: string, mission: string): ValidationResult 
 // Instead of fixed maxTokens, estimate based on plan complexity.
 
 export function estimateTokenBudget(plan: unknown): number {
-  // v10.7: Reduced defaults for faster builds
-  if (!plan || typeof plan !== 'object') return 12000
+  // v14 ROAST FIX: Reduced defaults for faster, more reliable builds.
+  // Was 12000 default → caused 5+ min builds and truncation.
+  // Now 6000 default with tighter clamps.
+  if (!plan || typeof plan !== 'object') return 6000
 
   const p = plan as Record<string, unknown>
   const features = Array.isArray(p.features) ? p.features.length : 3
   const keyFunctions = Array.isArray(p.keyFunctions) ? p.keyFunctions.length : 2
 
-  // Base: 2500 tokens per feature + 1500 per function + 1500 overhead
-  const estimated = 2500 * features + 1500 * keyFunctions + 1500
+  // Base: 1500 tokens per feature + 800 per function + 1000 overhead
+  // Tighter budget forces the LLM to be concise and focused.
+  const estimated = 1500 * features + 800 * keyFunctions + 1000
 
-  // Clamp: 8000 minimum, 32000 maximum (was 64000 — too slow)
-  return Math.max(8000, Math.min(32000, estimated))
+  // Clamp: 5000 minimum, 16000 maximum (was 8000-32000 — too slow)
+  return Math.max(5000, Math.min(16000, estimated))
 }
 
 // ── 4. Quality Metrics ──

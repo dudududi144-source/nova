@@ -347,10 +347,14 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         const combinedHint = [staticHint, validation.retryHint, planAdherence.hint].filter(Boolean).join('\n\n')
 
-        // If ANY check found issues, try ONE retry with the combined hint
-        if ((!staticAnalysis.passed || !validation.passed || !planAdherence.adherent) && combinedHint) {
-          logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, retrying: true })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+        // If ANY check found issues, try ONE retry with the combined hint.
+        // v14 ROAST FIX: Skip retry if the build already took too long (>120s) —
+        // retry adds 25s+ and rarely improves quality. Better to ship what we have.
+        const elapsedSoFar = Date.now() - startTime
+        const shouldRetry = (!staticAnalysis.passed || !validation.passed || !planAdherence.adherent) && combinedHint && elapsedSoFar < 120_000
+        if (shouldRetry) {
+          logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, elapsedMs: elapsedSoFar, retrying: true })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor(elapsedSoFar / 1000) })}\n\n`)
 
           const retryPrompt = `${planContext}\n\n${combinedHint}\n\nOutput the complete corrected HTML:`
           const retryResult = await llmChat(CODER_PROMPT, retryPrompt, {
