@@ -4001,3 +4001,36 @@ Stage Summary:
   - Cleared textarea → clicked template → prompt loaded back ✅
   - Delete button visible and functional
 - Pushed to GitHub: 00c9597..59e6f17
+
+---
+Task ID: 303-308
+Agent: main (Z.ai Code)
+Task: v22 — Auto-suggest model, clickable prompt improvements, recent prompts
+
+Work Log:
+- Replaced static "rec: X" text with clickable auto-suggest model button:
+  - Shows "use Qwen/Z.AI/Kimi" button (violet) when recommended model differs from current
+  - One click: switches model, saves to localStorage, shows toast with reason
+  - Shows green "✓ Model" when already using recommended model
+  - Only appears in mission analysis card (pre-build)
+- Replaced static suggestion text with clickable improvement chips:
+  - Extracts quoted examples from suggestion strings using regex
+  - 'Add specific features: "with add, delete, and filter by status"' → clickable "+ with add, delete..." chip
+  - Clicking appends the text to the current prompt
+  - Up to 3 chips shown, truncated at 30 chars with "..."
+  - Non-quoted suggestions still show as text with → prefix
+- Added recent prompts quick-access section:
+  - Shows above starters when promptHistory has items and starter search is empty
+  - Last 5 prompts as clickable chips (truncated at 30 chars)
+  - Click loads the prompt into textarea
+  - "Recent prompts" label
+
+Stage Summary:
+- `src/app/page.tsx`: +auto-suggest model button, +clickable improvement chips, +recent prompts section
+- Tests: 844 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - "todo" → "use Qwen" button appeared → clicked → model switched to Qwen + toast "Switched to Qwen — fast and free" ✅
+  - "app" → 3 clickable chips: "+ with add, delete...", "+ drag-and-drop", "+ minimalist dark UI" ✅
+  - Clicked "drag-and-drop" → prompt became "todo drag-and-drop" ✅
+  - Recent prompts section showed after build ✅
+- Pushed to GitHub: 59e6f17..1474a48
