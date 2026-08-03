@@ -11,6 +11,7 @@
 import type { NextRequest } from 'next/server'
 import { llmChatStream, llmChat } from '@/lib/llm'
 import { stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs } from '@/lib/html-utils'
+import { fixConversionMath } from '@/lib/math-fixer'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -406,6 +407,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         html = injectCsp(html)
         // v26: Inject localStorage/sessionStorage polyfill (LLM uses them despite instructions)
         html = stripBlockedAPIs(html)
+        // v27: Fix common math errors (e.g. meter→km multiply instead of divide)
+        html = fixConversionMath(html)
         // Inject runtime error capture (before app's scripts)
         html = injectRuntimeErrorCapture(html)
 
@@ -474,6 +477,8 @@ export async function POST(request: NextRequest): Promise<Response> {
               retryHtml = injectCsp(retryHtml)
               // v26: Inject polyfill for blocked APIs
               retryHtml = stripBlockedAPIs(retryHtml)
+              // v27: Fix math errors in retry too
+              retryHtml = fixConversionMath(retryHtml)
               retryHtml = injectRuntimeErrorCapture(retryHtml)
 
               const retryValidation = validateOutput(retryHtml, mission)
