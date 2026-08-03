@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, normalizeMission, groupHistoryByMission, type BuildResult } from '@/lib/helpers'
 import { analyzeMission } from '@/lib/mission-analysis'
+import { calculateBuildHealth } from '@/lib/build-health'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -1944,6 +1945,31 @@ export default function Home() {
           enhancePromptRef.current()
         }
       }
+      // v17: I toggles insights panel, D toggles diff, F toggles fullscreen
+      if (e.key === 'i' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && result && qualityScore > 0) {
+          e.preventDefault()
+          setShowCodeAnalysis(prev => !prev)
+        }
+      }
+      if (e.key === 'd' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && previousBuild && result && !loading && !refining) {
+          e.preventDefault()
+          setShowDiff(prev => !prev)
+        }
+      }
+      if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && result && !loading && !refining) {
+          e.preventDefault()
+          setFullscreen(prev => !prev)
+        }
+      }
       // Escape closes shortcuts panel if open
       // v10.13: Esc exits fullscreen
       if (e.key === 'Escape' && fullscreen) {
@@ -3109,7 +3135,27 @@ export default function Home() {
             {showCodeAnalysis && qualityMetrics && (
               <div className="shrink-0 border-b border-border/40 bg-card/20 px-4 py-2.5">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Build Insights</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Build Insights</p>
+                    {/* v17: Health grade badge — A/B/C/D composite rating */}
+                    {qualityScore > 0 && result && (() => {
+                      const health = calculateBuildHealth({
+                        quality: qualityScore,
+                        missingFeatures: qualityBreakdown?.missingFeatures.length ?? 0,
+                        staticErrors: qualityBreakdown?.staticIssues.filter(i => i.severity === 'error').length ?? 0,
+                        buildTimeMs: result.ms,
+                        truncated: qualityBreakdown?.truncated ?? false,
+                      })
+                      return (
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${health.bgColor} ${health.color}`}
+                          title={health.reasons.join('\n')}
+                        >
+                          {health.grade} · {health.label}
+                        </span>
+                      )
+                    })()}
+                  </div>
                   {qualityScore > 0 && (
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 w-24 rounded-full bg-muted-foreground/20 overflow-hidden">
@@ -3363,6 +3409,9 @@ export default function Home() {
                 { keys: ['⌘', 'S'], label: 'Download ZIP file' },
                 { keys: ['⌘', 'N'], label: 'Start a new build' },
                 { keys: ['E'], label: 'Enhance prompt with AI' },
+                { keys: ['I'], label: 'Toggle build insights panel' },
+                { keys: ['D'], label: 'Toggle diff view (compare versions)' },
+                { keys: ['F'], label: 'Toggle fullscreen preview' },
                 { keys: ['M'], label: 'Cycle AI model (Z.AI → Qwen → Kimi)' },
                 { keys: ['/'], label: 'Slash commands menu' },
                 { keys: ['Esc'], label: 'Cancel build/refine' },
@@ -3409,11 +3458,11 @@ export default function Home() {
           </span>
           <span className="hidden sm:inline">
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
-            <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
             <kbd className="ml-1 rounded border border-border/40 px-1">E</kbd> enhance ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">I</kbd> insights ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">D</kbd> diff ·
+            <kbd className="ml-1 rounded border border-border/40 px-1">F</kbd> fullscreen ·
             <kbd className="ml-1 rounded border border-border/40 px-1">M</kbd> model ·
-            <kbd className="ml-1 rounded border border-border/40 px-1">/</kbd> commands ·
-            <kbd className="ml-1 rounded border border-border/40 px-1">Esc</kbd> cancel ·
             <kbd className="ml-1 rounded border border-border/40 px-1">?</kbd> help
           </span>
           <span className="sm:hidden">⌘+Enter to build</span>

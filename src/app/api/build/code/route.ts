@@ -226,7 +226,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         // The keepalive continues sending progress events so the client knows we're still alive.
         // It will be stopped after the result/error is sent.
 
-        // v10.7: Automatic fallback to Qwen if Z.AI fails
+        // v10.7: Automatic fallback chain: Z.AI → Qwen → Kimi
+        // v17: Extended to 3-model chain for maximum reliability
         if (streamError && !useKimi && !useQwen && isDashScopeConfigured()) {
           logger.info('code.fallback_qwen', { ip, reason: streamError })
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Qwen AI...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
@@ -262,6 +263,45 @@ export async function POST(request: NextRequest): Promise<Response> {
 
           if (!streamError && fullText.trim()) {
             logger.info('code.fallback_qwen_success', { ip, tokens: totalTokens })
+          }
+        }
+
+        // v17: Final fallback to Kimi K3 if Qwen also failed
+        if (streamError && !useKimi && !fullText.trim() && isTokenRouterConfigured()) {
+          logger.info('code.fallback_kimi', { ip, reason: streamError })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Kimi K3 (reasoning model)...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+
+          // Reset state for retry
+          fullText = ''
+          totalTokens = 0
+          llmMs = 0
+          streamError = null
+
+          for await (const chunk of tokenRouterStream(CODER_PROMPT, planContext, {
+            maxTokens: tokenBudget,
+            temperature: 0.4,
+            timeoutMs: 150_000,
+            signal: request.signal,
+          })) {
+            if (chunk.error) {
+              streamError = chunk.error
+              break
+            }
+            if (chunk.done) {
+              totalTokens = chunk.tokens
+              llmMs = chunk.ms
+              break
+            }
+            if (chunk.text) {
+              fullText = chunk.fullText
+              if (!safeEnqueue(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`)) {
+                break
+              }
+            }
+          }
+
+          if (!streamError && fullText.trim()) {
+            logger.info('code.fallback_kimi_success', { ip, tokens: totalTokens })
           }
         }
 
