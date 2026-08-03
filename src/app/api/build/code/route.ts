@@ -54,7 +54,7 @@ CRITICAL RULES (follow strictly — these are the most common bugs):
    form.addEventListener('submit', function(e) { e.preventDefault(); addTask(); });
    OR use <button type="button"> instead of submit, and handle click with onclick.
 8. INPUTS: When reading input values, use .value and .trim(). If empty, show a visual error (red border) instead of alert.
-9. LISTS: When adding items to a list, create DOM elements with document.createElement, set their textContent, and append to the list container. Do NOT use innerHTML += (it breaks event listeners).
+9. LISTS: When adding items to a list, create DOM elements with document.createElement, set their textContent, and append to the list container. Do NOT use innerHTML += (it breaks event listeners). Each list item MUST have class="task-item" or class="note-item" or data-task attribute so it can be found by search/filter.
 10. EVENT BINDING: When using addEventListener, you MUST bind EVERY interactive element. If you have buttons 0-9, you MUST add listeners for ALL 10, not just some. Use a loop: document.querySelectorAll('[data-number]').forEach(btn => btn.addEventListener('click', () => appendNumber(btn.textContent))). Never skip elements.
 11. INIT: Call your init() function AFTER the DOM is ready. Use: document.addEventListener('DOMContentLoaded', init) OR place the <script> at the END of <body> (after all HTML elements). If init() runs before elements exist, all getElementById calls return null and nothing works.
 12. MATH: Double-check all conversion formulas and calculations. For example: meters to km = divide by 1000, NOT multiply. Celsius to Fahrenheit = (C * 9/5) + 32. Test your math mentally before outputting.
