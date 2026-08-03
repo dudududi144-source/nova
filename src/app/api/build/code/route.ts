@@ -475,13 +475,19 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         // ── INTELLIGENCE: Quality metrics ──
         const metrics = analyzeQuality(html)
-        logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: html.length, score: validation.score, metrics: metrics.summary })
+        // v26: Adjust score based on static analysis — missing functions are critical bugs
+        // Each static error deducts 10 points, each warning deducts 3
+        const staticErrors = staticAnalysis.issues.filter(i => i.severity === 'error').length
+        const staticWarnings = staticAnalysis.issues.filter(i => i.severity === 'warning').length
+        const staticDeduction = Math.min(50, staticErrors * 10 + staticWarnings * 3)
+        const adjustedScore = Math.max(0, validation.score - staticDeduction)
+        logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: html.length, score: adjustedScore, rawScore: validation.score, staticErrors, staticWarnings, staticDeduction, metrics: metrics.summary })
         recordSuccess('z-ai')
 
         // v10: Multi-file support — parse output for files array
         const multiFileResult = parseOutput(html)
         const resultData: Record<string, unknown> = {
-          type: 'result', html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary,
+          type: 'result', html, tokens: totalTokens, ms: totalMs, quality: adjustedScore, metrics: metrics.summary,
           // v16: Quality breakdown — specific checks + missing features for the insights panel
           checks: validation.checks.map(c => ({ name: c.name, passed: c.passed, detail: c.detail })),
           missingFeatures: planAdherence.missingFeatures.slice(0, 5),
@@ -496,7 +502,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         // v10: Store result for polling fallback
-        storeResult(buildId, { html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary })
+        storeResult(buildId, { html, tokens: totalTokens, ms: totalMs, quality: adjustedScore, metrics: metrics.summary })
 
         // Send the final result with quality score and metrics
         safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
