@@ -70,9 +70,14 @@ export function analyzeMission(mission: string): MissionAnalysis {
   const words = trimmed.split(/\s+/).filter(Boolean)
   const wordCount = words.length
 
-  // Count features — rough heuristic: count commas, "and", "with", "plus"
-  const featureIndicators = (lower.match(/,| and | with | plus | including /g) || []).length
-  const featureCount = Math.max(1, featureIndicators + 1)
+  // Count features — use a simpler, more accurate heuristic
+  // v26: Count distinct feature phrases, not individual words
+  // Split by commas and "and" to get feature count
+  const featurePhrases = lower
+    .split(/,|\band\b|\bwith\b|\bplus\b|\bincluding\b/)
+    .map(s => s.trim())
+    .filter(s => s.length > 2 && !['the', 'a', 'an', 'for', 'to', 'by', 'or', 'is', 'app', 'game'].includes(s))
+  const featureCount = Math.max(1, Math.min(featurePhrases.length, 8))
 
   // ── Complexity detection ──
   let complexity: Complexity = 'simple'

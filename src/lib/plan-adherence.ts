@@ -38,9 +38,10 @@ export function checkPlanAdherence(html: string, plan: unknown): PlanAdherenceRe
   const p = plan as Record<string, unknown>
   const lower = html.toLowerCase()
 
-  // Check features array
-  if (Array.isArray(p.features)) {
-    for (const feature of p.features) {
+  // Check features array (v26: handle both 'features' and 'key_features')
+  const featuresList = Array.isArray(p.features) ? p.features : (Array.isArray(p.key_features) ? p.key_features : [])
+  if (featuresList.length > 0) {
+    for (const feature of featuresList) {
       if (typeof feature !== 'string') continue
       const featureLower = feature.toLowerCase()
 

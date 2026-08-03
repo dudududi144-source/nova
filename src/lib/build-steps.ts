@@ -5,10 +5,14 @@ export interface BuildPlan {
   type?: string
   title?: string
   features?: string[]
+  /** v26: architect returns key_features (with underscore) */
+  key_features?: string[]
   approach?: string
   colors?: { bg?: string; primary?: string; accent?: string }
   layout?: string
   keyFunctions?: string[]
+  /** v26: architect returns key_functions (with underscore) */
+  key_functions?: string[]
 }
 
 /**
@@ -118,8 +122,10 @@ export function extractStepsFromPlan(plan: unknown, mission: string): string[] {
   }
 
   // Add feature-based steps (with type guard — features could contain non-strings)
-  if (p.features && Array.isArray(p.features) && p.features.length > 0) {
-    for (const f of p.features.slice(0, 5)) {
+  // v26: Handle both 'features' and 'key_features' (architect returns key_features)
+  const features = p.features || p.key_features
+  if (features && Array.isArray(features) && features.length > 0) {
+    for (const f of features.slice(0, 5)) {
       steps.push(`Building: ${typeof f === 'string' ? f : String(f)}...`)
     }
   } else {

@@ -273,8 +273,9 @@ export function estimateTokenBudget(plan: unknown): number {
   if (!plan || typeof plan !== 'object') return 6000
 
   const p = plan as Record<string, unknown>
-  const features = Array.isArray(p.features) ? p.features.length : 3
-  const keyFunctions = Array.isArray(p.keyFunctions) ? p.keyFunctions.length : 2
+  // v26: Handle both 'features'/'key_features' and 'keyFunctions'/'key_functions'
+  const features = Array.isArray(p.features) ? p.features.length : (Array.isArray(p.key_features) ? p.key_features.length : 3)
+  const keyFunctions = Array.isArray(p.keyFunctions) ? p.keyFunctions.length : (Array.isArray(p.key_functions) ? p.key_functions.length : 2)
 
   // Base: 1500 tokens per feature + 800 per function + 1000 overhead
   // Tighter budget forces the LLM to be concise and focused.
