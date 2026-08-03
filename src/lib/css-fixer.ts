@@ -75,24 +75,40 @@ button[style*="position:fixed"] {
     .map(s => s.replace(/<\/?script[^>]*>/gi, '')).join('\n')
   const hasInputListener = /addEventListener\s*\(\s*['"]input['"]/.test(scriptText)
 
-  if (hasSearch && !hasInputListener) {
+  // v27: Always inject search handler — even if LLM created one, it may not work.
+  // Our handler is a catch-all that filters any list-like elements.
+  if (hasSearch) {
     const searchFix = `
 <script>
-// v27: Auto-injected search handler
+// v27: Auto-injected search handler (catch-all)
 (function() {
+  function filterItems(query) {
+    query = query.toLowerCase().trim();
+    // Try multiple selectors for task/note/card items
+    var selectors = ['li', '.task-item', '.note-item', '[data-task]', '.card', '.task', '.item', '[data-id]'];
+    var items = [];
+    selectors.forEach(function(sel) {
+      document.querySelectorAll(sel).forEach(function(el) { items.push(el); });
+    });
+    // Dedupe
+    items = items.filter(function(item, idx, self) { return self.indexOf(item) === idx; });
+    items.forEach(function(item) {
+      // Skip items inside the search form itself
+      if (item.closest('form') && item.closest('form').querySelector('input[type="search"], input[placeholder*="search" i]')) return;
+      var text = (item.textContent || '').toLowerCase();
+      if (query === '' || text.includes(query)) {
+        item.style.display = '';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+  }
   document.querySelectorAll('input[type="search"], input[placeholder*="search" i], input[placeholder*="Search"]').forEach(function(input) {
-    input.addEventListener('input', function() {
-      var query = input.value.toLowerCase().trim();
-      // Find task/note items to filter
-      var items = document.querySelectorAll('li, .task-item, .note-item, [data-task], .card');
-      items.forEach(function(item) {
-        var text = (item.textContent || '').toLowerCase();
-        if (query === '' || text.includes(query)) {
-          item.style.display = '';
-        } else {
-          item.style.display = 'none';
-        }
-      });
+    // Remove existing listeners by cloning
+    var newInput = input.cloneNode(true);
+    input.parentNode.replaceChild(newInput, input);
+    newInput.addEventListener('input', function() {
+      filterItems(newInput.value);
     });
   });
 })();
@@ -102,7 +118,7 @@ button[style*="position:fixed"] {
     if (bodyClose) {
       result = result.replace(/<\/body>/i, searchFix + '\n</body>')
       fixesApplied++
-      logger.info('postfix.css', { fix: 'Injected search input handler' })
+      logger.info('postfix.css', { fix: 'Injected catch-all search handler' })
     }
   }
 
