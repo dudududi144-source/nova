@@ -3865,14 +3865,41 @@ export default function Home() {
                       />
                     </div>
                   </div>
-                ) : result && result.previewable === false && result.files && result.files.length > 0 ? (
-                  /* v4: FileViewer — multi-file output (React/Python/Node) can't be previewed in iframe */
+                ) : result && result.previewable === false ? (
+                  /* v28: Code viewer — for non-HTML output (Python, SQL, Bash, etc.)
+                      Shows the code in a FileViewer if files exist, otherwise in a simple code block */
                   <div className="h-full min-h-[400px] p-2">
-                    <FileViewer
-                      files={result.files}
-                      title={result.outputType ? `Files · ${result.outputType}` : 'Files'}
-                      className="h-full"
-                    />
+                    {result.files && result.files.length > 0 ? (
+                      <FileViewer
+                        files={result.files}
+                        title={result.outputType ? `Files · ${result.outputType}` : 'Files'}
+                        className="h-full"
+                      />
+                    ) : (
+                      <div className="flex h-full flex-col">
+                        <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                            {result.outputType || 'Code'}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 gap-1 text-[10px]"
+                            onClick={() => {
+                              if (result?.html) {
+                                navigator.clipboard?.writeText(result.html).then(() => toast.success('Code copied')).catch(() => toast.error('Copy failed'))
+                              }
+                            }}
+                          >
+                            <Copy className="h-3 w-3" />
+                            Copy
+                          </Button>
+                        </div>
+                        <pre className="flex-1 overflow-auto bg-neutral-950 p-4 text-[12px] text-neutral-300">
+                          <code>{result.html}</code>
+                        </pre>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   /* Responsive preview wrapper — centers iframe when a specific width is selected */
