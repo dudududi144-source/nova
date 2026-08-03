@@ -454,9 +454,14 @@ export async function POST(request: NextRequest): Promise<Response> {
                 // v16: Include quality breakdown in retry result too
                 const retryStaticAnalysis = analyzeHtml(retryHtml)
                 const retryPlanAdherence = checkPlanAdherence(retryHtml, plan)
-                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: retryHtml.length, score: retryValidation.score, metrics: metrics.summary })
+                // v26: Adjust score for static errors (same as main path)
+                const retryStaticErrors = retryStaticAnalysis.issues.filter(i => i.severity === 'error').length
+                const retryStaticWarnings = retryStaticAnalysis.issues.filter(i => i.severity === 'warning').length
+                const retryStaticDeduction = Math.min(50, retryStaticErrors * 10 + retryStaticWarnings * 3)
+                const retryAdjustedScore = Math.max(0, retryValidation.score - retryStaticDeduction)
+                logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: retryHtml.length, score: retryAdjustedScore, rawScore: retryValidation.score, staticErrors: retryStaticErrors, metrics: metrics.summary })
                 safeEnqueue(`data: ${JSON.stringify({
-                  type: 'result', html: retryHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary,
+                  type: 'result', html: retryHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryAdjustedScore, metrics: metrics.summary,
                   checks: retryValidation.checks.map(c => ({ name: c.name, passed: c.passed, detail: c.detail })),
                   missingFeatures: retryPlanAdherence.missingFeatures.slice(0, 5),
                   staticIssues: retryStaticAnalysis.issues.slice(0, 5).map(i => ({ severity: i.severity, message: i.message })),
