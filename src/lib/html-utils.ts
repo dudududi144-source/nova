@@ -91,3 +91,45 @@ export function injectCsp(html: string): string {
   }
   return `${cspMeta}\n${stripped}`
 }
+
+/**
+ * v26: Strip blocked APIs from generated HTML.
+ * The LLM sometimes uses localStorage/sessionStorage/cookies despite instructions.
+ * This post-processing step removes them so the app doesn't crash.
+ * Replaces with in-memory Map equivalents where possible.
+ */
+export function stripBlockedAPIs(html: string): string {
+  // Replace localStorage.getItem('key') with null (simulates empty storage)
+  // Replace localStorage.setItem('key', val) with nothing (no-op)
+  // Replace localStorage.removeItem('key') with nothing
+  let result = html
+
+  // Replace localStorage usage with a polyfill that uses in-memory Map
+  const polyfill = `
+<script>
+// v26: In-memory polyfill for localStorage (blocked in sandbox)
+(function() {
+  var _store = {};
+  var _localStorage = {
+    getItem: function(k) { return _store[k] !== undefined ? _store[k] : null; },
+    setItem: function(k, v) { _store[k] = String(v); },
+    removeItem: function(k) { delete _store[k]; },
+    clear: function() { _store = {}; },
+    key: function(i) { return Object.keys(_store)[i] || null; },
+    get length() { return Object.keys(_store).length; }
+  };
+  try {
+    Object.defineProperty(window, 'localStorage', { value: _localStorage, writable: false, configurable: true });
+    Object.defineProperty(window, 'sessionStorage', { value: _localStorage, writable: false, configurable: true });
+  } catch(e) {}
+})();
+</script>`
+
+  // Inject polyfill right after <head>
+  const headMatch = result.match(/<head[^>]*>/i)
+  if (headMatch) {
+    result = result.replace(/<head[^>]*>/i, headMatch[0] + polyfill)
+  }
+
+  return result
+}

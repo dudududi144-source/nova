@@ -9,7 +9,7 @@
 
 import type { NextRequest } from 'next/server'
 import { llmChatStream, llmChat } from '@/lib/llm'
-import { stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/html-utils'
+import { stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs } from '@/lib/html-utils'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -250,6 +250,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           finalHtml = finalHtml.replace(/<head[^>]*>/i, `${headMatch[0]}\n${designTokens}`)
         }
         finalHtml = injectCsp(finalHtml)
+        // v26: Inject polyfill for blocked APIs
+        finalHtml = stripBlockedAPIs(finalHtml)
         finalHtml = injectRuntimeErrorCapture(finalHtml)
         const totalMs = Date.now() - startTime
 

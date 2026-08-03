@@ -10,7 +10,7 @@
 
 import type { NextRequest } from 'next/server'
 import { llmChatStream, llmChat } from '@/lib/llm'
-import { stripCodeFences, looksLikeHtml, injectCsp } from '@/lib/html-utils'
+import { stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs } from '@/lib/html-utils'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -379,6 +379,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
         // Inject CSP (strips any existing CSP, adds NOVA's strict CSP)
         html = injectCsp(html)
+        // v26: Inject localStorage/sessionStorage polyfill (LLM uses them despite instructions)
+        html = stripBlockedAPIs(html)
         // Inject runtime error capture (before app's scripts)
         html = injectRuntimeErrorCapture(html)
 
@@ -445,6 +447,8 @@ export async function POST(request: NextRequest): Promise<Response> {
                 retryHtml = retryHtml.replace(/<head[^>]*>/i, `${retryHeadMatch[0]}\n${designTokens}`)
               }
               retryHtml = injectCsp(retryHtml)
+              // v26: Inject polyfill for blocked APIs
+              retryHtml = stripBlockedAPIs(retryHtml)
               retryHtml = injectRuntimeErrorCapture(retryHtml)
 
               const retryValidation = validateOutput(retryHtml, mission)

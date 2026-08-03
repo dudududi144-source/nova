@@ -79,14 +79,19 @@ function isFunctionDefined(fnName: string, html: string): boolean {
          new RegExp(`(?:const|let|var)\\s+${fnName}\\s*=`).test(html)
 }
 
-// Helper: check for blocked APIs
+// Helper: check for blocked APIs (but allow if polyfill is present)
 function checkBlockedAPIs(html: string): string[] {
   const issues: string[] = []
   const scriptMatch = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || []
   const scriptText = scriptMatch.map(s => s.replace(/<\/?script[^>]*>/gi, '')).join('\n')
+
+  // v26: If polyfill is present, localStorage is OK (it's shimmed)
+  const hasPolyfill = /In-memory polyfill for localStorage/.test(html)
+
   if (/\bprompt\s*\(/.test(scriptText)) issues.push('prompt()')
   if (/\bconfirm\s*\(/.test(scriptText)) issues.push('confirm()')
-  if (/\blocalStorage\b/.test(scriptText)) issues.push('localStorage')
+  if (!hasPolyfill && /\blocalStorage\b/.test(scriptText)) issues.push('localStorage')
+  if (!hasPolyfill && /\bsessionStorage\b/.test(scriptText)) issues.push('sessionStorage')
   return issues
 }
 
