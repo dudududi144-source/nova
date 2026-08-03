@@ -4411,3 +4411,35 @@ VERIFIED APPS (7 types, real interactions):
 7. Music player: Play (▶→⏸, 0:00→2:06), Next (track change), Pause ✅
 
 Pushed to GitHub: 4dc31d7..9f92b44
+
+---
+Task ID: 431-440
+Agent: main (Z.ai Code)
+Task: v26 — 10 app types verified working
+
+10 APP TYPES TESTED WITH REAL INTERACTIONS:
+
+1. Counter: + (0→3), - (3→2), Reset (2→0) ✅
+2. Todo: Add (0→3), Delete (3→2) ✅
+3. Snake: Start, arrows, score (0→1), Pause ✅
+4. Calculator: 7+3=10, 9×6=54, Clear ✅
+5. Drawing pad: Brush, Eraser, Fill, Undo, sliders ✅
+6. Pomodoro: Start (25:00→24:57), Pause, Reset, modes ✅
+7. Music player: Play (▶→⏸, 0:00→2:06), Next (track change) ✅
+8. Weather: C/F toggle (22°C→72°F), 5-day forecast ✅
+9. Color palette: Generate, Random, Complementary, Analogous ✅
+10. Markdown editor: Live preview (# → heading, **bold** → strong), word count ✅
+
+KNOWN ISSUES (app-level, not system):
+- Weather: city search doesn't update dashboard (search shows results but doesn't switch)
+- Sticky notes: save modal doesn't close after saving
+
+PROMPT RULES ADDED (total 11):
+1-6: Function definitions, no blocked APIs, overlay close buttons
+7: Forms must preventDefault
+8: Inputs use .value and .trim()
+9: Lists use createElement not innerHTML
+10: Must bind ALL elements (use loops)
+11: init() after DOM ready
+
+Pushed to GitHub: 9f92b44..92db8d9
