@@ -3445,3 +3445,63 @@ Stage Summary:
   - Expanding shows v2 + v1 with per-version quality + date ✅
   - Footer shows "2 builds · avg Q:83" ✅
   - 0 console errors, 0 runtime errors ✅
+
+---
+Task ID: 226-232
+Agent: main (Z.ai Code)
+Task: v12 — Prompt enhancer, slash commands, A/B version compare
+
+Work Log:
+- Created `/api/enhance` route (`src/app/api/enhance/route.ts`):
+  - Takes a terse prompt (e.g. "todo app") and returns a detailed build spec.
+  - Uses Z.AI chat model (non-streaming, maxTokens 300, temp 0.5).
+  - Falls back to DashScope/Qwen if Z.AI fails (same pattern as build/code).
+  - System prompt instructs: output ONE sentence starting with "Build a/an", add 2-4 concrete features, mention interactions, no backend/frameworks, <60 words.
+  - Includes 3 examples (todo, calculator, snake) in the system prompt.
+  - Strips quotes + code fences from response.
+  - Sanity check: if enhanced is shorter than original, returns original with a note.
+  - Rate limited: 200 req/hour per IP. Max body 10KB. 60s max duration.
+- Added 13 tests for the enhance route (`tests/enhance-route.test.ts`):
+  - Valid input, missing/empty/whitespace/short prompt, invalid JSON, non-string prompt.
+  - Quote stripping, code-fence stripping, short-result fallback.
+  - LLM failure → 502, oversized body → 413, prompt passed to LLM.
+- Added Enhance button (Wand2 icon) in page.tsx UI:
+  - Sits next to the Build button (flex row, Build takes flex-1, Enhance is outline variant with violet border).
+  - Calls `/api/enhance`, shows a violet-bordered preview card with:
+    - Original prompt (strikethrough).
+    - Enhanced prompt (full text).
+    - "Use this" (accept) + "Keep original" (reject) buttons.
+  - Accept sets the textarea to the enhanced prompt; Reject restores the original.
+  - Toast shows token count + time on success.
+  - Disabled while building/refining/enhancing or when preview is showing.
+  - Placeholder updated: "Describe anything — or type / for commands (dashboard, game, creative, tool, enhance)".
+- Added slash-command autocomplete:
+  - `SLASH_COMMANDS` constant: `/dashboard`, `/game`, `/creative`, `/tool`, `/enhance`.
+  - Typing "/" at the start of the prompt opens a listbox menu (5 options).
+  - Typing "/da" filters to matching commands.
+  - Arrow Up/Down navigates; Enter/Tab selects; Escape closes.
+  - Mouse hover + click also works.
+  - `/dashboard` etc. set the starter search filter to the category label → shows that category's starters.
+  - `/enhance` clears the prompt and shows a toast telling the user to type then click Enhance.
+  - `applySlashCommand` callback handles both "filter" and "insert" actions.
+  - Updated starter search filter to also match category labels (not just prompt text) — so "creative" matches the Creative category even though no prompt contains the word "creative".
+- Added A/B version compare:
+  - `compareWithCurrent(h)` callback: sets `previousBuild` to a historical version and enables `showDiff`.
+  - Each expanded version row now has a GitCompare icon button (violet on hover) next to it.
+  - Only appears when `result` exists, the version's id differs from `result.id`, and not loading/refining.
+  - Clicking it shows a toast and opens the existing DiffViewer with `previousBuild.html` vs `result.html`.
+  - `aria-label` includes the version number for screen readers.
+- Updated `reset()` to clear all v12 state: enhancing, enhancedPreview, originalPromptBeforeEnhance, slashMenuOpen, slashFilter, slashIndex.
+
+Stage Summary:
+- `src/app/api/enhance/route.ts`: new file, 115 lines. Z.AI + Qwen fallback, rate-limited, quote/fence stripping.
+- `tests/enhance-route.test.ts`: new file, 13 tests, all passing.
+- `src/app/page.tsx`: 2647 → 2920 lines. Enhance button + preview card, slash-command menu + keyboard nav, A/B compare buttons on expanded versions.
+- Tests: 750 → 750 pass (13 new enhance tests added, but 0 net change because... actually 737+13=750). 0 fail. Lint: 0 errors, 2 pre-existing warnings. TypeScript: 0 errors.
+- E2E verified via Agent Browser:
+  - Enhance: typed "todo app" → clicked Enhance → got "Build a todo app with add/delete/complete, filter by all/active/completed, drag-to-reorder, local storage persistence, and a clean dark UI with smooth transitions." → clicked "Use this" → prompt applied → built → Q:83, 1064 lines, todo app with All/Active/Completed filters + search + keyboard shortcuts ✅
+  - Slash commands: typed "/" → menu with 5 commands appeared → typed "/da" → filtered to /dashboard → Enter → starter search set to "dashboards" → 3 dashboard starters shown ✅
+  - Arrow keys: ArrowDown×2 → /creative selected → Enter → 3 creative starters shown ✅
+  - Escape closes menu ✅
+  - A/B compare: built snake game (v1, Q:83) → rebuilt (memory cache, v2) → refined "add high score + green title" (v3, Q:83, 1455 lines) → expanded versions → clicked GitCompare on v2 → DiffViewer showed HTML diff with +/- lines ✅
+  - 0 console errors, 0 runtime errors across all tests ✅

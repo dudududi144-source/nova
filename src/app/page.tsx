@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2 } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -98,6 +98,16 @@ const STARTER_CATEGORIES: readonly { icon: string; label: string; prompts: reado
 
 const EXAMPLES: readonly string[] = STARTER_CATEGORIES.flatMap(c => c.prompts)
 
+// v12: Slash commands — type "/" at the start of the prompt to see these.
+// Each command either filters starters by category or inserts a template.
+const SLASH_COMMANDS: readonly { cmd: string; label: string; icon: string; action: 'filter' | 'insert'; category?: string; template?: string }[] = [
+  { cmd: '/dashboard', label: 'Dashboard apps', icon: '📊', action: 'filter', category: 'Dashboards' },
+  { cmd: '/game', label: 'Games', icon: '🎮', action: 'filter', category: 'Games' },
+  { cmd: '/creative', label: 'Creative tools', icon: '🎨', action: 'filter', category: 'Creative' },
+  { cmd: '/tool', label: 'Utility tools', icon: '🛠️', action: 'filter', category: 'Tools' },
+  { cmd: '/enhance', label: 'Enhance current prompt with AI', icon: '✨', action: 'insert', template: '' },
+]
+
 const REFINE_THINKING_STEPS: readonly string[] = [
   'Processing your request...',
   'Making changes...',
@@ -124,6 +134,14 @@ export default function Home() {
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   // v11: Starter-prompt search filter
   const [starterQuery, setStarterQuery] = useState('')
+  // v12: Prompt enhancer state
+  const [enhancing, setEnhancing] = useState(false)
+  const [enhancedPreview, setEnhancedPreview] = useState<string | null>(null)
+  const [originalPromptBeforeEnhance, setOriginalPromptBeforeEnhance] = useState<string | null>(null)
+  // v12: Slash-command autocomplete — shows when user types "/" at start of prompt
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false)
+  const [slashFilter, setSlashFilter] = useState('')
+  const [slashIndex, setSlashIndex] = useState(0)
   const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
   const [planSummary, setPlanSummary] = useState<string | null>(null)
   const [qualityScore, setQualityScore] = useState(0)
@@ -1243,6 +1261,14 @@ export default function Home() {
     // v11: Reset version-history expansion + starter search
     setExpandedVersions(new Set())
     setStarterQuery('')
+    // v12: Reset enhance state
+    setEnhancing(false)
+    setEnhancedPreview(null)
+    setOriginalPromptBeforeEnhance(null)
+    // v12: Reset slash-menu state
+    setSlashMenuOpen(false)
+    setSlashFilter('')
+    setSlashIndex(0)
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -1304,6 +1330,100 @@ export default function Home() {
       toast.error('Failed to copy — try downloading instead')
     }
   }, [result])
+
+  // v12: Apply a slash command — either filter starters by category or trigger enhance.
+  // For "filter" commands: set the starter search to the category label (shows that category's prompts),
+  // and clear the slash from the textarea (set to empty so the user can pick a starter).
+  // For "insert" commands (like /enhance): clear the slash and trigger the action.
+  const applySlashCommand = useCallback((cmd: { cmd: string; action: 'filter' | 'insert'; category?: string }) => {
+    setSlashMenuOpen(false)
+    setMission('')
+    if (cmd.action === 'filter' && cmd.category) {
+      // Use the category label (e.g. "Games") as the search filter —
+      // matches the category label OR the prompt text.
+      setStarterQuery(cmd.category.toLowerCase())
+      toast.info(`Showing ${cmd.category} starters — click one to build`)
+    } else if (cmd.action === 'insert' && cmd.cmd === '/enhance') {
+      // /enhance with no prompt — just focus the textarea so the user can type
+      toast.info('Type a prompt, then click Enhance')
+    }
+  }, [])
+
+  // v12: Compare a historical version against the current result.
+  // Sets the version as `previousBuild` and enables the DiffViewer.
+  const compareWithCurrent = useCallback((h: BuildResult) => {
+    if (!result) {
+      toast.error('Build something first, then compare versions')
+      return
+    }
+    if (h.id === result.id) {
+      toast.error('Cannot compare a build with itself')
+      return
+    }
+    setPreviousBuild(h)
+    setShowDiff(true)
+    toast.info('Showing diff — click Diff again to hide')
+  }, [result])
+
+  // v12: Enhance prompt — calls /api/enhance to expand a terse prompt into a
+  // detailed build spec. Shows a preview diff; user can accept or undo.
+  const enhancePrompt = useCallback(async () => {
+    const m = mission.trim()
+    if (!m) {
+      toast.error('Type a prompt first')
+      return
+    }
+    if (m.length < 3) {
+      toast.error('Prompt too short to enhance')
+      return
+    }
+    // If already showing a preview, don't re-enhance
+    if (enhancedPreview !== null) return
+    setEnhancing(true)
+    try {
+      const res = await fetch('/api/enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: m }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        toast.error(data.error ?? 'Enhancement failed')
+        return
+      }
+      const enhanced: string = data.enhanced
+      // Don't enhance if it's identical to the original
+      if (enhanced.trim() === m) {
+        toast.info('Prompt is already detailed')
+        return
+      }
+      setOriginalPromptBeforeEnhance(m)
+      setEnhancedPreview(enhanced)
+      toast.success(`Enhanced · ${data.tokens ?? 0} tokens · ${(data.ms / 1000).toFixed(1)}s`)
+    } catch (err) {
+      toast.error('Network error — could not enhance')
+    } finally {
+      setEnhancing(false)
+    }
+  }, [mission, enhancedPreview])
+
+  // v12: Accept the enhanced preview — applies it to the textarea
+  const acceptEnhanced = useCallback(() => {
+    if (enhancedPreview === null) return
+    setMission(enhancedPreview)
+    setEnhancedPreview(null)
+    setOriginalPromptBeforeEnhance(null)
+    toast.success('Prompt enhanced')
+  }, [enhancedPreview])
+
+  // v12: Reject the enhanced preview — discard and keep the original
+  const rejectEnhanced = useCallback(() => {
+    if (originalPromptBeforeEnhance !== null) {
+      setMission(originalPromptBeforeEnhance)
+    }
+    setEnhancedPreview(null)
+    setOriginalPromptBeforeEnhance(null)
+  }, [originalPromptBeforeEnhance])
 
   // v10.10: Share via URL — encode build in URL hash
   const shareUrl = useCallback(() => {
@@ -1751,6 +1871,42 @@ export default function Home() {
           <label htmlFor="mission-input" className="mb-2 block text-xs font-medium text-muted-foreground">
             What do you want to build?
           </label>
+          {/* v12: Slash-command autocomplete menu.
+              Shows when the prompt starts with "/" (and only the slash + filter word).
+              Arrow keys navigate, Enter/Tab selects, Escape closes. */}
+          {slashMenuOpen && (() => {
+            const filtered = SLASH_COMMANDS.filter(c =>
+              slashFilter === '' || c.cmd.includes(slashFilter.toLowerCase()) || c.label.toLowerCase().includes(slashFilter.toLowerCase())
+            )
+            if (filtered.length === 0) return null
+            return (
+              <div
+                role="listbox"
+                aria-label="Slash commands"
+                className="relative z-20 mb-2 overflow-hidden rounded-md border border-border/60 bg-popover shadow-lg"
+              >
+                {filtered.map((c, i) => (
+                  <button
+                    key={c.cmd}
+                    type="button"
+                    role="option"
+                    aria-selected={i === slashIndex}
+                    onMouseEnter={() => setSlashIndex(i)}
+                    onClick={() => {
+                      applySlashCommand(c)
+                    }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
+                      i === slashIndex ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-accent'
+                    }`}
+                  >
+                    <span className="text-sm">{c.icon}</span>
+                    <span className="font-mono text-violet-400">{c.cmd}</span>
+                    <span className="text-muted-foreground/70">— {c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
           <Textarea
             id="mission-input"
             // autoFocus only on desktop via useEffect (see missionInputRef).
@@ -1758,14 +1914,53 @@ export default function Home() {
             autoFocus={false}
             value={mission}
             maxLength={2000}
-            onChange={(e) => setMission(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value
+              setMission(v)
+              // v12: Detect slash-command trigger — "/" at start, optionally followed by filter text
+              const slashMatch = v.match(/^\/(\w*)$/)
+              if (slashMatch) {
+                setSlashMenuOpen(true)
+                setSlashFilter(slashMatch[1] || '')
+                setSlashIndex(0)
+              } else {
+                setSlashMenuOpen(false)
+              }
+            }}
             onKeyDown={(e) => {
+              // v12: Slash-menu keyboard navigation
+              if (slashMenuOpen) {
+                const filtered = SLASH_COMMANDS.filter(c =>
+                  slashFilter === '' || c.cmd.includes(slashFilter.toLowerCase()) || c.label.toLowerCase().includes(slashFilter.toLowerCase())
+                )
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setSlashIndex(prev => Math.min(prev + 1, filtered.length - 1))
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setSlashIndex(prev => Math.max(prev - 1, 0))
+                  return
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault()
+                  const selected = filtered[slashIndex]
+                  if (selected) applySlashCommand(selected)
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setSlashMenuOpen(false)
+                  return
+                }
+              }
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault()
                 build()
               }
             }}
-            placeholder="Describe anything — a crypto dashboard, a mobile OS, a 3D explorer..."
+            placeholder="Describe anything — or type / for commands (dashboard, game, creative, tool, enhance)"
             className="min-h-[120px] resize-none font-mono text-sm"
           />
           <div className="mt-1 flex items-center justify-between">
@@ -1776,24 +1971,83 @@ export default function Home() {
               {mission.length}/2000
             </span>
           </div>
-          <Button
-            onClick={() => build()}
-            disabled={loading || refining || !mission.trim()}
-            className="mt-3 w-full gap-2"
-            size="lg"
-          >
-            {loading ? (
-              <>
+
+          {/* v12: Enhanced-prompt preview — shows when the user clicked Enhance.
+              Displays the AI-expanded prompt with Accept (apply) / Reject (undo) buttons. */}
+          {enhancedPreview !== null && (
+            <div role="region" aria-label="Enhanced prompt preview" className="mt-3 rounded-md border border-violet-500/40 bg-violet-500/5 p-3">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <Wand2 className="h-3 w-3 shrink-0 text-violet-400" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-violet-400/80">
+                  Enhanced prompt
+                </span>
+              </div>
+              {originalPromptBeforeEnhance && (
+                <p className="mb-1.5 line-through text-[11px] text-muted-foreground/50">
+                  {originalPromptBeforeEnhance}
+                </p>
+              )}
+              <p className="text-[12px] leading-relaxed text-foreground/90">
+                {enhancedPreview}
+              </p>
+              <div className="mt-2 flex gap-1.5">
+                <Button
+                  size="sm"
+                  className="h-7 gap-1.5 text-[11px]"
+                  onClick={acceptEnhanced}
+                >
+                  <Check className="h-3 w-3" />
+                  Use this
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1.5 text-[11px]"
+                  onClick={rejectEnhanced}
+                >
+                  <Undo2 className="h-3 w-3" />
+                  Keep original
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3 flex gap-2">
+            <Button
+              onClick={() => build()}
+              disabled={loading || refining || !mission.trim() || enhancedPreview !== null}
+              className="flex-1 gap-2"
+              size="lg"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Building...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Build
+                </>
+              )}
+            </Button>
+            {/* v12: Enhance prompt — expand terse prompts into detailed build specs */}
+            <Button
+              onClick={enhancePrompt}
+              disabled={loading || refining || enhancing || !mission.trim() || enhancedPreview !== null}
+              variant="outline"
+              className="gap-2 border-violet-500/40 text-violet-400 hover:bg-violet-500/10 hover:text-violet-300"
+              size="lg"
+              title="Enhance your prompt with AI — adds concrete features and interactions"
+            >
+              {enhancing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Building...
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4" />
-                Build
-              </>
-            )}
-          </Button>
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              <span className="hidden sm:inline">Enhance</span>
+            </Button>
+          </div>
 
           {/* Loading state — single unified progress */}
           {loading && !result && (
@@ -1927,9 +2181,12 @@ export default function Home() {
               ) : (
                 <div className="space-y-1">
                   {STARTER_CATEGORIES
-                    .flatMap(c => c.prompts)
-                    .filter(ex => ex.toLowerCase().includes(starterQuery.toLowerCase()))
-                    .map((ex) => (
+                    .flatMap(c => c.prompts.map(p => ({ prompt: p, category: c.label })))
+                    .filter(({ prompt, category }) =>
+                      prompt.toLowerCase().includes(starterQuery.toLowerCase()) ||
+                      category.toLowerCase().includes(starterQuery.toLowerCase())
+                    )
+                    .map(({ prompt: ex }) => (
                       <button
                         key={ex}
                         type="button"
@@ -1943,8 +2200,11 @@ export default function Home() {
                       </button>
                     ))}
                   {STARTER_CATEGORIES
-                    .flatMap(c => c.prompts)
-                    .filter(ex => ex.toLowerCase().includes(starterQuery.toLowerCase())).length === 0 && (
+                    .flatMap(c => c.prompts.map(p => ({ prompt: p, category: c.label })))
+                    .filter(({ prompt, category }) =>
+                      prompt.toLowerCase().includes(starterQuery.toLowerCase()) ||
+                      category.toLowerCase().includes(starterQuery.toLowerCase())
+                    ).length === 0 && (
                     <p className="px-2 py-3 text-center text-[10px] text-muted-foreground/50">
                       No starters match "{starterQuery}"
                     </p>
@@ -2037,29 +2297,42 @@ export default function Home() {
                       {isExpanded && versionCount > 1 && (
                         <div className="ml-3 mt-1 space-y-1 border-l border-border/30 pl-2">
                           {group.map((h, i) => (
-                            <button
-                              key={h.id}
-                              type="button"
-                              onClick={() => loadFromHistory(h)}
-                              disabled={loading || refining}
-                              className="flex w-full items-center gap-2 rounded border border-border/30 bg-card/20 px-2 py-1 text-left text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
-                              title={h.timestamp ? new Date(h.timestamp).toLocaleString() : h.mission}
-                            >
-                              <span className="shrink-0 font-mono text-muted-foreground/50">
-                                v{versionCount - i}
-                              </span>
-                              <span className="truncate">{h.mission}</span>
-                              {h.quality != null && h.quality > 0 && (
-                                <span className={`ml-auto shrink-0 text-[9px] ${h.quality >= 70 ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
-                                  Q:{h.quality}
+                            <div key={h.id} className="flex items-stretch gap-1">
+                              <button
+                                type="button"
+                                onClick={() => loadFromHistory(h)}
+                                disabled={loading || refining}
+                                className="flex flex-1 min-w-0 items-center gap-2 rounded border border-border/30 bg-card/20 px-2 py-1 text-left text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                                title={h.timestamp ? new Date(h.timestamp).toLocaleString() : h.mission}
+                              >
+                                <span className="shrink-0 font-mono text-muted-foreground/50">
+                                  v{versionCount - i}
                                 </span>
+                                <span className="truncate">{h.mission}</span>
+                                {h.quality != null && h.quality > 0 && (
+                                  <span className={`ml-auto shrink-0 text-[9px] ${h.quality >= 70 ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
+                                    Q:{h.quality}
+                                  </span>
+                                )}
+                                {h.timestamp && (
+                                  <span className="shrink-0 text-[9px] text-muted-foreground/40">
+                                    {new Date(h.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                  </span>
+                                )}
+                              </button>
+                              {/* v12: Compare this version against the current result */}
+                              {result && h.id !== result.id && !loading && !refining && (
+                                <button
+                                  type="button"
+                                  onClick={() => compareWithCurrent(h)}
+                                  className="shrink-0 rounded border border-border/30 bg-card/20 px-1.5 text-[9px] text-muted-foreground transition-colors hover:border-violet-500/50 hover:text-violet-400"
+                                  title="Compare this version with the current build"
+                                  aria-label={`Compare version ${versionCount - i} with current build`}
+                                >
+                                  <GitCompare className="h-3 w-3" />
+                                </button>
                               )}
-                              {h.timestamp && (
-                                <span className="shrink-0 text-[9px] text-muted-foreground/40">
-                                  {new Date(h.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                </span>
-                              )}
-                            </button>
+                            </div>
                           ))}
                         </div>
                       )}
