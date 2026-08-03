@@ -3746,3 +3746,40 @@ Stage Summary:
   - "Build a todo app with add, delete, complete, filter, drag-and-drop" → 🟡 MEDIUM, ~6min, rec: Z.AI, "ready to build!" ✅
   - "Build an operating system..." → 🟠 COMPLEX, ~8min, rec: Kimi, "too complex for single-file app" warning ✅
 - Pushed to GitHub: 3ede7aa..342db6f
+
+---
+Task ID: 267-272
+Agent: main (Z.ai Code)
+Task: v16 verification — prove features work for real, fix truncation bug
+
+VERIFICATION RESULTS (E2E browser tests):
+1. ✅ Mission analysis card — appears in real-time as user types
+   - "calculator" → 🟡 MEDIUM, ~4min, rec: Z.AI, "too generic" warning
+   - "Build a snake game with score tracking..." → 🟡 MEDIUM, ~5min, "ready to build!"
+   - "Build a database server..." → "too complex for single-file app" warning + suggestions
+2. ✅ Quality breakdown — shows REAL data, not empty:
+   - Snake game: FAILED CHECKS "Uses localStorage", "0 aria-labels for 7 elements"
+   - Color picker: FAILED CHECKS "0 aria-labels for 20 elements", "Found 1 semantic tag"
+   - Solar system: STATIC ANALYSIS "'C()' is called but not defined", "'createPlanets()' not defined"
+3. ✅ Timing breakdown — shows REAL times:
+   - Snake: arch 13.2s → code 147.6s
+   - Color picker: arch 12.9s → code 137.6s
+   - Solar system: arch 19.2s → code 216.3s
+4. ✅ Quick mode — actually changes token budget (verified in server logs):
+   - Normal: quickMode=false, maxTokens=7100
+   - Quick: quickMode=true, maxTokens=4615 (65% of 7100)
+   - Result: Q:93, 2.3min (vs Q:83, 2.5min normal)
+5. ✅ Prompt history — ↑/↓ actually cycles:
+   - localStorage verified: ["color picker", "Build a snake game..."]
+   - ↑ at start shows "color picker", ↑ again shows "Build a snake game..."
+
+BUG FOUND AND FIXED:
+- Truncation detection was broken: checked `totalTokens === 0` but LLM reports tokens even on truncation
+- Fix: now checks `!html.toLowerCase().includes('</html>')` — reliable signal
+- Also added quality breakdown to retry result path (was missing)
+
+Stage Summary:
+- All v16 features verified working for real, not just in description
+- Truncation bug fixed
+- Tests: 791 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- Pushed to GitHub: 342db6f..f3db752
