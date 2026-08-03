@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3, Bookmark, Trash2 } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3, Bookmark, Trash2, Code } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import { calculateBuildHealth } from '@/lib/build-health'
 import { compareBuilds } from '@/lib/build-comparison'
 import { loadBuildStats, saveBuildStats, recordBuildInStats, recordRefineInStats, formatStats, type BuildStats } from '@/lib/build-stats'
 import { loadTemplates, addTemplate, deleteTemplate, markTemplateUsed, type PromptTemplate } from '@/lib/prompt-templates'
+import { generateSuggestions, type Suggestion } from '@/lib/smart-suggestions'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -282,6 +283,12 @@ export default function Home() {
   // v20: Build stats — persistent across sessions
   const [buildStats, setBuildStats] = useState<BuildStats>(() => loadBuildStats())
   const [showStats, setShowStats] = useState(false)
+  // v28: Smart post-build suggestions
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  // v28: Live code editor
+  const [showCodeEditor, setShowCodeEditor] = useState(false)
+  const [editedHtml, setEditedHtml] = useState('')
   // v21: Prompt templates — save/load custom prompts
   const [templates, setTemplates] = useState<PromptTemplate[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
@@ -1004,6 +1011,10 @@ export default function Home() {
       setQualityMetrics(finalMetrics)
       // v16: Set quality breakdown for the insights panel
       setQualityBreakdown(finalQualityBreakdown)
+      // v28: Generate smart suggestions for post-build improvement
+      const smartSugs = generateSuggestions(finalHtml, m)
+      setSuggestions(smartSugs)
+      setShowSuggestions(smartSugs.length > 0)
       // v20: Record build in persistent stats
       const newStats = recordBuildInStats(buildStats, {
         quality: finalQuality,
@@ -3371,12 +3382,140 @@ export default function Home() {
                     Fork
                   </Button>
                 )}
+                {/* v28: Smart Suggestions toggle */}
+                {result && !loading && !refining && suggestions.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={`h-7 gap-1.5 text-xs ${showSuggestions ? 'bg-violet-500/20 text-violet-400' : 'text-muted-foreground'}`}
+                    onClick={() => setShowSuggestions(prev => !prev)}
+                    title="Smart improvement suggestions"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span className="hidden lg:inline">Improve</span>
+                    {suggestions.length > 0 && (
+                      <span className="ml-0.5 rounded bg-violet-500/30 px-1 text-[9px]">{suggestions.length}</span>
+                    )}
+                  </Button>
+                )}
+                {/* v28: Live Code Editor toggle */}
+                {result && !loading && !refining && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={`h-7 gap-1.5 text-xs ${showCodeEditor ? 'bg-primary/20 text-primary' : 'text-muted-foreground'}`}
+                    onClick={() => {
+                      if (!showCodeEditor && result) setEditedHtml(result.html)
+                      setShowCodeEditor(prev => !prev)
+                    }}
+                    title="Edit HTML directly"
+                  >
+                    <Code className="h-3.5 w-3.5" />
+                    <span className="hidden lg:inline">Code</span>
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={loading ? cancelBuild : refining ? cancelRefine : reset} title={loading ? 'Cancel build' : refining ? 'Cancel refine' : 'Start new'}>
                   {(loading || refining) ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                   {(loading || refining) ? 'Cancel' : 'New'}
                 </Button>
               </div>
             </div>
+
+            {/* v28: Smart Suggestions Panel — post-build improvement suggestions */}
+            {showSuggestions && suggestions.length > 0 && result && !loading && !refining && (
+              <div className="shrink-0 border-b border-violet-500/30 bg-violet-500/5 px-4 py-2">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <p className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-violet-400/80">
+                    <Sparkles className="h-3 w-3" />
+                    Smart Suggestions
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowSuggestions(false)}
+                    className="text-violet-400/40 hover:text-violet-400"
+                    aria-label="Hide suggestions"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestions.map((sug) => (
+                    <button
+                      key={sug.id}
+                      type="button"
+                      onClick={() => {
+                        sendChat(sug.action)
+                        setShowSuggestions(false)
+                      }}
+                      disabled={loading || refining}
+                      className="flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-left text-[11px] text-violet-300 transition-colors hover:border-violet-500/50 hover:bg-violet-500/20 disabled:opacity-50"
+                      title={sug.description}
+                    >
+                      <span className="text-sm">{sug.icon}</span>
+                      <span className="font-medium">{sug.title}</span>
+                      {sug.priority === 'high' && (
+                        <span className="rounded bg-red-500/30 px-1 text-[8px] text-red-300">!</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* v28: Live Code Editor — edit HTML directly and see changes */}
+            {showCodeEditor && result && !loading && !refining && (
+              <div className="shrink-0 border-b border-border/40 bg-neutral-950">
+                <div className="flex items-center justify-between border-b border-border/40 px-4 py-1.5">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                    Live Code Editor
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 gap-1 text-[10px] text-emerald-400 hover:bg-emerald-500/10"
+                      onClick={() => {
+                        if (editedHtml && result) {
+                          const edited = { ...result, html: editedHtml }
+                          setResult(edited)
+                          resultRef.current = edited
+                          toast.success('Preview updated from editor')
+                        }
+                      }}
+                      title="Apply changes to preview"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Apply
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 gap-1 text-[10px] text-muted-foreground"
+                      onClick={() => { setEditedHtml(result.html); toast.info('Reverted to original') }}
+                      title="Revert to original"
+                    >
+                      <Undo2 className="h-3 w-3" />
+                      Revert
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCodeEditor(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Close editor"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={editedHtml}
+                  onChange={(e) => setEditedHtml(e.target.value)}
+                  className="h-48 w-full resize-none bg-neutral-950 p-3 font-mono text-[11px] text-neutral-300 focus:outline-none"
+                  spellCheck={false}
+                  placeholder="Edit HTML here..."
+                />
+              </div>
+            )}
 
             {/* Chat panel */}
             <div className="flex shrink-0 flex-col border-b border-border/40 max-h-[200px]">
