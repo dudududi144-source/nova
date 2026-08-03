@@ -483,7 +483,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             resultData.previewable = multiFileResult.previewable
           }
 
-          storeResult(buildId, { html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics: metrics.summary })
+          storeResult(buildId, { html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics: metrics.summary, files: multiFileResult.files, outputType: multiFileResult.type, previewable: false })
           safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
           safeClose()
           return
