@@ -4519,3 +4519,37 @@ Before: Add Task button covered the page, couldn't interact.
 After: Modal opens properly, task can be added and deleted.
 
 Pushed to GitHub: ceb2658..6ded8c7
+
+---
+Task ID: 461-470
+Agent: main (Z.ai Code)
+Task: v27 — Form fixer save/cancel + search verified working
+
+FORM FIXER UPGRADE:
+- Now injects save/cancel button handlers for modals
+- Save buttons: tries saveTask/addTask/createTask/etc., falls back to onclick
+- Cancel buttons: closes modal + removes backdrop
+- Both: clones button to remove broken listeners, closes modal after action
+
+SEARCH HANDLER VERIFIED:
+- "schedule" → only "Schedule team meeting" visible ✅
+- "buy" → only "Buy groceries" visible ✅
+- Clear → all tasks return ✅
+- Works because CSS fixer uses div>h3, div>h4, [class*="task"] selectors
+
+TODO APP STATUS:
+- Add Task: modal opens, Add button closes modal ✅ (task may not appear if LLM's addTask broken)
+- Delete: 3→2 tasks ✅
+- Search: filters in real-time ✅
+- Modal close: Escape, X, Cancel all work ✅
+- Complete: depends on LLM (sometimes creates checkbox, sometimes not)
+
+ALL 6 POST-PROCESSING FIXERS VERIFIED RUNNING:
+1. injectCsp ✅
+2. stripBlockedAPIs ✅
+3. fixConversionMath ✅ (1000m→1km)
+4. fixForms ✅ (type=button + save/cancel handlers)
+5. fixCss ✅ (modal CSS + search handler)
+6. injectRuntimeErrorCapture ✅
+
+Pushed to GitHub: 7b098d7..2d03c58
