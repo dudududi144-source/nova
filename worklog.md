@@ -4553,3 +4553,34 @@ ALL 6 POST-PROCESSING FIXERS VERIFIED RUNNING:
 6. injectRuntimeErrorCapture ✅
 
 Pushed to GitHub: 7b098d7..2d03c58
+
+---
+Task ID: 471-480
+Agent: main (Z.ai Code)
+Task: v28 — Smart Suggestions + Live Code Editor
+
+TWO MAJOR FEATURES:
+
+1. SMART SUGGESTIONS (src/lib/smart-suggestions.ts):
+   - Analyzes generated HTML after build
+   - Suggests specific improvements based on:
+     * Design: missing shadows, transitions, responsive
+     * Functionality: dead buttons, missing features
+     * Accessibility: missing aria-labels, semantic HTML
+     * App-specific: drag-drop for todos, high score for games, dark mode for dashboards
+   - Each suggestion is clickable → auto-triggers refine
+   - Verified: Q:84 → Q:90 after clicking "Use semantic HTML"
+
+2. LIVE CODE EDITOR:
+   - Edit HTML directly in textarea
+   - Apply button updates preview instantly
+   - Revert button restores original
+   - Verified: edited to '<h1>EDITED BY USER</h1>' → preview showed it immediately
+
+These transform NOVA from one-shot generator to interactive dev environment.
+
+POST-PROCESSING PIPELINE (unchanged, 6 stages):
+1. injectCsp 2. stripBlockedAPIs 3. fixConversionMath
+4. fixForms 5. fixCss 6. injectRuntimeErrorCapture
+
+Pushed to GitHub: 2d03c58..fe247d0
