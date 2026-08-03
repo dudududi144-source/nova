@@ -85,16 +85,24 @@ button[style*="position:fixed"] {
   function filterItems(query) {
     query = query.toLowerCase().trim();
     // Try multiple selectors for task/note/card items
-    var selectors = ['li', '.task-item', '.note-item', '[data-task]', '.card', '.task', '.item', '[data-id]'];
+    // v27: Also look for divs/sections that contain headings (task titles)
+    var selectors = ['li', '.task-item', '.note-item', '[data-task]', '.card', '.task', '.item', '[data-id]',
+                     'div > h3', 'div > h4', 'section > h3', 'article', '[class*="task"]', '[class*="note"]', '[class*="card"]'];
     var items = [];
     selectors.forEach(function(sel) {
-      document.querySelectorAll(sel).forEach(function(el) { items.push(el); });
+      document.querySelectorAll(sel).forEach(function(el) {
+        // For heading-based selectors, get the parent element
+        var item = el.tagName === 'H3' || el.tagName === 'H4' ? el.parentElement : el;
+        if (item && items.indexOf(item) === -1) items.push(item);
+      });
     });
     // Dedupe
     items = items.filter(function(item, idx, self) { return self.indexOf(item) === idx; });
     items.forEach(function(item) {
-      // Skip items inside the search form itself
-      if (item.closest('form') && item.closest('form').querySelector('input[type="search"], input[placeholder*="search" i]')) return;
+      // Skip items inside the search form/header/nav
+      if (item.closest('form, header, nav, .search, .filter')) return;
+      // Skip items that are too small (probably not task cards)
+      if (item.textContent.length < 5) return;
       var text = (item.textContent || '').toLowerCase();
       if (query === '' || text.includes(query)) {
         item.style.display = '';
