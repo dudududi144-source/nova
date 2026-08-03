@@ -11,6 +11,7 @@ import type { NextRequest } from 'next/server'
 import { llmChatStream, llmChat } from '@/lib/llm'
 import { stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs } from '@/lib/html-utils'
 import { fixConversionMath } from '@/lib/math-fixer'
+import { fixForms } from '@/lib/form-fixer'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -255,6 +256,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         finalHtml = stripBlockedAPIs(finalHtml)
         // v27: Fix common math errors
         finalHtml = fixConversionMath(finalHtml)
+        // v27: Fix form submit handlers
+        finalHtml = fixForms(finalHtml)
         finalHtml = injectRuntimeErrorCapture(finalHtml)
         const totalMs = Date.now() - startTime
 
