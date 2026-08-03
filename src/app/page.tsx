@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, normalizeMission, groupHistoryByMission, type BuildResult } from '@/lib/helpers'
 import { analyzeMission } from '@/lib/mission-analysis'
 import { calculateBuildHealth } from '@/lib/build-health'
+import { compareBuilds } from '@/lib/build-comparison'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -3422,13 +3423,28 @@ export default function Home() {
                 {/* v4: DiffViewer — show before/after comparison instead of the iframe.
                     Only when showDiff is true AND we have both previous and current builds. */}
                 {showDiff && previousBuild && result ? (
-                  <div className="h-full min-h-[400px] p-2">
-                    <DiffViewer
-                      oldText={previousBuild.html}
-                      newText={result.html}
-                      title={`Diff: ${previousBuild.mission.slice(0, 40)} → ${result.mission.slice(0, 40)}`}
-                      className="h-full"
-                    />
+                  <div className="flex h-full min-h-[400px] flex-col p-2">
+                    {/* v19: Comparison summary — plain-text stats showing what changed */}
+                    {(() => {
+                      const cmp = compareBuilds(previousBuild, result)
+                      const color = cmp.isImprovement ? 'text-emerald-400' : cmp.qualityChange < 0 ? 'text-red-400' : 'text-amber-400'
+                      return (
+                        <div className={`mb-2 flex items-center gap-2 rounded-md border border-border/40 bg-card/20 px-3 py-1.5 text-[11px] ${color}`}>
+                          {cmp.isImprovement ? <CheckCircle2 className="h-3 w-3 shrink-0" /> : <AlertCircle className="h-3 w-3 shrink-0" />}
+                          <span className="font-medium">{cmp.isImprovement ? 'Improved' : cmp.qualityChange < 0 ? 'Regressed' : 'Changed'}</span>
+                          <span className="text-muted-foreground/40">·</span>
+                          <span className="text-muted-foreground">{cmp.summary}</span>
+                        </div>
+                      )
+                    })()}
+                    <div className="min-h-0 flex-1">
+                      <DiffViewer
+                        oldText={previousBuild.html}
+                        newText={result.html}
+                        title={`Diff: ${previousBuild.mission.slice(0, 40)} → ${result.mission.slice(0, 40)}`}
+                        className="h-full"
+                      />
+                    </div>
                   </div>
                 ) : result && result.previewable === false && result.files && result.files.length > 0 ? (
                   /* v4: FileViewer — multi-file output (React/Python/Node) can't be previewed in iframe */
