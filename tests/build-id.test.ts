@@ -1,6 +1,6 @@
 // Test that newBuildId generates unique IDs
 import { describe, it, expect } from 'bun:test'
-import { newBuildId, sanitizeFilename, validateHistory, isValidHistoryItem } from '../src/lib/helpers'
+import { newBuildId, sanitizeFilename, validateHistory, isValidHistoryItem, normalizeMission, groupHistoryByMission } from '../src/lib/helpers'
 import type { BuildResult } from '../src/lib/helpers'
 
 describe('newBuildId uniqueness', () => {
@@ -108,10 +108,10 @@ describe('validateHistory', () => {
     expect(result[0]?.id).toBe('b_1')
   })
 
-  it('caps at 10 items', () => {
-    const stored = Array(15).fill(validItem).map((item, i) => ({ ...item, id: `b_${i}` }))
+  it('caps at 30 items', () => {
+    const stored = Array(45).fill(validItem).map((item, i) => ({ ...item, id: `b_${i}` }))
     const result = validateHistory(stored)
-    expect(result).toHaveLength(10)
+    expect(result).toHaveLength(30)
   })
 
   it('accepts all-valid array', () => {
@@ -121,6 +121,74 @@ describe('validateHistory', () => {
     ]
     const result = validateHistory(stored)
     expect(result).toHaveLength(2)
+  })
+})
+
+describe('normalizeMission', () => {
+  it('lowercases and trims', () => {
+    expect(normalizeMission('  Build A Snake Game  ')).toBe('build a snake game')
+  })
+  it('collapses whitespace', () => {
+    expect(normalizeMission('build   a\t\nsnake')).toBe('build a snake')
+  })
+  it('removes punctuation', () => {
+    expect(normalizeMission('Build a snake game!!')).toBe('build a snake game')
+  })
+  it('groups case variations together', () => {
+    expect(normalizeMission('Build A SNAKE Game')).toBe(normalizeMission('build a snake game'))
+  })
+  it('groups punctuation variations together', () => {
+    expect(normalizeMission('Build a snake game!!')).toBe(normalizeMission('build a snake game'))
+  })
+  it('handles empty string', () => {
+    expect(normalizeMission('')).toBe('')
+  })
+})
+
+describe('groupHistoryByMission', () => {
+  const mk = (id: string, mission: string): BuildResult => ({
+    id, html: '<!DOCTYPE html>', tokens: 100, ms: 5000, mission,
+  })
+
+  it('groups builds with the same normalized mission', () => {
+    const builds = [
+      mk('b_1', 'Build a snake game'),
+      mk('b_2', 'build a snake game!!'),
+      mk('b_3', 'Build a todo app'),
+    ]
+    const groups = groupHistoryByMission(builds)
+    expect(groups).toHaveLength(2)
+    // First group should be the snake game (2 versions)
+    expect(groups[0]).toHaveLength(2)
+    expect(groups[1]).toHaveLength(1)
+  })
+
+  it('keeps newest-first within each group', () => {
+    const builds = [
+      mk('b_1', 'Build a snake game'),
+      mk('b_2', 'Build a snake game'),
+      mk('b_3', 'Build a snake game'),
+    ]
+    const groups = groupHistoryByMission(builds)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].map(b => b.id)).toEqual(['b_1', 'b_2', 'b_3'])
+  })
+
+  it('caps at maxPerGroup versions per mission', () => {
+    const builds = Array(8).fill(0).map((_, i) => mk(`b_${i}`, 'Build a snake game'))
+    const groups = groupHistoryByMission(builds, 12, 5)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toHaveLength(5)
+  })
+
+  it('caps at maxGroups groups', () => {
+    const builds = Array(20).fill(0).map((_, i) => mk(`b_${i}`, `Build app ${i}`))
+    const groups = groupHistoryByMission(builds, 5, 5)
+    expect(groups).toHaveLength(5)
+  })
+
+  it('returns empty for empty input', () => {
+    expect(groupHistoryByMission([])).toEqual([])
   })
 })
 

@@ -17,6 +17,10 @@ export interface BuildResult {
   /** Optional: whether this build can be previewed in NOVA's sandboxed iframe.
    *  false for non-HTML outputs (React/Python/Node) — show FileViewer instead. */
   previewable?: boolean
+  /** Optional: quality score (0-100) from the static analyzer. */
+  quality?: number
+  /** Optional: Unix timestamp (ms) when the build was created. */
+  timestamp?: number
 }
 
 export function newBuildId(): string {
@@ -50,6 +54,7 @@ export function isValidHistoryItem(h: unknown): h is BuildResult {
 
 // Filter and validate a history array from localStorage.
 // Dedupes by id (in case localStorage was hand-edited or two tabs raced).
+// v11: Cap raised to 30 so we can keep multiple versions per mission.
 export function validateHistory(stored: unknown): BuildResult[] {
   if (!Array.isArray(stored)) return []
   const seen = new Set<string>()
@@ -60,5 +65,40 @@ export function validateHistory(stored: unknown): BuildResult[] {
       seen.add(h.id)
       return true
     })
-    .slice(0, 10)
+    .slice(0, 30)
+}
+
+// v11: Normalize a mission string for version grouping.
+// Lowercases, collapses whitespace, trims, removes punctuation — so
+// "Build a snake game" and "build a snake game!!" group together.
+export function normalizeMission(mission: string): string {
+  return mission
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// v11: Group history builds by normalized mission, keeping order of latest-first.
+// Each group contains the list of builds (newest first) for that mission.
+// Returns at most `maxGroups` groups, each with at most `maxPerGroup` builds.
+export function groupHistoryByMission(
+  builds: BuildResult[],
+  maxGroups = 12,
+  maxPerGroup = 5,
+): BuildResult[][] {
+  const groups = new Map<string, BuildResult[]>()
+  for (const b of builds) {
+    const key = normalizeMission(b.mission)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(b)
+  }
+  // Each group is already newest-first (history is newest-first).
+  // Cap each group.
+  const capped: BuildResult[][] = []
+  for (const [, list] of groups) {
+    if (capped.length >= maxGroups) break
+    capped.push(list.slice(0, maxPerGroup))
+  }
+  return capped
 }

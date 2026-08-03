@@ -3405,3 +3405,43 @@ VERIFICATION:
 - 726 tests pass ✅
 - 0 TypeScript errors ✅
 - 0 lint errors ✅
+
+---
+Task ID: 219-225
+Agent: main (Z.ai Code)
+Task: v11 — Categorized starters, version history, build stats
+
+Work Log:
+- Extended `BuildResult` interface in `src/lib/helpers.ts` with optional `quality?: number` and `timestamp?: number` fields.
+- Added `normalizeMission(mission)` helper — lowercases, strips punctuation, collapses whitespace so "Build a snake game!!" and "build a Snake Game" group together.
+- Added `groupHistoryByMission(builds, maxGroups=12, maxPerGroup=5)` helper — returns array of version groups, newest-first within each group.
+- Raised `validateHistory` cap from 10 → 30 to accommodate multiple versions per mission.
+- Updated `addBuildToHistory` in `src/app/page.tsx` — now keeps up to 5 versions per mission (was: dedup by mission, keep only 1). Total cap 30.
+- Populated `quality` + `timestamp` on all 5 BuildResult constructions: initial build, auto-fix (×2), shared-build load, refine.
+- Updated `shareUrl` to include `q` (quality) in the base64 payload; updated shared-build loader to read `payload.q`.
+- Added `STARTER_CATEGORIES` constant — 4 categories (📊 Dashboards, 🎮 Games, 🎨 Creative, 🛠️ Tools) × 3 prompts each = 12 starters. `EXAMPLES` is now derived via `flatMap`.
+- Replaced flat examples list with a categorized grid: each category in a bordered card with icon + label + prompt buttons (prefix "Build a " stripped for compactness).
+- Added starter search-filter input — when empty shows categories; when non-empty shows flat filtered list with full prompts. Empty-state message when no matches.
+- Replaced flat "Recent" history list with version-grouped UI:
+  - Each group shows the latest build with mission + quality badge (green ≥70, amber <70).
+  - A "vN" button appears when a mission has >1 versions; clicking toggles an expandable list of all versions (vN→v1) with per-version quality + date.
+  - `aria-expanded` set on the toggle for screen readers.
+- Added `expandedVersions` (Set<string>) and `starterQuery` (string) state; both reset in `reset()`.
+- Added build stats to the footer: "{N} builds · avg Q:{avg}" (hidden on mobile, only shown when history > 0). Avg quality colored emerald (≥70) or amber.
+- Cleaned up a stale `{/* eslint-disable-line */}` comment that was generating an "Unused eslint-disable directive" warning.
+- Updated test `caps at 10 items` → `caps at 30 items` (15→45 input items).
+- Added 11 new tests: 6 for `normalizeMission`, 5 for `groupHistoryByMission` (grouping, newest-first order, maxPerGroup cap, maxGroups cap, empty input).
+
+Stage Summary:
+- `src/lib/helpers.ts`: +quality, +timestamp fields; +normalizeMission, +groupHistoryByMission; cap 10→30.
+- `src/app/page.tsx`: 2449 → 2647 lines. Categorized starters + search, version-grouped history with expandable versions, footer build stats. All 5 BuildResult constructions now carry quality+timestamp.
+- Tests: 726 → 737 pass (+11 new). 0 fail. Lint: 0 errors, 2 pre-existing warnings (unrelated `any`). TypeScript: 0 errors.
+- E2E verified via Agent Browser:
+  - Empty state shows 4 categorized starter cards + search filter ✅
+  - Search filter ("snake") narrows to 1 matching prompt ✅
+  - Built snake game → Q:83, 985 lines, 82.7s ✅
+  - Version history shows latest build with Q:83 badge ✅
+  - Rebuild (memory-cached, instant) created v2 → "Show all 2 versions" button appeared ✅
+  - Expanding shows v2 + v1 with per-version quality + date ✅
+  - Footer shows "2 builds · avg Q:83" ✅
+  - 0 console errors, 0 runtime errors ✅

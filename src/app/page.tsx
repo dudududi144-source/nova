@@ -6,7 +6,7 @@ import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, Refr
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import { newBuildId, sanitizeFilename, validateHistory, type BuildResult } from '@/lib/helpers'
+import { newBuildId, sanitizeFilename, validateHistory, normalizeMission, groupHistoryByMission, type BuildResult } from '@/lib/helpers'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -55,14 +55,48 @@ interface ChatMessage {
 // Quick-start presets — organized by category (stolen from TFA's templates concept,
 // adapted for NOVA's prompt-to-app model).
 // More presets = lower barrier to entry. Users click and build immediately.
-const EXAMPLES: readonly string[] = [
-  'Build a crypto trading dashboard with live charts, order book, and portfolio tracker',
-  'Build a mobile OS simulator with home screen, app grid, notifications, and settings',
-  'Build a banking dashboard with accounts, transfers, transaction history, and analytics',
-  'Build a 3D solar system explorer with orbital mechanics and planet info',
-  'Build a music production studio with multi-track sequencer, effects, and mixer',
-  'Build a data visualization dashboard with real-time charts, filters, and KPIs',
+// v11: Categorized starter prompts — each category has an icon (emoji) + prompts.
+// Used by the empty-state grid. Flat EXAMPLES kept for backward compat (tests).
+const STARTER_CATEGORIES: readonly { icon: string; label: string; prompts: readonly string[] }[] = [
+  {
+    icon: '📊',
+    label: 'Dashboards',
+    prompts: [
+      'Build a crypto trading dashboard with live charts, order book, and portfolio tracker',
+      'Build a banking dashboard with accounts, transfers, transaction history, and analytics',
+      'Build a data visualization dashboard with real-time charts, filters, and KPIs',
+    ],
+  },
+  {
+    icon: '🎮',
+    label: 'Games',
+    prompts: [
+      'Build a snake game with score tracking, increasing speed, and mobile swipe controls',
+      'Build a 2048 puzzle game with smooth tile animations and undo',
+      'Build a memory card matching game with a flip animation and timer',
+    ],
+  },
+  {
+    icon: '🎨',
+    label: 'Creative',
+    prompts: [
+      'Build a music production studio with multi-track sequencer, effects, and mixer',
+      'Build a pixel art editor with color palette, undo/redo, and PNG export',
+      'Build a 3D solar system explorer with orbital mechanics and planet info',
+    ],
+  },
+  {
+    icon: '🛠️',
+    label: 'Tools',
+    prompts: [
+      'Build a mobile OS simulator with home screen, app grid, notifications, and settings',
+      'Build a markdown editor with live preview, syntax highlighting, and export',
+      'Build a Pomodoro timer with session history, sound notifications, and stats',
+    ],
+  },
 ]
+
+const EXAMPLES: readonly string[] = STARTER_CATEGORIES.flatMap(c => c.prompts)
 
 const REFINE_THINKING_STEPS: readonly string[] = [
   'Processing your request...',
@@ -86,6 +120,10 @@ export default function Home() {
   const [fullscreen, setFullscreen] = useState(false)
   const [showCodeAnalysis, setShowCodeAnalysis] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  // v11: Expanded version-history groups (keyed by normalized mission)
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
+  // v11: Starter-prompt search filter
+  const [starterQuery, setStarterQuery] = useState('')
   const [livePreviewHtml, setLivePreviewHtml] = useState<string | null>(null)
   const [planSummary, setPlanSummary] = useState<string | null>(null)
   const [qualityScore, setQualityScore] = useState(0)
@@ -296,8 +334,15 @@ export default function Home() {
   }, [history])
 
   const addBuildToHistory = useCallback((buildResult: BuildResult) => {
-    // Compute new history synchronously from the ref (not from the state closure)
-    const newHistory = [buildResult, ...historyRef.current.filter(h => h.mission !== buildResult.mission)].slice(0, 10)
+    // v11: Keep multiple versions per mission (max 5 per mission, 30 total).
+    // Earlier builds of the same mission are kept as older versions — users can
+    // browse/restore them via the expandable "Versions" UI.
+    const key = normalizeMission(buildResult.mission)
+    const sameMission = historyRef.current.filter(h => normalizeMission(h.mission) === key)
+    const others = historyRef.current.filter(h => normalizeMission(h.mission) !== key)
+    // Newest first; cap at 5 versions per mission.
+    const cappedSameMission = [buildResult, ...sameMission].slice(0, 5)
+    const newHistory = [...cappedSameMission, ...others].slice(0, 30)
     historyRef.current = newHistory // Update ref synchronously so rapid successive calls see the latest
     setHistory(newHistory)
     saveHistoryToStorage(newHistory)
@@ -745,6 +790,9 @@ export default function Home() {
         files: finalFiles,
         outputType: finalOutputType,
         previewable: finalPreviewable,
+        // v11: Quality + timestamp for version history
+        quality: finalQuality,
+        timestamp: Date.now(),
       }
 
       setResult(buildResult)
@@ -979,6 +1027,9 @@ export default function Home() {
         html: finalHtml,
         tokens: finalTokens,
         ms: finalMs,
+        // v11: Update quality + timestamp so the fix shows as a new version
+        quality: finalQuality,
+        timestamp: Date.now(),
       }
       setResult(fixedResult)
       resultRef.current = fixedResult
@@ -1122,6 +1173,9 @@ export default function Home() {
           html: finalHtml,
           tokens: finalTokens,
           ms: finalMs,
+          // v11: Update quality + timestamp for version history
+          quality: finalQuality,
+          timestamp: Date.now(),
         }
         setResult(fixedResult)
         resultRef.current = fixedResult
@@ -1186,6 +1240,9 @@ export default function Home() {
     setPipelineLiveText('')
     pipelineLiveTextRef.current = ''
     setSimilarBuilds([])
+    // v11: Reset version-history expansion + starter search
+    setExpandedVersions(new Set())
+    setStarterQuery('')
   }, [])
 
   const retryFailed = useCallback(() => {
@@ -1252,8 +1309,8 @@ export default function Home() {
   const shareUrl = useCallback(() => {
     if (!result?.html) return
     try {
-      // Encode mission + html as base64 in URL hash
-      const payload = JSON.stringify({ m: result.mission, h: result.html })
+      // Encode mission + html + optional quality as base64 in URL hash
+      const payload = JSON.stringify({ m: result.mission, h: result.html, q: result.quality })
       const encoded = btoa(unescape(encodeURIComponent(payload)))
       const url = `${window.location.origin}${window.location.pathname}#s=${encoded}`
       navigator.clipboard.writeText(url)
@@ -1277,6 +1334,9 @@ export default function Home() {
           tokens: 0,
           ms: 0,
           mission: payload.m,
+          // v11: Mark as shared build with current timestamp
+          quality: payload.q,
+          timestamp: Date.now(),
         }
         setResult(shared)
         resultRef.current = shared
@@ -1460,6 +1520,9 @@ export default function Home() {
         html: finalHtml,
         tokens: finalTokens, // Update tokens so the header shows the refine's token count
         ms: finalMs,         // Update ms so the header shows the refine's time
+        // v11: Update quality + timestamp so refine shows as a new version
+        quality: finalQuality,
+        timestamp: Date.now(),
       }
       setResult(refinedResult)
       resultRef.current = refinedResult // Update ref synchronously
@@ -1822,23 +1885,72 @@ export default function Home() {
 
           {/* Examples (only when no result, no error, not loading) */}
           {showExamples && (
-            <div className="mt-4 space-y-1.5">
+            <div className="mt-4 space-y-2">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
                 Try one
               </p>
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex}
-                  type="button"
-                  onClick={() => {
-                    setMission(ex)
-                    build(ex)
-                  }}
-                  className="block w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10"
-                >
-                  {ex}
-                </button>
-              ))}
+              {/* v11: Search filter for starters */}
+              <input
+                type="text"
+                value={starterQuery}
+                onChange={(e) => setStarterQuery(e.target.value)}
+                placeholder="Search starters..."
+                className="w-full rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none"
+              />
+              {/* v11: Categorized starter grid */}
+              {starterQuery.trim() === '' ? (
+                <div className="space-y-2">
+                  {STARTER_CATEGORIES.map((cat) => (
+                    <div key={cat.label} className="rounded-md border border-border/40 bg-card/30 p-2">
+                      <p className="mb-1.5 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                        <span>{cat.icon}</span>
+                        {cat.label}
+                      </p>
+                      <div className="space-y-1">
+                        {cat.prompts.map((ex) => (
+                          <button
+                            key={ex}
+                            type="button"
+                            onClick={() => {
+                              setMission(ex)
+                              build(ex)
+                            }}
+                            className="block w-full rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10"
+                          >
+                            {ex.replace(/^Build a /, '').replace(/^Build /, '')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {STARTER_CATEGORIES
+                    .flatMap(c => c.prompts)
+                    .filter(ex => ex.toLowerCase().includes(starterQuery.toLowerCase()))
+                    .map((ex) => (
+                      <button
+                        key={ex}
+                        type="button"
+                        onClick={() => {
+                          setMission(ex)
+                          build(ex)
+                        }}
+                        className="block w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10"
+                      >
+                        {ex}
+                      </button>
+                    ))}
+                  {STARTER_CATEGORIES
+                    .flatMap(c => c.prompts)
+                    .filter(ex => ex.toLowerCase().includes(starterQuery.toLowerCase())).length === 0 && (
+                    <p className="px-2 py-3 text-center text-[10px] text-muted-foreground/50">
+                      No starters match "{starterQuery}"
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* v4: Similar builds from IndexedDB memory — shown when the user types something
                   that matches past builds (by word overlap). Helps discover cached builds. */}
@@ -1871,25 +1983,90 @@ export default function Home() {
 
           {/* Theme selector is now in the header — always visible */}
 
-          {/* History */}
+          {/* v11: Version history — builds grouped by normalized mission.
+              Each group shows the latest build; click the vN badge to expand all versions. */}
           {history.length > 0 && (
             <div className="mt-4 space-y-1.5">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
                 Recent
               </p>
-              {history.map((h) => (
-                <button
-                  key={h.id}
-                  type="button"
-                  title={h.mission}
-                  onClick={() => loadFromHistory(h)}
-                  disabled={loading || refining}
-                  className="flex w-full items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
-                >
-                  <Zap className="h-3 w-3 shrink-0 text-primary/40" />
-                  <span className="truncate">{h.mission}</span>
-                </button>
-              ))}
+              {(() => {
+                const groups = groupHistoryByMission(history)
+                return groups.map((group) => {
+                  const latest = group[0]
+                  const key = normalizeMission(latest.mission)
+                  const isExpanded = expandedVersions.has(key)
+                  const versionCount = group.length
+                  return (
+                    <div key={key}>
+                      <div className="flex items-stretch gap-1">
+                        <button
+                          type="button"
+                          title={latest.mission}
+                          onClick={() => loadFromHistory(latest)}
+                          disabled={loading || refining}
+                          className="flex flex-1 min-w-0 items-center gap-2 rounded-md border border-border/40 bg-card/40 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                        >
+                          <Zap className="h-3 w-3 shrink-0 text-primary/40" />
+                          <span className="truncate">{latest.mission}</span>
+                          {latest.quality != null && latest.quality > 0 && (
+                            <span className={`ml-auto shrink-0 rounded px-1 text-[9px] ${latest.quality >= 70 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                              Q:{latest.quality}
+                            </span>
+                          )}
+                        </button>
+                        {versionCount > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedVersions(prev => {
+                              const next = new Set(prev)
+                              if (next.has(key)) next.delete(key)
+                              else next.add(key)
+                              return next
+                            })}
+                            disabled={loading || refining}
+                            className="shrink-0 rounded-md border border-border/40 bg-card/40 px-2 text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                            title={isExpanded ? 'Hide versions' : `Show all ${versionCount} versions`}
+                            aria-label={isExpanded ? 'Hide versions' : `Show all ${versionCount} versions`}
+                            aria-expanded={isExpanded}
+                          >
+                            v{versionCount}
+                          </button>
+                        )}
+                      </div>
+                      {isExpanded && versionCount > 1 && (
+                        <div className="ml-3 mt-1 space-y-1 border-l border-border/30 pl-2">
+                          {group.map((h, i) => (
+                            <button
+                              key={h.id}
+                              type="button"
+                              onClick={() => loadFromHistory(h)}
+                              disabled={loading || refining}
+                              className="flex w-full items-center gap-2 rounded border border-border/30 bg-card/20 px-2 py-1 text-left text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                              title={h.timestamp ? new Date(h.timestamp).toLocaleString() : h.mission}
+                            >
+                              <span className="shrink-0 font-mono text-muted-foreground/50">
+                                v{versionCount - i}
+                              </span>
+                              <span className="truncate">{h.mission}</span>
+                              {h.quality != null && h.quality > 0 && (
+                                <span className={`ml-auto shrink-0 text-[9px] ${h.quality >= 70 ? 'text-emerald-400/70' : 'text-amber-400/70'}`}>
+                                  Q:{h.quality}
+                                </span>
+                              )}
+                              {h.timestamp && (
+                                <span className="shrink-0 text-[9px] text-muted-foreground/40">
+                                  {new Date(h.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              })()}
               {confirmClear ? (
                 <div className="flex gap-1.5">
                   <button
@@ -1899,6 +2076,7 @@ export default function Home() {
                       historyRef.current = [] // Sync ref so addBuildToHistory doesn't use stale data
                       try { localStorage.removeItem('nova_history') } catch {}
                       setConfirmClear(false)
+                      setExpandedVersions(new Set())
                       toast.success('History cleared')
                     }}
                     disabled={loading || refining}
@@ -2215,7 +2393,7 @@ export default function Home() {
                             {probeResult.stateChanges.map((sc, i) => (
                               <div key={i} className="pl-3 text-[10px]">
                                 <span className="text-muted-foreground">{sc.selector}:</span>{' '}
-                                <span className="text-foreground/60">"{sc.before}"</span>{' → '}{/* eslint-disable-line */}
+                                <span className="text-foreground/60">"{sc.before}"</span>{' → '}
                                 <span className="text-emerald-400/80">"{sc.after}"</span>
                               </div>
                             ))}
@@ -2433,7 +2611,26 @@ export default function Home() {
       {/* Footer */}
       <footer className="mt-auto shrink-0 border-t border-border/40 px-4 py-2">
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/60">
-          <span>NOVA · The Prompt-to-Reality Engine</span>
+          <span className="flex items-center gap-2">
+            <span>NOVA · The Prompt-to-Reality Engine</span>
+            {history.length > 0 && (
+              <span className="hidden items-center gap-1.5 sm:flex">
+                <span className="text-muted-foreground/30">·</span>
+                <span>{history.length} build{history.length === 1 ? '' : 's'}</span>
+                {(() => {
+                  const scored = history.filter(h => h.quality != null && h.quality > 0)
+                  if (scored.length === 0) return null
+                  const avg = Math.round(scored.reduce((s, h) => s + (h.quality ?? 0), 0) / scored.length)
+                  return (
+                    <>
+                      <span className="text-muted-foreground/30">·</span>
+                      <span className={avg >= 70 ? 'text-emerald-400/70' : 'text-amber-400/70'}>avg Q:{avg}</span>
+                    </>
+                  )
+                })()}
+              </span>
+            )}
+          </span>
           <span className="hidden sm:inline">
             <kbd className="rounded border border-border/40 px-1">⌘+Enter</kbd> build ·
             <kbd className="ml-1 rounded border border-border/40 px-1">⌘+S</kbd> download ·
