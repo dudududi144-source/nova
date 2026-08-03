@@ -4388,3 +4388,26 @@ HONEST SCORING NOW:
 
 Tests: 844 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
 Pushed to GitHub: 4598f1f..a6e161c
+
+---
+Task ID: 421-430
+Agent: main (Z.ai Code)
+Task: v26 — Multi-app verification + prompt fixes
+
+PROMPT FIXES (rules 7-11):
+7. FORMS: must call preventDefault (fixed todo app)
+8. INPUTS: use .value and .trim()
+9. LISTS: use createElement, not innerHTML +=
+10. EVENT BINDING: must bind ALL elements, use loops (fixed calculator)
+11. INIT: must run after DOM ready
+
+VERIFIED APPS (7 types, real interactions):
+1. Counter: + (0→1→2→3), - (3→2), Reset (2→0) ✅
+2. Todo: Add (0→1→2→3), Delete (3→2) ✅
+3. Snake: Start, arrows, score (0→1), Pause ✅
+4. Calculator: 7+3=10, 9×6=54, Clear ✅
+5. Drawing pad: Brush, Eraser, Fill, Undo, color, sliders ✅
+6. Pomodoro: Start (25:00→24:57), Pause (stops), Reset (→25:00), modes ✅
+7. Music player: Play (▶→⏸, 0:00→2:06), Next (track change), Pause ✅
+
+Pushed to GitHub: 4dc31d7..9f92b44
