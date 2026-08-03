@@ -262,6 +262,14 @@ export default function Home() {
   // v4: Pipeline progress — current build stage + live token text
   const [pipelineStage, setPipelineStage] = useState<StageKey | null>(null)
   const [pipelineLiveText, setPipelineLiveText] = useState('')
+  // v15: Build timing breakdown — architect / code / validate / total
+  const [buildTimings, setBuildTimings] = useState<{ architect: number; code: number; total: number } | null>(null)
+  // v15: Prompt history — cycle through previous prompts with ↑/↓
+  const [promptHistory, setPromptHistory] = useState<string[]>([])
+  const [promptHistoryIndex, setPromptHistoryIndex] = useState(-1)
+  // v15: Quick mode — smaller token budget for faster builds (~2min vs ~5min)
+  const [quickMode, setQuickMode] = useState(false)
+  const quickModeRef = useRef(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   // v10: Build ID for polling fallback (SSE recovery)
@@ -405,9 +413,25 @@ export default function Home() {
         selectedModelRef.current = savedModel
       }
     } catch {}
+    // v15: Load prompt history
+    try {
+      const stored = JSON.parse(localStorage.getItem('nova_prompts') ?? '[]')
+      if (Array.isArray(stored)) setPromptHistory(stored.filter((s: unknown) => typeof s === 'string').slice(0, 20))
+    } catch {}
   }, [])
   // v10.9: Keep model ref in sync
   useEffect(() => { selectedModelRef.current = selectedModel }, [selectedModel])
+  // v15: Load + sync quick mode
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('nova_quick_mode')
+      if (saved === 'true') { setQuickMode(true); quickModeRef.current = true }
+    } catch {}
+  }, [])
+  useEffect(() => {
+    quickModeRef.current = quickMode
+    try { localStorage.setItem('nova_quick_mode', String(quickMode)) } catch {}
+  }, [quickMode])
 
   // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
   // to avoid double-firing in React StrictMode.
@@ -582,6 +606,17 @@ export default function Home() {
     setPipelineStage('plan')
     setPipelineLiveText('')
     pipelineLiveTextRef.current = ''
+    // v15: Reset build timings + save prompt to history
+    setBuildTimings(null)
+    if (m.length >= 3) {
+      setPromptHistory(prev => {
+        const next = [m, ...prev.filter(p => p !== m)].slice(0, 20)
+        try { localStorage.setItem('nova_prompts', JSON.stringify(next)) } catch {}
+        return next
+      })
+    }
+    setPromptHistoryIndex(-1)
+    const archStartTime = Date.now()
 
     // v4: Save the current result as previousBuild so the user can diff the new build against it.
     // Only set it if there's an existing result with non-empty HTML (a real previous build).
@@ -669,13 +704,17 @@ export default function Home() {
       }
       // If architect failed, continue with mission-based steps (already set)
 
+      // v15: Track architect time
+      const archMs = Date.now() - archStartTime
+      const codeStartTime = Date.now()
+
       // ═══ STAGE 2: CODER — SSE streaming with keepalive ═══
       // The route returns Server-Sent Events: progress events while LLM works,
       // then a result event with the final HTML. No timeout — keepalive prevents it.
       const codeRes = await fetch('/api/build/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null, theme: selectedTheme, model: selectedModelRef.current }),
+        body: JSON.stringify({ mission: m, plan: archData?.plan ?? null, theme: selectedTheme, model: selectedModelRef.current, quickMode: quickModeRef.current }),
         signal: controller.signal,
       })
 
@@ -920,6 +959,10 @@ export default function Home() {
 
       // v4: Mark the pipeline as done
       setPipelineStage('done')
+
+      // v15: Set build timing breakdown
+      const codeMs = Date.now() - codeStartTime
+      setBuildTimings({ architect: archMs, code: codeMs, total: finalMs })
 
       toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
       setQualityScore(finalQuality)
@@ -1983,6 +2026,22 @@ export default function Home() {
               title="Kimi K3 — reasoning model, slower but detailed"
             >Kimi</button>
           </div>
+          {/* v15: Quick mode toggle — halved token budget for faster builds */}
+          <button
+            type="button"
+            onClick={() => setQuickMode(prev => !prev)}
+            disabled={loading || refining}
+            className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+              quickMode
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                : 'border-border/40 text-muted-foreground hover:text-foreground'
+            }`}
+            title={quickMode ? 'Quick mode ON — faster builds, simpler output. Click to disable.' : 'Enable Quick mode — faster builds with simpler output'}
+            aria-pressed={quickMode}
+          >
+            <Zap className="h-3 w-3" />
+            <span className="hidden sm:inline">Quick</span>
+          </button>
           {/* v10: Dark/light mode toggle for NOVA UI */}
           <ThemeToggle />
           {/* v4: Build-memory badge — shown when the current result was restored from IndexedDB */}
@@ -2118,6 +2177,29 @@ export default function Home() {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault()
                 build()
+              }
+              // v15: Prompt history navigation — ↑/↓ to cycle previous prompts
+              // Only when slash menu is closed and cursor is at start (↑) or end (↓) of text
+              if (!slashMenuOpen && promptHistory.length > 0) {
+                const target = e.target as HTMLTextAreaElement
+                const atStart = target.selectionStart === 0 && target.selectionEnd === 0
+                const atEnd = target.selectionStart === mission.length && target.selectionEnd === mission.length
+                if (e.key === 'ArrowUp' && atStart) {
+                  e.preventDefault()
+                  const nextIdx = promptHistoryIndex < 0 ? 0 : Math.min(promptHistoryIndex + 1, promptHistory.length - 1)
+                  setPromptHistoryIndex(nextIdx)
+                  setMission(promptHistory[nextIdx] ?? '')
+                } else if (e.key === 'ArrowDown' && promptHistoryIndex >= 0 && atEnd) {
+                  e.preventDefault()
+                  const nextIdx = promptHistoryIndex - 1
+                  if (nextIdx < 0) {
+                    setPromptHistoryIndex(-1)
+                    setMission('')
+                  } else {
+                    setPromptHistoryIndex(nextIdx)
+                    setMission(promptHistory[nextIdx] ?? '')
+                  }
+                }
               }
             }}
             placeholder="Describe anything — or type / for commands (dashboard, game, creative, tool, enhance)"
@@ -2980,6 +3062,19 @@ export default function Home() {
                         <span className="ml-1 text-[10px] text-muted-foreground/70">HTML size</span>
                       </div>
                     </>
+                  )}
+                  {/* v15: Build timing breakdown — architect vs code generation */}
+                  {buildTimings && (
+                    <div className="flex w-full items-center gap-1 rounded border border-border/40 bg-background/40 px-2 py-1.5">
+                      <span className="text-[9px] text-muted-foreground/50">timing:</span>
+                      <span className="font-mono text-[10px] text-blue-400/80">arch {(buildTimings.architect / 1000).toFixed(1)}s</span>
+                      <span className="text-muted-foreground/30">→</span>
+                      <span className="font-mono text-[10px] text-emerald-400/80">code {(buildTimings.code / 1000).toFixed(1)}s</span>
+                      <div className="ml-2 flex-1 h-1 rounded-full bg-muted-foreground/20 overflow-hidden flex">
+                        <div className="bg-blue-500/60" style={{ width: `${(buildTimings.architect / buildTimings.total) * 100}%` }} />
+                        <div className="bg-emerald-500/60" style={{ width: `${(buildTimings.code / buildTimings.total) * 100}%` }} />
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

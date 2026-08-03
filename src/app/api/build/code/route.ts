@@ -59,6 +59,7 @@ interface CodeBody {
   plan?: unknown
   theme?: unknown
   model?: unknown  // 'z-ai' (default), 'kimi', or 'qwen'
+  quickMode?: unknown  // v15: reduced token budget for faster builds
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -158,8 +159,13 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       try {
         // Adaptive token budget
-        const tokenBudget = estimateTokenBudget(plan)
-        logger.info('code.budget', { ip, maxTokens: tokenBudget, hasPlan: !!plan })
+        // v15: Quick mode — 65% of normal budget for faster builds (~2-3min vs ~5min)
+        // Was 50% but caused truncation + 300s retry. 65% is the sweet spot.
+        const isQuickMode = body?.quickMode === true
+        const tokenBudget = isQuickMode
+          ? Math.max(4000, Math.floor(estimateTokenBudget(plan) * 0.65))
+          : estimateTokenBudget(plan)
+        logger.info('code.budget', { ip, maxTokens: tokenBudget, hasPlan: !!plan, quickMode: isQuickMode })
 
         // ═══ REAL STREAMING ═══
         // Stream tokens from LLM → client in real-time via SSE
@@ -350,8 +356,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         // If ANY check found issues, try ONE retry with the combined hint.
         // v14 ROAST FIX: Skip retry if the build already took too long (>120s) —
         // retry adds 25s+ and rarely improves quality. Better to ship what we have.
+        // v15: Also skip retry in Quick mode — Quick mode prioritizes speed over perfection.
         const elapsedSoFar = Date.now() - startTime
-        const shouldRetry = (!staticAnalysis.passed || !validation.passed || !planAdherence.adherent) && combinedHint && elapsedSoFar < 120_000
+        const shouldRetry = (!staticAnalysis.passed || !validation.passed || !planAdherence.adherent) && combinedHint && elapsedSoFar < 120_000 && !isQuickMode
         if (shouldRetry) {
           logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, elapsedMs: elapsedSoFar, retrying: true })
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor(elapsedSoFar / 1000) })}\n\n`)
