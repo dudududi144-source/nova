@@ -3864,3 +3864,42 @@ Stage Summary:
   - Export → created nova-builds-2026-08-03.json with valid JSON ✅
   - Export/Import/Clear buttons all visible ✅
 - Pushed to GitHub: 729cc20..770a7b5
+
+---
+Task ID: 285-290
+Agent: main (Z.ai Code)
+Task: v19 — Build comparison summary (plain-text diff stats)
+
+Work Log:
+- Created `src/lib/build-comparison.ts` with `compareBuilds()` function:
+  - Line-based diff: counts added/removed lines using Set comparison
+  - Size delta: bytes + percentage change
+  - Quality delta: quality score difference
+  - Time delta: build time difference
+  - isImprovement: true if quality improved, or same quality + size grew
+  - Human-readable summary string combining all changes
+- Added 11 tests for comparison logic:
+  - Quality improvement/drop detection
+  - Added/removed lines detection
+  - Size increase/decrease with percentage
+  - Time change detection
+  - Identical builds handling
+  - Missing quality defaults to 0
+  - isImprovement logic
+  - Summary includes all relevant changes
+- Added comparison summary banner to diff view:
+  - Shows above the DiffViewer when comparing versions
+  - Green "Improved" / red "Regressed" / amber "Changed" label
+  - Plain-text summary: "Quality unchanged (Q:93) · 33 lines added · Size +4.1KB (+10%) · Build time +62.0s"
+  - CheckCircle2 icon for improvements, AlertCircle for regressions
+
+Stage Summary:
+- `src/lib/build-comparison.ts`: new file, 75 lines
+- `tests/build-comparison.test.ts`: new file, 11 tests
+- `src/app/page.tsx`: +comparison summary banner in diff view
+- Tests: 802 → 813 pass (+11 new). 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - Counter app built (Q:93, 1220 lines)
+  - Refined "add a reset button" → v3 (Q:93, 1366 lines)
+  - Compare v2 with v3 → "Improved · Quality unchanged (Q:93) · 33 lines added · Size +4.1KB (+10%) · Build time +62.0s" ✅
+- Pushed to GitHub: 770a7b5..8021ec4
