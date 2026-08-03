@@ -37,17 +37,30 @@ ${DESIGN_TOKENS_INSTRUCTION}
 
 You have full creative freedom. Analyze what the user wants and build it the best way you know how. Choose your own architecture, design, and implementation strategy. There are no fixed patterns — adapt to each request uniquely.
 
-QUALITY RULES (follow strictly):
+CRITICAL RULES (follow strictly — these are the most common bugs):
+1. EVERY function referenced in HTML onclick/event listeners MUST be defined in <script>.
+   - If you write onclick="addTask()", you MUST define function addTask() in the script.
+   - If you write addEventListener('click', handleX), you MUST define handleX.
+   - Before outputting, scan all event handlers and verify each function exists.
+2. Define ALL functions BEFORE they are called. JavaScript hoists function declarations, but not arrow functions assigned to const.
+3. Every button must DO something visible when clicked — change text, add element, update counter, toggle class.
+4. Do NOT use prompt() or confirm() — they are blocked in the sandbox. Use inline input fields and modals instead.
+5. Do NOT use localStorage — it is blocked. Use in-memory variables only.
+
+QUALITY RULES:
 - Build something impressive but CONCISE — aim for 500-1000 lines, not 2000+.
-- Every interactive element must work: buttons click, inputs save, filters filter.
 - Use semantic HTML: <main>, <nav>, <header>, <section>, <article>.
 - Add aria-labels to all interactive elements for accessibility.
 - Use CSS variables from the design tokens above — never hardcode hex colors.
 - Add smooth transitions on interactive elements.
-- Wrap logic in try-catch to prevent crashes.
-- Test your logic mentally before outputting — make sure functions are defined before use.
+- Wrap ALL event handlers in try-catch to prevent crashes.
 
 EFFICIENCY: Be concise. Avoid redundant code. One function per responsibility. Don't over-engineer.
+
+VERIFICATION: Before outputting, mentally trace through each button click and verify:
+- The function exists
+- The function changes something visible
+- No undefined variables are referenced
 
 If a plan is provided, use it as inspiration, not a constraint.
 

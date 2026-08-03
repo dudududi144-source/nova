@@ -1317,21 +1317,28 @@ export default function Home() {
         ...probe.errors,
       ].slice(0, 10)
 
-      // Step 2: If no errors, we're done!
-      if (allErrors.length === 0) {
-        toast.success(`All bugs fixed! (${i} iteration${i !== 1 ? 's' : ''})`)
+      // Step 2: If no errors AND functional score is good, we're done!
+      // v25: Also check functional score — even with 0 runtime errors, buttons might not work
+      const functionalScore = probe.functionalScore ?? 0
+      if (allErrors.length === 0 && functionalScore >= 50) {
+        toast.success(`All bugs fixed! ${functionalScore}% functional (${i} iteration${i !== 1 ? 's' : ''})`)
         break
       }
 
+      // v25: If we have dead clicks but no runtime errors, add that info to the fix prompt
+      const deadClicksInfo = probe.deadClicks > 0
+        ? `\n${probe.deadClicks} button(s) did nothing when clicked. Make sure every button has a working onclick handler that changes something visible.`
+        : ''
+
       // Step 3: Send errors to LLM for fixing
-      toast.info(`Fixing iteration ${i + 1}/${maxIterations}: ${allErrors.length} error(s)...`)
+      toast.info(`Fixing iteration ${i + 1}/${maxIterations}: ${allErrors.length} error(s), ${functionalScore}% functional...`)
 
       const errorList = allErrors.map((e, idx) => {
         const stack = e.stack ? `\n  Stack: ${e.stack.slice(0, 300)}` : ''
         return `${idx + 1}. [${e.type}]: ${e.msg}${stack}`
       }).join('\n')
 
-      const fixMessage = `Fix these runtime errors (iteration ${i + 1}):\n${errorList}\n\nThe app must work without these errors. Fix the root cause.`
+      const fixMessage = `Fix these runtime errors (iteration ${i + 1}):\n${errorList}${deadClicksInfo}\n\nCRITICAL: Every function referenced in onclick or addEventListener MUST be defined. Do not use prompt() or confirm() — they are blocked. Use inline inputs instead.\n\nThe app must work without these errors. Fix the root cause.`
 
       const controller = new AbortController()
       refineAbortRef.current = controller
@@ -3285,14 +3292,14 @@ export default function Home() {
                     {probeResult.functionalScore}% fn
                   </span>
                 )}
-                {/* v3: Auto-fix button — appears when runtime errors are found */}
-                {result && !loading && !refining && !autoFixing && (runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0)) && (
+                {/* v3: Auto-fix button — appears when runtime errors found OR functional score is low */}
+                {result && !loading && !refining && !autoFixing && (runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) || (probeResult && probeResult.functionalScore < 50 && probeResult.buttonsClicked > 0)) && (
                   <Button
                     size="sm"
                     variant="ghost"
                     className="h-7 gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10"
                     onClick={() => autoFixLoop()}
-                    title="Automatically fix runtime errors using AI"
+                    title="Automatically fix broken buttons using AI"
                   >
                     <Bug className="h-3.5 w-3.5" />
                     Auto-fix
