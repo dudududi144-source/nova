@@ -4298,3 +4298,48 @@ System stats:
 - 33 lib modules
 - 43 test files, 844 tests, 0 failures
 - 0 lint errors, 0 TypeScript errors
+
+---
+Task ID: 403-410
+Agent: main (Z.ai Code)
+Task: v25 — HONEST verification, found critical bugs, fixed them
+
+CRITICAL BUGS FOUND:
+
+1. PROBE WAS LYING (CRITICAL):
+   - The interaction probe used sandbox='allow-scripts' 
+   - This blocks access to contentDocument
+   - The probe SILENTLY FAILED and reported "0 errors" for EVERY app
+   - Every "No runtime errors detected" badge was a LIE
+   - Fix: changed to sandbox='allow-scripts allow-same-origin'
+   - Now the probe can actually click buttons and check DOM changes
+
+2. QUALITY SCORE WAS INFLATED (CRITICAL):
+   - Q:90-96 looks great but doesn't test functional correctness
+   - Apps could have 0 working buttons and still get Q:90+
+   - Fix: Added functional score (0-100%) that tracks real DOM changes
+   - Shows "0% fn" badge when buttons don't work
+   - Shows dead clicks count in tooltip
+
+3. REALITY CHECK — counter app with FIXED probe:
+   - Q:90 (looks good)
+   - 0% functional score (10/10 buttons are DEAD!)
+   - 1 runtime error (was hidden by broken probe)
+   - This proves the system was MISLEADING users
+
+HONEST ASSESSMENT:
+- The system CAN generate apps from prompts (true)
+- The apps HAVE real structure (1000+ lines, 30+ functions)
+- BUT the apps often DON'T WORK (0% functional score)
+- The quality score is INFLATED (Q:90 doesn't mean 90% works)
+- Build time is SLOW (2-4 minutes)
+- "Prompt to Reality" is misleading — it's "prompt to prototype"
+
+WHAT I IMPROVED:
+1. Fixed probe sandbox so it actually tests apps
+2. Added functional score badge (honest quality assessment)
+3. Added dead clicks tracking
+4. Made the system HONEST about what works and what doesn't
+
+Tests: 844 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+Pushed to GitHub: 621a5bb..827fc65
