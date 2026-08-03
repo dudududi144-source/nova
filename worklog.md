@@ -3903,3 +3903,48 @@ Stage Summary:
   - Refined "add a reset button" → v3 (Q:93, 1366 lines)
   - Compare v2 with v3 → "Improved · Quality unchanged (Q:93) · 33 lines added · Size +4.1KB (+10%) · Build time +62.0s" ✅
 - Pushed to GitHub: 770a7b5..8021ec4
+
+---
+Task ID: 291-296
+Agent: main (Z.ai Code)
+Task: v20 — Build stats tracking (persistent across sessions)
+
+Work Log:
+- Created `src/lib/build-stats.ts` with:
+  - `BuildStats` interface: totalBuilds, totalRefines, avgQuality, best/worst quality+mission, totalTime/avgTime, totalTokens, modelUsage, timestamps
+  - `loadBuildStats()`: reads from localStorage, merges with defaults for forward compat
+  - `saveBuildStats()`: persists to localStorage
+  - `recordBuildInStats()`: adds a build, recalculates all aggregates
+  - `recordRefineInStats()`: increments refine counter
+  - `resetBuildStats()`: clears all stats
+  - `formatStats()`: returns display-ready {label, value} pairs
+- Added 15 tests for build stats:
+  - loadBuildStats (empty, stored, corrupted, missing fields)
+  - recordBuildInStats (first build, second build, tracking, missing fields, timestamps)
+  - recordRefineInStats
+  - resetBuildStats
+  - formatStats (empty, with builds, model usage)
+- Added `buildStats` state + `showStats` state to page.tsx
+- Added stats button to header (BarChart3 icon + build count):
+  - Only visible when buildStats.totalBuilds > 0
+  - Toggles stats modal panel
+- Added stats modal panel:
+  - Grid of label/value pairs (Total builds, Avg quality, Best/Worst, Avg time, Total tokens, Model usage, Active span)
+  - Best build highlight (green box)
+  - Worst build highlight (amber box)
+  - Reset button with confirmation dialog
+- Integrated recording:
+  - On build completion: recordBuildInStats() with quality, ms, tokens, mission, model
+  - On refine completion: recordRefineInStats()
+  - Both persist to localStorage immediately
+
+Stage Summary:
+- `src/lib/build-stats.ts`: new file, 155 lines
+- `tests/build-stats.test.ts`: new file, 15 tests
+- `src/app/page.tsx`: +buildStats state, +stats button, +stats modal, +recording on build/refine
+- Tests: 813 → 828 pass (+15 new). 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - Built counter app (Q:71, 140s, 5.8k tokens, Z.AI)
+  - Stats button appeared with "1" badge ✅
+  - Clicked → modal showed: Total builds:1, Avg Q:71, Best Q:71, Avg time:140s, Total tokens:5.8k, Model: Z.AI:1, Best build: counter ✅
+- Pushed to GitHub: 8021ec4..00c9597
