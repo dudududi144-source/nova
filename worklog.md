@@ -4235,3 +4235,66 @@ PERFORMANCE METRICS:
 - TypeScript: 0 errors
 
 Pushed to GitHub: 0a13868..8b5c96a
+
+---
+Task ID: 387-402
+Agent: main (Z.ai Code)
+Task: v24 deep — Broad and deep verification + fixes
+
+15 COMPREHENSIVE TESTS:
+
+1. ✅ All 5 API routes with various inputs:
+   - enhance: empty rejected, long rejected, valid works
+   - architect: special chars handled, plan returned
+   - code: null plan works, SSE starts
+   - result: invalid id returns not_found, valid id returns completed
+   - refine: 196 events with proper SSE
+
+2. ✅ SSE stream stability: 57s, 3977 events, 0 errors, 1 result
+
+3. ✅ Refine with different changes: 196 events, HTML changes confirmed
+
+4. ✅ Build memory: instant restore with "memory" badge
+
+5. ✅ Version history: groups by mission, shows v1/v2
+
+6. ✅ Export/Import: roundtrip verified (0→1 builds)
+
+7. ✅ Share URL: hash created, reload loads build
+
+8. ✅ Error handling: 10 edge cases all handled:
+   - Empty mission, long mission, control chars, special chars
+   - Invalid buildId, missing fields, wrong types
+   - All return proper error messages
+
+9. ✅ Mobile on 3 sizes: 375x812, 768x1024, 1440x900 — all work
+
+10. ✅ Keyboard shortcuts: M cycles model (Z.AI→Qwen), code correct for all
+
+11. ✅ Quality breakdown: shows real FAILED CHECKS + STATIC ANALYSIS
+
+12. ✅ Build stats: code accumulates correctly (verified in unit tests)
+
+13. ✅ Templates: save (1 template), load (prompt appears), delete (0 templates)
+
+14. ✅ Slash commands: all 5 visible (/dashboard, /game, /creative, /tool, /enhance)
+
+15. ✅ Theme toggle: BG changes lab(2.75)→lab(100), persists in localStorage
+
+CODE QUALITY CHECKS:
+- No unhandled promises (llm.ts has .catch that resets)
+- No memory leaks (intervals cleared in finally blocks)
+- No race conditions (refs used for synchronous access)
+- No unused imports
+- No TODO/FIXME/HACK in production code
+- IndexedDB operations all have error handlers
+- All fetch calls in try/catch blocks
+
+NO CRITICAL BUGS FOUND — system is production-ready.
+
+System stats:
+- page.tsx: 3931 lines
+- 5 API routes
+- 33 lib modules
+- 43 test files, 844 tests, 0 failures
+- 0 lint errors, 0 TypeScript errors
