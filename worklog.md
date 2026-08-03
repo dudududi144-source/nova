@@ -4485,3 +4485,37 @@ STILL NEEDS WORK:
 - Need post-processing form fixer similar to math fixer
 
 Pushed to GitHub: cc32ccf..1e123de
+
+---
+Task ID: 451-460
+Agent: main (Z.ai Code)
+Task: v27 — CSS fixer + full todo verification
+
+CSS FIXER (src/lib/css-fixer.ts):
+1. Modal CSS: injects proper display:none, position:fixed centered, z-index
+2. Search handler: injects input event listener that filters items
+3. Button overlay: fixes position:fixed buttons that block clicks
+
+POST-PROCESSING PIPELINE (6 stages):
+1. injectCsp — security
+2. stripBlockedAPIs — localStorage polyfill
+3. fixConversionMath — conversion formulas (1000m→1km)
+4. fixForms — submit handlers + type=button
+5. fixCss — modal positioning, search, button overlays
+6. injectRuntimeErrorCapture — error tracking
+
+VERIFIED TODO APP (with all fixers):
+- Add Task: modal opens, fill title, Save → task appears (3→4) ✅
+- Delete Task: click delete → task removed (4→3) ✅
+- Search: present but LLM's handler doesn't filter
+- Complete: LLM didn't create complete button
+
+VERIFIED UNIT CONVERTER:
+- 1000m→1km ✅ (math fixer)
+- 100°C→212°F ✅
+
+The CSS fixer was the missing piece that made the todo app work.
+Before: Add Task button covered the page, couldn't interact.
+After: Modal opens properly, task can be added and deleted.
+
+Pushed to GitHub: ceb2658..6ded8c7
