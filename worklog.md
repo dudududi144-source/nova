@@ -3697,3 +3697,52 @@ Stage Summary:
 - `src/app/page.tsx`: +buildTimings state, +promptHistory state, +quickMode state, timing UI, ↑/↓ navigation, Quick toggle button
 - Tests: 764 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
 - Pushed to GitHub: c628772..3ede7aa
+
+---
+Task ID: 261-266
+Agent: main (Z.ai Code)
+Task: v16 — Smart mission analysis + quality breakdown (smarter, more critical)
+
+Work Log:
+- Created `src/lib/mission-analysis.ts` — pure client-side mission analyzer:
+  - Complexity detection: simple/medium/complex based on keyword matching
+    - COMPLEX_KEYWORDS: real-time, streaming, 3d, webgl, physics, AI, etc.
+    - MEDIUM_KEYWORDS: dashboard, editor, game, timer, tracker, etc.
+    - SIMPLE_KEYWORDS: counter, clock, list, todo, button, etc.
+  - Vagueness detection: too-vague (generic single word), vague (<5 words), none
+  - Over-scope detection: warns on 'operating system', 'database server', 'backend', etc.
+  - Time estimation: simple ~2.5min, medium ~4min, complex ~6min (with feature multiplier)
+  - Token estimation: 5000/7000/10000 base (with feature multiplier)
+  - Model recommendation: Qwen for simple, Z.AI for medium, Kimi for complex
+  - Actionable suggestions based on analysis results
+- Added 27 tests for mission analysis (complexity, vagueness, over-scope, time, model, suggestions, edge cases)
+- Added pre-build mission analysis card to UI:
+  - Shows complexity icon (🟢🟡🟠) + level + feature count + word count
+  - Shows estimated build time and recommended model
+  - Shows vagueness/over-scope warnings with amber/orange colors
+  - Shows actionable suggestions (max 2) with → prefix
+  - Shows green "ready to build!" when prompt is good
+  - Updates in real-time as user types (before clicking Build)
+- Added quality breakdown to server result event:
+  - `checks`: [{name, passed, detail}] from validateOutput
+  - `missingFeatures`: string[] from planAdherence (max 5)
+  - `staticIssues`: [{severity, message}] from analyzeHtml (max 5)
+  - `truncated`: boolean (true when totalTokens===0 && html.length>1000)
+- Added quality breakdown panel to Build Insights:
+  - Truncation warning (orange) — "Output was truncated — build may be incomplete"
+  - Failed checks section (red XCircle) — specific check details
+  - Missing from plan section (amber) — features the architect planned but weren't found
+  - Static analysis section — errors (red dot) vs warnings (amber dot)
+  - All-checks-passed confirmation (green) when everything is good
+
+Stage Summary:
+- `src/lib/mission-analysis.ts`: new file, 170 lines, pure function
+- `tests/mission-analysis.test.ts`: new file, 27 tests
+- `src/app/api/build/code/route.ts`: +quality breakdown in result event
+- `src/app/page.tsx`: +mission analysis card, +quality breakdown panel, +state
+- Tests: 764 → 791 pass (+27 new). 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - "todo" → 🟢 SIMPLE, ~3min, rec: Qwen, "Prompt is too generic" warning ✅
+  - "Build a todo app with add, delete, complete, filter, drag-and-drop" → 🟡 MEDIUM, ~6min, rec: Z.AI, "ready to build!" ✅
+  - "Build an operating system..." → 🟠 COMPLEX, ~8min, rec: Kimi, "too complex for single-file app" warning ✅
+- Pushed to GitHub: 3ede7aa..342db6f
