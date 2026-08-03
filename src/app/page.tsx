@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2 } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import { newBuildId, sanitizeFilename, validateHistory, normalizeMission, groupH
 import { analyzeMission } from '@/lib/mission-analysis'
 import { calculateBuildHealth } from '@/lib/build-health'
 import { compareBuilds } from '@/lib/build-comparison'
+import { loadBuildStats, saveBuildStats, recordBuildInStats, recordRefineInStats, formatStats, type BuildStats } from '@/lib/build-stats'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -277,6 +278,9 @@ export default function Home() {
   // v15: Prompt history — cycle through previous prompts with ↑/↓
   const [promptHistory, setPromptHistory] = useState<string[]>([])
   const [promptHistoryIndex, setPromptHistoryIndex] = useState(-1)
+  // v20: Build stats — persistent across sessions
+  const [buildStats, setBuildStats] = useState<BuildStats>(() => loadBuildStats())
+  const [showStats, setShowStats] = useState(false)
   // v15: Quick mode — smaller token budget for faster builds (~2min vs ~5min)
   const [quickMode, setQuickMode] = useState(false)
   const quickModeRef = useRef(false)
@@ -990,6 +994,16 @@ export default function Home() {
       setQualityMetrics(finalMetrics)
       // v16: Set quality breakdown for the insights panel
       setQualityBreakdown(finalQualityBreakdown)
+      // v20: Record build in persistent stats
+      const newStats = recordBuildInStats(buildStats, {
+        quality: finalQuality,
+        ms: finalMs,
+        tokens: finalTokens,
+        mission: m,
+        model: selectedModelRef.current,
+      })
+      setBuildStats(newStats)
+      saveBuildStats(newStats)
     } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
@@ -1928,6 +1942,10 @@ export default function Home() {
       setQualityScore(finalQuality)
       setQualityMetrics(finalMetrics)
       setChatInput('') // Clear input only after success
+      // v20: Record refine in persistent stats
+      const refinedStats = recordRefineInStats(buildStats)
+      setBuildStats(refinedStats)
+      saveBuildStats(refinedStats)
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       const failMsg = err instanceof Error ? err.message : 'Network error'
@@ -2169,6 +2187,20 @@ export default function Home() {
             <Zap className="h-3 w-3" />
             <span className="hidden sm:inline">Quick</span>
           </button>
+          {/* v20: Stats button — shows build statistics across sessions */}
+          {buildStats.totalBuilds > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowStats(prev => !prev)}
+              className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${
+                showStats ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/40 text-muted-foreground hover:text-foreground'
+              }`}
+              title="Build statistics across all sessions"
+            >
+              <BarChart3 className="h-3 w-3" />
+              <span className="hidden sm:inline">{buildStats.totalBuilds}</span>
+            </button>
+          )}
           {/* v10: Dark/light mode toggle for NOVA UI */}
           <ThemeToggle />
           {/* v4: Build-memory badge — shown when the current result was restored from IndexedDB */}
@@ -3509,6 +3541,74 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* v20: Build statistics panel — shows persistent stats across sessions */}
+      {showStats && buildStats.totalBuilds > 0 && (() => {
+        const { details } = formatStats(buildStats)
+        return (
+          <div
+            role="dialog"
+            aria-label="Build statistics"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowStats(false)}
+          >
+            <div
+              className="w-full max-w-md rounded-lg border border-border/40 bg-card p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Build Statistics</h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Reset all build statistics? This cannot be undone.')) {
+                        const empty = loadBuildStats()
+                        // Use resetBuildStats via direct call
+                        try { localStorage.removeItem('nova_build_stats') } catch {}
+                        setBuildStats({ ...empty, totalBuilds: 0 })
+                        setShowStats(false)
+                        toast.success('Statistics reset')
+                      }
+                    }}
+                    className="text-[10px] text-muted-foreground/50 hover:text-destructive"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowStats(false)}
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Close stats"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {details.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between border-b border-border/20 pb-1.5">
+                    <span className="text-xs text-muted-foreground">{d.label}</span>
+                    <span className="font-mono text-xs text-foreground">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+              {buildStats.bestMission && (
+                <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2">
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-400/70">Best build</p>
+                  <p className="mt-0.5 text-xs text-foreground/80">{buildStats.bestMission}</p>
+                </div>
+              )}
+              {buildStats.worstMission && buildStats.worstMission !== buildStats.bestMission && (
+                <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">
+                  <p className="text-[10px] uppercase tracking-wider text-amber-400/70">Worst build</p>
+                  <p className="mt-0.5 text-xs text-foreground/80">{buildStats.worstMission}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Keyboard shortcuts help panel — press ? to toggle */}
       {showShortcuts && (
