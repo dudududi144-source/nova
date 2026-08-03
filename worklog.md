@@ -3783,3 +3783,45 @@ Stage Summary:
 - Truncation bug fixed
 - Tests: 791 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
 - Pushed to GitHub: 342db6f..f3db752
+
+---
+Task ID: 273-278
+Agent: main (Z.ai Code)
+Task: v17 — 3-model fallback, build health grade, keyboard shortcuts
+
+Work Log:
+- Added 3-model fallback chain to code route:
+  - Z.AI (primary) → Qwen (first fallback) → Kimi K3 (final fallback)
+  - Each fallback sends progress event: "Retrying with Qwen AI..." / "Retrying with Kimi K3..."
+  - Condition: only falls back if previous model failed AND no text was generated
+  - Verified: existing Z.AI→Qwen fallback preserved, new Qwen→Kimi fallback added
+- Created `src/lib/build-health.ts` — composite health grade calculator:
+  - A = Excellent: Q≥85, 0 missing features, 0 static errors, <3min, no truncation
+  - B = Good: Q≥70, ≤2 missing, ≤1 error, <5min
+  - C = Acceptable: Q≥50, ≤4 missing, ≤3 errors, <8min
+  - D = Poor: truncated, or Q<50, or >4 missing, or >3 errors, or >8min
+  - Returns grade, label, color classes, and reasons array
+- Added 11 tests for build health (A/B/C/D grades, truncation, reasons, colors)
+- Added health badge to insights panel header:
+  - Shows "A · Excellent" / "B · Good" / "C · Acceptable" / "D · Poor"
+  - Colored: emerald (A), blue (B), amber (C), red (D)
+  - Tooltip shows reasons for the grade
+- Added keyboard shortcuts:
+  - I = toggle build insights panel (only when result exists)
+  - D = toggle diff view (only when previousBuild + result exist)
+  - F = toggle fullscreen preview (only when result exists)
+  - All only work when not typing in a text field
+- Updated shortcuts modal: added I, D, F entries
+- Updated footer: added I insights, D diff, F fullscreen
+
+Stage Summary:
+- `src/app/api/build/code/route.ts`: +Kimi fallback (3-model chain)
+- `src/lib/build-health.ts`: new file, 70 lines
+- `tests/build-health.test.ts`: new file, 11 tests
+- `src/app/page.tsx`: +health badge, +I/D/F shortcuts, updated modal + footer
+- Tests: 791 → 802 pass (+11 new). 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- E2E verified:
+  - Timer app → Q:96, "A · Excellent" badge (green) ✅
+  - I shortcut toggles insights panel ✅
+  - F shortcut toggles fullscreen ✅
+- Pushed to GitHub: f3db752..729cc20
