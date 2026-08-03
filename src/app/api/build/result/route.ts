@@ -20,7 +20,9 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (!id) return Response.json({ error: 'Missing build ID' }, { status: 400 })
 
   const result = getResult(id)
-  if (!result) return Response.json({ error: 'Build not found', status: 'not_found' }, { status: 404 })
+  if (!result) {
+    return Response.json({ error: 'Build not found', status: 'not_found', requestedId: id }, { status: 404 })
+  }
 
   return Response.json({
     status: result.status,

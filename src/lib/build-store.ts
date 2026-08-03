@@ -20,7 +20,16 @@ export interface StoredBuildResult {
   timestamp: number
 }
 
-const store = new Map<string, StoredBuildResult>()
+// v23: Use globalThis to persist the store across module reloads in dev mode.
+// Without this, Turbopack creates a new Map for each request, so the result
+// route can't find builds stored by the code route.
+const globalStore = globalThis as unknown as { __novaBuildStore?: Map<string, StoredBuildResult> }
+const store: Map<string, StoredBuildResult> = globalStore.__novaBuildStore ?? new Map()
+if (!globalStore.__novaBuildStore) {
+  globalStore.__novaBuildStore = store
+  logger.info('buildstore.initialized', { storeSize: 0 })
+}
+
 const TTL_MS = 10 * 60 * 1000
 const MAX_ENTRIES = 50
 
@@ -61,7 +70,15 @@ export function storeError(id: string, error: string): void {
 
 export function getResult(id: string): StoredBuildResult | null {
   const entry = store.get(id)
-  if (!entry) return null
-  if (Date.now() - entry.timestamp > TTL_MS) { store.delete(id); return null }
+  if (!entry) {
+    logger.info('buildstore.get_miss', { id, storeSize: store.size })
+    return null
+  }
+  if (Date.now() - entry.timestamp > TTL_MS) {
+    store.delete(id)
+    logger.info('buildstore.get_expired', { id, age: Date.now() - entry.timestamp })
+    return null
+  }
+  logger.info('buildstore.get_hit', { id, status: entry.status })
   return entry
 }
