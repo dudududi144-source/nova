@@ -85,6 +85,86 @@ export function fixForms(html: string): string {
     }
   }
 
+  // v27: Inject save/cancel button handlers for modals
+  // The LLM creates Save/Cancel buttons in modals but they often don't work
+  // because the onclick handler is missing or broken.
+  const hasModal = /class="modal"|id="[^"]*Modal"|data-modal/i.test(result)
+  if (hasModal) {
+    const buttonFix = `
+<script>
+// v27: Auto-injected save/cancel button handlers
+(function() {
+  document.querySelectorAll('button').forEach(function(btn) {
+    var text = (btn.textContent || '').toLowerCase().trim();
+    var isSaveBtn = text.includes('save') || text.includes('create') || text.includes('add task') || text.includes('submit');
+    var isCancelBtn = text === 'cancel' || text === 'close' || text === '×' || text === '✕' || text.includes('dismiss');
+
+    if (isSaveBtn || isCancelBtn) {
+      // Clone to remove existing listeners
+      var newBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+
+      newBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (isSaveBtn) {
+          // Try to call common save functions
+          var saveFns = ['saveTask', 'addTask', 'createTask', 'addItem', 'addTodo', 'addNote',
+                         'saveNote', 'createNote', 'handleSave', 'handleSubmit', 'submitTask'];
+          var called = false;
+          for (var i = 0; i < saveFns.length; i++) {
+            if (typeof window[saveFns[i]] === 'function') {
+              try {
+                window[saveFns[i]]();
+                called = true;
+                break;
+              } catch(err) {
+                try {
+                  var input = newBtn.closest('form, .modal, [class*="modal"], [id*="Modal"]')
+                    .querySelector('input[type="text"], input:not([type]), textarea');
+                  if (input && input.value.trim()) {
+                    window[saveFns[i]](input.value.trim());
+                    called = true;
+                    break;
+                  }
+                } catch(e2) {}
+              }
+            }
+          }
+          // If no function found, try onclick
+          if (!called && newBtn.getAttribute('onclick')) {
+            try { newBtn.onclick(); } catch(e3) {}
+          }
+        }
+
+        // Close the modal after save or cancel
+        setTimeout(function() {
+          var modal = newBtn.closest('[class*="modal"], [id*="Modal"], [data-modal]');
+          if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('show', 'active', 'open');
+          }
+          var backdrop = document.querySelector('.modal-backdrop, [data-backdrop], .overlay');
+          if (backdrop) {
+            backdrop.style.display = 'none';
+            backdrop.classList.remove('show');
+          }
+        }, 50);
+      });
+    }
+  });
+})();
+</script>`
+
+    const bodyClose2 = result.match(/<\/body>/i)
+    if (bodyClose2) {
+      result = result.replace(/<\/body>/i, buttonFix + '\n</body>')
+      fixesApplied++
+      logger.info('postfix.form', { fix: 'Injected save/cancel button handlers' })
+    }
+  }
+
   // 3. Check for buttons inside forms that don't have type="button"
   // A <button> inside a <form> without type="button" defaults to type="submit"
   // which can cause unexpected form submissions
