@@ -3658,3 +3658,42 @@ Stage Summary:
 - Starters auto-filter as you type
 - Cancel is always reachable
 - All on GitHub: https://github.com/rabotatony/nova
+
+---
+Task ID: 255-260
+Agent: main (Z.ai Code)
+Task: v15 — Build timing breakdown, prompt history, Quick mode
+
+Work Log:
+- Added `buildTimings` state: `{ architect: number; code: number; total: number } | null`
+- Tracked architect time: `archStartTime` at build start, `archMs = Date.now() - archStartTime` after architect call
+- Tracked code time: `codeStartTime` after architect, `codeMs = Date.now() - codeStartTime` at completion
+- Set `buildTimings` after build completes, before toast
+- Added timing breakdown UI in Build Insights panel:
+  - Shows "timing: arch X.Xs → code Y.Ys" with colored progress bar (blue=arch, green=code)
+  - Bar width proportional to each stage's % of total time
+- Added prompt history:
+  - `promptHistory` state (string[], max 20) loaded from localStorage `nova_prompts` on mount
+  - `promptHistoryIndex` state for current position (-1 = not browsing)
+  - On build start: saves the prompt to history (deduped, newest first)
+  - ↑/↓ arrow keys in textarea: ↑ at start cycles older, ↓ at end cycles newer
+  - Only works when slash menu is closed and cursor is at start/end of text
+- Added Quick mode toggle:
+  - `quickMode` state + `quickModeRef` (for build function access)
+  - Persists in localStorage `nova_quick_mode`
+  - Green toggle button in header (Zap icon + "Quick" label)
+  - When enabled: code route uses 65% of normal token budget (was 50%, caused truncation)
+  - Quick mode also skips retry on quality issues — speed > perfection
+  - Token budget: `Math.max(4000, Math.floor(estimateTokenBudget(plan) * 0.65))`
+- Updated code route:
+  - Added `quickMode?: unknown` to CodeBody interface
+  - `isQuickMode = body?.quickMode === true`
+  - Adjusted token budget based on quickMode
+  - Added `!isQuickMode` to shouldRetry condition
+- Verified E2E: color palette generator with Quick mode → Q:82, 711 lines, timing showed arch 17.8s → code 428s (with retry). Fixed: now skips retry in Quick mode for ~2min builds.
+
+Stage Summary:
+- `src/app/api/build/code/route.ts`: +quickMode support, 65% budget, skip retry
+- `src/app/page.tsx`: +buildTimings state, +promptHistory state, +quickMode state, timing UI, ↑/↓ navigation, Quick toggle button
+- Tests: 764 pass, 0 fail. Lint: 0 errors. TypeScript: 0 errors.
+- Pushed to GitHub: c628772..3ede7aa
