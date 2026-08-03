@@ -388,8 +388,17 @@ export async function POST(request: NextRequest): Promise<Response> {
               if (retryValidation.score > validation.score) {
                 // Use the improved version
                 const metrics = analyzeQuality(retryHtml)
+                // v16: Include quality breakdown in retry result too
+                const retryStaticAnalysis = analyzeHtml(retryHtml)
+                const retryPlanAdherence = checkPlanAdherence(retryHtml, plan)
                 logger.info('code.completed', { ip, ms: Date.now() - startTime, tokens: totalTokens + retryResult.tokens, htmlBytes: retryHtml.length, score: retryValidation.score, metrics: metrics.summary })
-                safeEnqueue(`data: ${JSON.stringify({ type: 'result', html: retryHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary })}\n\n`)
+                safeEnqueue(`data: ${JSON.stringify({
+                  type: 'result', html: retryHtml, tokens: totalTokens + retryResult.tokens, ms: Date.now() - startTime, quality: retryValidation.score, metrics: metrics.summary,
+                  checks: retryValidation.checks.map(c => ({ name: c.name, passed: c.passed, detail: c.detail })),
+                  missingFeatures: retryPlanAdherence.missingFeatures.slice(0, 5),
+                  staticIssues: retryStaticAnalysis.issues.slice(0, 5).map(i => ({ severity: i.severity, message: i.message })),
+                  truncated: !retryHtml.toLowerCase().includes('</html>'),
+                })}\n\n`)
                 safeClose()
                 return
               }
@@ -414,7 +423,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           checks: validation.checks.map(c => ({ name: c.name, passed: c.passed, detail: c.detail })),
           missingFeatures: planAdherence.missingFeatures.slice(0, 5),
           staticIssues: staticAnalysis.issues.slice(0, 5).map(i => ({ severity: i.severity, message: i.message })),
-          truncated: totalTokens === 0 && html.length > 1000,
+          // v16: Truncation flag — true when HTML doesn't end with </html> (was cut short)
+          truncated: !html.toLowerCase().includes('</html>'),
         }
         if (multiFileResult.files.length > 1 || multiFileResult.type !== 'html-app') {
           resultData.files = multiFileResult.files
