@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { newBuildId, sanitizeFilename, validateHistory, normalizeMission, groupHistoryByMission, type BuildResult } from '@/lib/helpers'
+import { analyzeMission } from '@/lib/mission-analysis'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -264,6 +265,13 @@ export default function Home() {
   const [pipelineLiveText, setPipelineLiveText] = useState('')
   // v15: Build timing breakdown — architect / code / validate / total
   const [buildTimings, setBuildTimings] = useState<{ architect: number; code: number; total: number } | null>(null)
+  // v16: Quality breakdown — specific checks, missing features, static issues, truncation flag
+  const [qualityBreakdown, setQualityBreakdown] = useState<{
+    checks: { name: string; passed: boolean; detail: string }[]
+    missingFeatures: string[]
+    staticIssues: { severity: string; message: string }[]
+    truncated: boolean
+  } | null>(null)
   // v15: Prompt history — cycle through previous prompts with ↑/↓
   const [promptHistory, setPromptHistory] = useState<string[]>([])
   const [promptHistoryIndex, setPromptHistoryIndex] = useState(-1)
@@ -761,6 +769,8 @@ export default function Home() {
       let finalFiles: { path: string; content: string; language: string }[] | undefined
       let finalOutputType: string | undefined
       let finalPreviewable: boolean | undefined
+      // v16: Quality breakdown capture
+      let finalQualityBreakdown: { checks: { name: string; passed: boolean; detail: string }[]; missingFeatures: string[]; staticIssues: { severity: string; message: string }[]; truncated: boolean } | null = null
 
       while (true) {
         // v10.5: 180s timeout — if no data arrives, the connection is dead
@@ -843,6 +853,15 @@ export default function Home() {
               if (Array.isArray(evt.files)) finalFiles = evt.files
               if (typeof evt.outputType === 'string') finalOutputType = evt.outputType
               if (typeof evt.previewable === 'boolean') finalPreviewable = evt.previewable
+              // v16: Capture quality breakdown for the insights panel
+              if (Array.isArray(evt.checks) || Array.isArray(evt.missingFeatures) || Array.isArray(evt.staticIssues) || evt.truncated) {
+                finalQualityBreakdown = {
+                  checks: Array.isArray(evt.checks) ? evt.checks : [],
+                  missingFeatures: Array.isArray(evt.missingFeatures) ? evt.missingFeatures : [],
+                  staticIssues: Array.isArray(evt.staticIssues) ? evt.staticIssues : [],
+                  truncated: evt.truncated === true,
+                }
+              }
             } else if (evt.type === 'error') {
               streamError = evt.error ?? 'Unknown error'
             }
@@ -967,6 +986,8 @@ export default function Home() {
       toast.success(`Built in ${(finalMs / 1000).toFixed(1)}s · ${finalTokens} tokens · quality: ${finalQuality}`)
       setQualityScore(finalQuality)
       setQualityMetrics(finalMetrics)
+      // v16: Set quality breakdown for the insights panel
+      setQualityBreakdown(finalQualityBreakdown)
     } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
@@ -2207,12 +2228,84 @@ export default function Home() {
           />
           <div className="mt-1 flex items-center justify-between">
             <span className="text-[10px] text-muted-foreground/40">
-              ⌘+Enter to build
+              ⌘+Enter to build · ↑↓ for history
             </span>
             <span className={`text-[10px] ${mission.length > 2000 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
               {mission.length}/2000
             </span>
           </div>
+
+          {/* v16: Smart mission analysis — shows complexity, warnings, and estimated time
+              BEFORE the user builds. Helps them write better prompts and set expectations. */}
+          {mission.trim().length >= 3 && !result && !loading && !error && (() => {
+            const analysis = analyzeMission(mission)
+            const complexityColor = analysis.complexity === 'simple' ? 'text-emerald-400' : analysis.complexity === 'medium' ? 'text-amber-400' : 'text-orange-400'
+            const complexityIcon = analysis.complexity === 'simple' ? '🟢' : analysis.complexity === 'medium' ? '🟡' : '🟠'
+            return (
+              <div className="mt-2 rounded-md border border-border/40 bg-card/20 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px]">{complexityIcon}</span>
+                    <span className={`text-[10px] font-medium uppercase tracking-wider ${complexityColor}`}>
+                      {analysis.complexity}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/50">·</span>
+                    <span className="text-[10px] text-muted-foreground/60">
+                      {analysis.featureCount} feature{analysis.featureCount === 1 ? '' : 's'} · {analysis.wordCount} words
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                    <span title="Estimated build time">~{Math.round(analysis.estimatedTime / 60)}min</span>
+                    <span className="text-muted-foreground/30">·</span>
+                    <span title={analysis.modelReason} className="cursor-help">
+                      rec: {analysis.recommendedModel === 'z-ai' ? 'Z.AI' : analysis.recommendedModel === 'qwen' ? 'Qwen' : 'Kimi'}
+                    </span>
+                  </div>
+                </div>
+                {/* Warnings */}
+                {(analysis.vagueness !== 'none' || analysis.isTooComplex) && (
+                  <div className="mt-1.5 space-y-1">
+                    {analysis.vagueness === 'too-vague' && (
+                      <p className="flex items-center gap-1 text-[10px] text-amber-400">
+                        <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                        {analysis.vaguenessReason}
+                      </p>
+                    )}
+                    {analysis.vagueness === 'vague' && (
+                      <p className="flex items-center gap-1 text-[10px] text-amber-400/70">
+                        <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                        {analysis.vaguenessReason}
+                      </p>
+                    )}
+                    {analysis.isTooComplex && (
+                      <p className="flex items-center gap-1 text-[10px] text-orange-400">
+                        <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                        {analysis.tooComplexReason}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {/* Suggestions */}
+                {analysis.suggestions.length > 0 && analysis.suggestions[0] !== 'Prompt looks good — ready to build!' && (
+                  <div className="mt-1.5 space-y-0.5">
+                    {analysis.suggestions.slice(0, 2).map((s, i) => (
+                      <p key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground/60">
+                        <span className="mt-px text-muted-foreground/40">→</span>
+                        <span>{s}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {/* Ready indicator */}
+                {analysis.suggestions[0] === 'Prompt looks good — ready to build!' && (
+                  <p className="mt-1 flex items-center gap-1 text-[10px] text-emerald-400/70">
+                    <CheckCircle2 className="h-2.5 w-2.5" />
+                    {analysis.suggestions[0]}
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* v12: Enhanced-prompt preview — shows when the user clicked Enhance.
               Displays the AI-expanded prompt with Accept (apply) / Reject (undo) buttons. */}
@@ -3074,6 +3167,61 @@ export default function Home() {
                         <div className="bg-blue-500/60" style={{ width: `${(buildTimings.architect / buildTimings.total) * 100}%` }} />
                         <div className="bg-emerald-500/60" style={{ width: `${(buildTimings.code / buildTimings.total) * 100}%` }} />
                       </div>
+                    </div>
+                  )}
+                  {/* v16: Quality breakdown — specific checks, missing features, truncation warning */}
+                  {qualityBreakdown && (
+                    <div className="flex w-full flex-col gap-1.5 rounded border border-border/40 bg-background/40 px-2 py-1.5">
+                      {/* Truncation warning */}
+                      {qualityBreakdown.truncated && (
+                        <p className="flex items-center gap-1 text-[10px] text-orange-400">
+                          <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                          Output was truncated — build may be incomplete
+                        </p>
+                      )}
+                      {/* Failed checks */}
+                      {qualityBreakdown.checks.filter(c => !c.passed).length > 0 && (
+                        <div>
+                          <p className="mb-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/50">Failed checks</p>
+                          {qualityBreakdown.checks.filter(c => !c.passed).slice(0, 4).map((c, i) => (
+                            <p key={i} className="flex items-start gap-1 text-[10px] text-red-400/80">
+                              <XCircle className="mt-0.5 h-2.5 w-2.5 shrink-0" />
+                              <span>{c.detail}</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      {/* Missing features */}
+                      {qualityBreakdown.missingFeatures.length > 0 && (
+                        <div>
+                          <p className="mb-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/50">Missing from plan</p>
+                          {qualityBreakdown.missingFeatures.map((f, i) => (
+                            <p key={i} className="flex items-start gap-1 text-[10px] text-amber-400/80">
+                              <span className="mt-px text-amber-400/50">•</span>
+                              <span>{f}</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      {/* Static issues */}
+                      {qualityBreakdown.staticIssues.length > 0 && (
+                        <div>
+                          <p className="mb-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/50">Static analysis</p>
+                          {qualityBreakdown.staticIssues.map((issue, i) => (
+                            <p key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground/70">
+                              <span className={`mt-px ${issue.severity === 'error' ? 'text-red-400/60' : 'text-amber-400/60'}`}>●</span>
+                              <span>{issue.message}</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      {/* All checks passed */}
+                      {qualityBreakdown.checks.length > 0 && qualityBreakdown.checks.every(c => c.passed) && qualityBreakdown.missingFeatures.length === 0 && (
+                        <p className="flex items-center gap-1 text-[10px] text-emerald-400/70">
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                          All {qualityBreakdown.checks.length} quality checks passed
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

@@ -410,6 +410,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         const multiFileResult = parseOutput(html)
         const resultData: Record<string, unknown> = {
           type: 'result', html, tokens: totalTokens, ms: totalMs, quality: validation.score, metrics: metrics.summary,
+          // v16: Quality breakdown — specific checks + missing features for the insights panel
+          checks: validation.checks.map(c => ({ name: c.name, passed: c.passed, detail: c.detail })),
+          missingFeatures: planAdherence.missingFeatures.slice(0, 5),
+          staticIssues: staticAnalysis.issues.slice(0, 5).map(i => ({ severity: i.severity, message: i.message })),
+          truncated: totalTokens === 0 && html.length > 1000,
         }
         if (multiFileResult.files.length > 1 || multiFileResult.type !== 'html-app') {
           resultData.files = multiFileResult.files
