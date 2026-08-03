@@ -3091,6 +3091,30 @@ export default function Home() {
               )}
             </div>
           )}
+
+          {/* v22: Import button — always available, even when history is empty.
+              Lets users restore builds from a backup file without needing existing history. */}
+          {history.length === 0 && showExamples && (
+            <div className="mt-4">
+              <label
+                className="flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border/40 bg-card/30 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                title="Import builds from JSON backup file"
+              >
+                <Download className="h-3 w-3" />
+                Import builds from backup
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) importBuilds(file)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            </div>
+          )}
         </section>
 
         {/* Right panel: preview — shown when there's a result OR a build/refine in progress.
