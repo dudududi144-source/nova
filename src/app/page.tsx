@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3 } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3, Bookmark, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -11,6 +11,7 @@ import { analyzeMission } from '@/lib/mission-analysis'
 import { calculateBuildHealth } from '@/lib/build-health'
 import { compareBuilds } from '@/lib/build-comparison'
 import { loadBuildStats, saveBuildStats, recordBuildInStats, recordRefineInStats, formatStats, type BuildStats } from '@/lib/build-stats'
+import { loadTemplates, addTemplate, deleteTemplate, markTemplateUsed, type PromptTemplate } from '@/lib/prompt-templates'
 import { extractStepsFromMission, extractStepsFromPlan, getPlanSummary } from '@/lib/build-steps'
 import { formatTokens } from '@/lib/format'
 import { injectCsp } from '@/lib/html-utils'
@@ -281,6 +282,10 @@ export default function Home() {
   // v20: Build stats — persistent across sessions
   const [buildStats, setBuildStats] = useState<BuildStats>(() => loadBuildStats())
   const [showStats, setShowStats] = useState(false)
+  // v21: Prompt templates — save/load custom prompts
+  const [templates, setTemplates] = useState<PromptTemplate[]>([])
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [saveTemplateName, setSaveTemplateName] = useState('')
   // v15: Quick mode — smaller token budget for faster builds (~2min vs ~5min)
   const [quickMode, setQuickMode] = useState(false)
   const quickModeRef = useRef(false)
@@ -432,6 +437,8 @@ export default function Home() {
       const stored = JSON.parse(localStorage.getItem('nova_prompts') ?? '[]')
       if (Array.isArray(stored)) setPromptHistory(stored.filter((s: unknown) => typeof s === 'string').slice(0, 20))
     } catch {}
+    // v21: Load prompt templates
+    setTemplates(loadTemplates())
   }, [])
   // v10.9: Keep model ref in sync
   useEffect(() => { selectedModelRef.current = selectedModel }, [selectedModel])
@@ -1592,6 +1599,41 @@ export default function Home() {
     reader.readAsText(file)
   }, [saveHistoryToStorage])
 
+  // v21: Save current prompt as a template
+  const savePromptTemplate = useCallback(() => {
+    const m = mission.trim()
+    if (!m) {
+      toast.error('Type a prompt first')
+      return
+    }
+    if (m.length < 5) {
+      toast.error('Prompt too short to save as template')
+      return
+    }
+    const name = saveTemplateName.trim() || m.slice(0, 30)
+    addTemplate(name, m)
+    setTemplates(loadTemplates())
+    setSaveTemplateName('')
+    setShowTemplates(false)
+    toast.success(`Saved template "${name}"`)
+  }, [mission, saveTemplateName])
+
+  // v21: Load a template into the textarea
+  const loadPromptTemplate = useCallback((t: PromptTemplate) => {
+    setMission(t.prompt)
+    markTemplateUsed(t.id)
+    setTemplates(loadTemplates())
+    setShowTemplates(false)
+    toast.info(`Loaded template "${t.name}"`)
+  }, [])
+
+  // v21: Delete a template
+  const removePromptTemplate = useCallback((id: string, name: string) => {
+    deleteTemplate(id)
+    setTemplates(loadTemplates())
+    toast.success(`Deleted template "${name}"`)
+  }, [])
+
   // Copy HTML to clipboard
   const copyHtml = useCallback(async () => {
     if (!result?.html) return
@@ -2068,6 +2110,23 @@ export default function Home() {
           setFullscreen(prev => !prev)
         }
       }
+      // v21: S toggles stats, T toggles templates
+      if (e.key === 's' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && buildStats.totalBuilds > 0) {
+          e.preventDefault()
+          setShowStats(prev => !prev)
+        }
+      }
+      if (e.key === 't' && !e.metaKey && !e.ctrlKey) {
+        const target = e.target as HTMLElement
+        const isTextField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        if (!isTextField && !loading && !refining) {
+          e.preventDefault()
+          setShowTemplates(prev => !prev)
+        }
+      }
       // Escape closes shortcuts panel if open
       // v10.13: Esc exits fullscreen
       if (e.key === 'Escape' && fullscreen) {
@@ -2520,7 +2579,81 @@ export default function Home() {
               )}
               <span className="hidden sm:inline">Enhance</span>
             </Button>
+            {/* v21: Templates button — save/load custom prompts */}
+            <Button
+              onClick={() => { setShowTemplates(prev => !prev); setSaveTemplateName('') }}
+              disabled={loading || refining}
+              variant="ghost"
+              className="gap-2 text-muted-foreground hover:text-foreground"
+              size="lg"
+              title="Prompt templates — save and load custom prompts"
+            >
+              <Bookmark className="h-4 w-4" />
+              <span className="hidden sm:inline">Templates</span>
+              {templates.length > 0 && (
+                <span className="ml-0.5 rounded bg-primary/20 px-1 text-[9px] text-primary">{templates.length}</span>
+              )}
+            </Button>
           </div>
+
+          {/* v21: Templates panel — save current prompt + list saved templates */}
+          {showTemplates && (
+            <div className="mt-2 rounded-md border border-border/40 bg-card/20 p-3">
+              {/* Save current prompt as template */}
+              {mission.trim().length >= 5 && (
+                <div className="mb-3">
+                  <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">Save current prompt</p>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={saveTemplateName}
+                      onChange={(e) => setSaveTemplateName(e.target.value)}
+                      placeholder="Template name (optional)"
+                      maxLength={60}
+                      className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none"
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); savePromptTemplate() } }}
+                    />
+                    <Button size="sm" className="h-7 gap-1 text-[11px]" onClick={savePromptTemplate}>
+                      <Bookmark className="h-3 w-3" />
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {/* List saved templates */}
+              {templates.length > 0 ? (
+                <div>
+                  <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">Saved templates ({templates.length})</p>
+                  <div className="max-h-48 space-y-1 overflow-y-auto">
+                    {templates.map((t) => (
+                      <div key={t.id} className="flex items-center gap-1.5 rounded border border-border/30 bg-background/40 px-2 py-1">
+                        <button
+                          type="button"
+                          onClick={() => loadPromptTemplate(t)}
+                          className="flex-1 min-w-0 text-left"
+                          title={t.prompt}
+                        >
+                          <p className="truncate text-[11px] font-medium text-foreground/80">{t.name}</p>
+                          <p className="truncate text-[10px] text-muted-foreground/50">{t.prompt}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removePromptTemplate(t.id, t.name)}
+                          className="shrink-0 text-muted-foreground/40 transition-colors hover:text-destructive"
+                          title="Delete template"
+                          aria-label={`Delete template ${t.name}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground/40">No saved templates yet — type a prompt and click Save to create one.</p>
+              )}
+            </div>
+          )}
 
           {/* Loading state — single unified progress */}
           {loading && !result && (
@@ -3642,6 +3775,8 @@ export default function Home() {
                 { keys: ['I'], label: 'Toggle build insights panel' },
                 { keys: ['D'], label: 'Toggle diff view (compare versions)' },
                 { keys: ['F'], label: 'Toggle fullscreen preview' },
+                { keys: ['S'], label: 'Toggle build statistics' },
+                { keys: ['T'], label: 'Toggle prompt templates' },
                 { keys: ['M'], label: 'Cycle AI model (Z.AI → Qwen → Kimi)' },
                 { keys: ['/'], label: 'Slash commands menu' },
                 { keys: ['Esc'], label: 'Cancel build/refine' },
