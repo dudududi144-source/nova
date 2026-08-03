@@ -12,6 +12,7 @@ import { llmChatStream, llmChat } from '@/lib/llm'
 import { stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs } from '@/lib/html-utils'
 import { fixConversionMath } from '@/lib/math-fixer'
 import { fixForms } from '@/lib/form-fixer'
+import { fixCss } from '@/lib/css-fixer'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -258,6 +259,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         finalHtml = fixConversionMath(finalHtml)
         // v27: Fix form submit handlers
         finalHtml = fixForms(finalHtml)
+        // v27: Fix CSS issues (modal, search, button overlays)
+        finalHtml = fixCss(finalHtml)
         finalHtml = injectRuntimeErrorCapture(finalHtml)
         const totalMs = Date.now() - startTime
 
