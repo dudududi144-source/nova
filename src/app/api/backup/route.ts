@@ -165,3 +165,29 @@ export async function POST(): Promise<Response> {
     return Response.json({ ok: false, error: errorMsg }, { status: 500 })
   }
 }
+
+// DELETE /api/backup?file=name.zip — Delete a backup file.
+export async function DELETE(request: NextRequest): Promise<Response> {
+  const fileName = request.nextUrl.searchParams.get('file')
+  if (!fileName) {
+    return Response.json({ ok: false, error: 'Missing file parameter' }, { status: 400 })
+  }
+
+  // Security: prevent path traversal
+  const safeName = fileName.replace(/\.\./g, '').replace(/[\/\\]/g, '')
+  const filePath = join(BACKUP_DIR, safeName)
+
+  try {
+    if (!existsSync(filePath)) {
+      return Response.json({ ok: false, error: 'File not found' }, { status: 404 })
+    }
+
+    const { unlinkSync } = await import('fs')
+    unlinkSync(filePath)
+
+    return Response.json({ ok: true, deleted: safeName })
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    return Response.json({ ok: false, error: errorMsg }, { status: 500 })
+  }
+}

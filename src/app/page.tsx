@@ -4253,11 +4253,11 @@ export default function Home() {
               ) : (
                 <ul className="space-y-1">
                   {backupFiles.map(f => (
-                    <li key={f.name}>
+                    <li key={f.name} className="flex items-center gap-1">
                       <a
                         href={f.url}
                         download={f.name}
-                        className="flex items-center justify-between rounded border border-border/40 px-3 py-2 text-xs transition-colors hover:bg-accent"
+                        className="flex flex-1 items-center justify-between rounded border border-border/40 px-3 py-2 text-xs transition-colors hover:bg-accent"
                       >
                         <div className="flex items-center gap-2">
                           <Download className="h-3 w-3 text-muted-foreground" />
@@ -4268,6 +4268,30 @@ export default function Home() {
                           <span className="text-[10px]">{new Date(f.modified).toLocaleDateString()}</span>
                         </div>
                       </a>
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.preventDefault()
+                          if (!confirm(`Delete ${f.name}?`)) return
+                          try {
+                            const res = await fetch(`/api/backup?file=${encodeURIComponent(f.name)}`, { method: 'DELETE' })
+                            const data = await res.json()
+                            if (data.ok) {
+                              toast.success(`Deleted ${f.name}`)
+                              setBackupFiles(prev => prev.filter(b => b.name !== f.name))
+                            } else {
+                              toast.error(data.error || 'Failed to delete')
+                            }
+                          } catch {
+                            toast.error('Failed to delete backup')
+                          }
+                        }}
+                        className="rounded border border-border/40 p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        title="Delete backup"
+                        aria-label={`Delete ${f.name}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                     </li>
                   ))}
                 </ul>
