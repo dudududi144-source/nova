@@ -1692,11 +1692,24 @@ export default function Home() {
   // Useful for quick sharing or when the user just wants the raw HTML.
   const downloadHtml = useCallback(() => {
     if (!result?.html) return
-    const blob = new Blob([result.html], { type: 'text/html' })
+    // v29.8: For non-HTML output, use the detected language's file extension
+    const isNonHtml = result.previewable === false
+    const fileName = isNonHtml && result.fileName
+      ? result.fileName
+      : sanitizeFilename(result.mission)
+    const mimeType = isNonHtml && result.language
+      ? (result.language === 'python' ? 'text/x-python'
+         : result.language === 'javascript' ? 'text/javascript'
+         : result.language === 'bash' ? 'text/x-shellscript'
+         : result.language === 'json' ? 'application/json'
+         : result.language === 'sql' ? 'application/sql'
+         : 'text/plain')
+      : 'text/html'
+    const blob = new Blob([result.html], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = sanitizeFilename(result.mission)
+    a.download = fileName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -3521,9 +3534,9 @@ export default function Home() {
                   ZIP
                 </Button>
                 {/* v13: Direct HTML download — single file, no ZIP wrapping */}
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={downloadHtml} disabled={!result} title="Download as single HTML file">
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={downloadHtml} disabled={!result} title={result?.previewable === false ? 'Download as code file' : 'Download as single HTML file'}>
                   <Download className="h-3.5 w-3.5" />
-                  <span className="hidden lg:inline">HTML</span>
+                  <span className="hidden lg:inline">{result?.previewable === false ? 'Code' : 'HTML'}</span>
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={() => build()} disabled={loading || refining} title="Rebuild from scratch">
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
