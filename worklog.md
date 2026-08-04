@@ -4746,3 +4746,35 @@ VERIFICATION:
 - GitHub: all commits pushed successfully
 
 GITHUB: rabotatony/nova — latest commit 7104c71
+
+---
+Task ID: 661-680
+Agent: main (Z.ai Code)
+Task: v29.9 — Refine route supports non-HTML code
+
+MAJOR FIX:
+The refine route was rejecting non-HTML code with 'Invalid HTML' error.
+This meant users couldn't refine Python/SQL/Bash code — only HTML apps.
+
+CHANGES:
+1. Removed HTML validation that rejected non-HTML input (line 97)
+2. Updated prompt: 'Return updated HTML' → 'Return updated code' for non-HTML
+3. Added non-HTML output handling (same as code route):
+   - Uses detectLanguageFromContent() for language detection
+   - Returns language, fileName, outputType, previewable:false
+   - Stores result with all metadata
+
+Now the full pipeline supports non-HTML:
+- Generate Python code → refine it → see updated code
+- Generate SQL query → refine it → see updated query
+- Generate Bash script → refine it → see updated script
+- All with Run button support for executable languages
+
+VERIFICATION:
+- 205 tests pass (0 fail)
+- 0 lint errors
+- /api/run verified: print("v29.9 working") → ok:true
+- Server loads page successfully
+- GitHub: all commits pushed (70bab9c)
+
+GITHUB: rabotatony/nova — latest commit 70bab9c
