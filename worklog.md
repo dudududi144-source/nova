@@ -4778,3 +4778,38 @@ VERIFICATION:
 - GitHub: all commits pushed (70bab9c)
 
 GITHUB: rabotatony/nova — latest commit 70bab9c
+
+---
+Task ID: 681-700
+Agent: main (Z.ai Code)
+Task: v29.10 — Backups panel + /api/backup endpoint
+
+NEW FEATURES:
+1. /api/backup endpoint (src/app/api/backup/route.ts):
+   - GET /api/backup → List all backup files (JSON)
+   - GET /api/backup?file=name.zip → Download specific file
+   - Path traversal protection (blocks ../ and /)
+   - Supports .zip and .bundle files
+   - VERIFIED: 13 files listed, 509KB download successful
+
+2. Backups button in sidebar (next to Export/Import/Clear):
+   - Opens modal with list of all backup files
+   - Shows filename, file size, and date
+   - Click to download any backup file
+   - Files sorted by date (newest first)
+   - Loading state while fetching
+
+VERIFICATION:
+- /api/backup lists 13 backup files correctly
+- Download test: 509KB ZIP downloaded successfully (HTTP 200)
+- 205 tests pass
+- 0 lint errors
+- GitHub: commit 06126ba pushed
+
+USER CAN NOW DOWNLOAD BACKUPS:
+1. Open NOVA in preview panel
+2. Click "Backups" button in sidebar
+3. See list of all available ZIP files
+4. Click any file to download it
+
+GITHUB: rabotatony/nova — latest commit 06126ba
