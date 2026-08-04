@@ -145,6 +145,7 @@ export function detectLanguageFromContent(code: string): string {
     /^\s*from\s+\w+\s+import\s+/m, /^\s*if\s+__name__\s*==\s*['"]__main__['"]\s*:/m,
     /^\s*print\s*\(/m, /^\s*with\s+open\s*\(/m, /^\s*elif\s+\w+.*:\s*$/m,
     /^\s*raise\s+\w+/m, /^\s*lambda\s+/m,
+    /\[\s*[\w\s*+\-\/]*\s+for\s+\w+\s+in\s+/m, // list comprehension: [x**2 for x in ...]
   ]
   let pythonScore = 0
   for (const re of pythonSignals) if (re.test(trimmed)) pythonScore++
