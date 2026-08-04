@@ -3635,6 +3635,50 @@ export default function Home() {
                     Live Code Editor
                   </p>
                   <div className="flex items-center gap-2">
+                    {/* v29.6: Run from editor — for non-HTML executable output */}
+                    {result.previewable === false && result.language && ['python', 'javascript', 'bash'].includes(result.language) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 gap-1 text-[10px] text-emerald-400 hover:bg-emerald-500/10"
+                        onClick={async () => {
+                          if (!editedHtml || !result) return
+                          const lang = result.language || 'text'
+                          try {
+                            const payload: Record<string, unknown> = {
+                              language: lang === 'javascript' ? 'javascript' : lang,
+                            }
+                            if (result.files && result.files.length > 0) {
+                              payload.files = result.files.map(f => ({
+                                path: f.path,
+                                content: f.path === (result.fileName || result.files[0]?.path) ? editedHtml : f.content,
+                              }))
+                              payload.primaryFile = result.fileName || result.files[0]?.path
+                            } else {
+                              payload.code = editedHtml
+                            }
+                            toast.info('Running edited code...')
+                            const res = await fetch('/api/run', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(payload),
+                            })
+                            const data = await res.json()
+                            if (data.ok) {
+                              toast.success(`Success (${data.ms}ms): ${(data.stdout || '(no output)').slice(0, 60)}`)
+                            } else {
+                              toast.error(`Failed: ${(data.stderr || data.error || '').slice(0, 80)}`)
+                            }
+                          } catch (err) {
+                            toast.error(`Run failed: ${err instanceof Error ? err.message : String(err)}`)
+                          }
+                        }}
+                        title="Run edited code in sandbox"
+                      >
+                        <Play className="h-3 w-3" />
+                        Run
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -3677,7 +3721,7 @@ export default function Home() {
                   onChange={(e) => setEditedHtml(e.target.value)}
                   className="h-48 w-full resize-none bg-neutral-950 p-3 font-mono text-[11px] text-neutral-300 focus:outline-none"
                   spellCheck={false}
-                  placeholder="Edit HTML here..."
+                  placeholder="Edit code here..."
                 />
               </div>
             )}
