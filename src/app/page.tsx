@@ -3209,6 +3209,23 @@ export default function Home() {
                                   <GitCompare className="h-3 w-3" />
                                 </button>
                               )}
+                              {/* v29.13: Delete this version from history */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!confirm(`Delete this build from history?\n\n${h.mission.slice(0, 60)}`)) return
+                                  const newHistory = history.filter(item => item.id !== h.id)
+                                  setHistory(newHistory)
+                                  saveHistoryToStorage(newHistory)
+                                  toast.success('Build deleted from history')
+                                }}
+                                className="shrink-0 rounded border border-border/30 bg-card/20 px-1.5 text-[9px] text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+                                title="Delete this version from history"
+                                aria-label={`Delete version ${versionCount - i}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
                             </div>
                           ))}
                         </div>
