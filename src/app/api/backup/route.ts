@@ -78,3 +78,90 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+// POST /api/backup — Create a new backup ZIP of all source files.
+// Saves to download/ directory with timestamp.
+export async function POST(): Promise<Response> {
+  try {
+    const { createZip } = await import('@/lib/zip')
+    const { readdirSync, readFileSync, mkdirSync, writeFileSync, existsSync } = await import('fs')
+
+    // Ensure download directory exists
+    if (!existsSync(BACKUP_DIR)) {
+      mkdirSync(BACKUP_DIR, { recursive: true })
+    }
+
+    // Collect all source files
+    const files: { name: string; content: string }[] = []
+    const srcDir = join(process.cwd(), 'src')
+    const testsDir = join(process.cwd(), 'tests')
+    const rootFiles = ['package.json', 'tsconfig.json', 'next.config.ts', 'README.md', 'worklog.md']
+
+    // Add src/ files
+    if (existsSync(srcDir)) {
+      const collectFromDir = (dir: string, base: string = '') => {
+        const entries = readdirSync(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          const fullPath = join(dir, entry.name)
+          const relPath = base ? `${base}/${entry.name}` : entry.name
+          if (entry.isDirectory()) {
+            collectFromDir(fullPath, relPath)
+          } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx') || entry.name.endsWith('.js')) {
+            try {
+              files.push({ name: `src/${relPath}`, content: readFileSync(fullPath, 'utf-8') })
+            } catch {}
+          }
+        }
+      }
+      collectFromDir(srcDir)
+    }
+
+    // Add tests/ files
+    if (existsSync(testsDir)) {
+      const entries = readdirSync(testsDir)
+      for (const entry of entries) {
+        if (entry.endsWith('.test.ts')) {
+          try {
+            files.push({ name: `tests/${entry}`, content: readFileSync(join(testsDir, entry), 'utf-8') })
+          } catch {}
+        }
+      }
+    }
+
+    // Add root files
+    for (const file of rootFiles) {
+      const filePath = join(process.cwd(), file)
+      if (existsSync(filePath)) {
+        try {
+          files.push({ name: file, content: readFileSync(filePath, 'utf-8') })
+        } catch {}
+      }
+    }
+
+    if (files.length === 0) {
+      return Response.json({ ok: false, error: 'No files found to backup' }, { status: 500 })
+    }
+
+    // Create ZIP
+    const zipBytes = createZip(files)
+    const date = new Date()
+    const dateStr = date.toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const fileName = `nova-backup-${dateStr}.zip`
+    const zipPath = join(BACKUP_DIR, fileName)
+
+    writeFileSync(zipPath, Buffer.from(zipBytes))
+
+    const stat = statSync(zipPath)
+    return Response.json({
+      ok: true,
+      fileName,
+      fileCount: files.length,
+      size: stat.size,
+      sizeFormatted: formatBytes(stat.size),
+      url: `/api/backup?file=${encodeURIComponent(fileName)}`,
+    })
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    return Response.json({ ok: false, error: errorMsg }, { status: 500 })
+  }
+}

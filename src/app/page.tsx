@@ -4201,17 +4201,46 @@ export default function Home() {
           >
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold">NOVA Backups</h2>
-              <button
-                type="button"
-                onClick={() => setShowBackups(false)}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={async () => {
+                    try {
+                      toast.info('Creating backup...')
+                      const res = await fetch('/api/backup', { method: 'POST' })
+                      const data = await res.json()
+                      if (data.ok) {
+                        toast.success(`Backup created: ${data.fileName}`)
+                        // Refresh the list
+                        const listRes = await fetch('/api/backup')
+                        const listData = await listRes.json()
+                        setBackupFiles(listData.files || [])
+                      } else {
+                        toast.error(data.error || 'Failed to create backup')
+                      }
+                    } catch (err) {
+                      toast.error('Failed to create backup')
+                    }
+                  }}
+                  title="Create a new backup ZIP of all source files"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New Backup
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setShowBackups(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <p className="mb-3 text-[11px] text-muted-foreground">
-              Download NOVA backup files. Click a file to download it.
+              Download NOVA backup files. Click a file to download it. Click "New Backup" to create a fresh one.
             </p>
             <div className="max-h-[60vh] overflow-y-auto">
               {loadingBackups ? (
