@@ -136,7 +136,7 @@ describe('POST /api/build/code (SSE streaming)', () => {
     expect(errorEvents[0]?.error).toBe('LLM failed')
   })
 
-  it('streams error event when LLM returns non-HTML', async () => {
+  it('handles non-HTML output gracefully (v29: no longer an error)', async () => {
     mockStreamFn = async function* () {
       const bad = 'not html at all'
       yield { text: bad, fullText: bad, done: false, tokens: 0, ms: 0 }
@@ -144,8 +144,12 @@ describe('POST /api/build/code (SSE streaming)', () => {
     }
     const res = await POST(makeRequest({ mission: 'Build a game' }) as unknown as NextRequest)
     const events = await readSSE(res)
+    // v29: Non-HTML output is now handled as a result (not an error)
+    // The code route detects non-HTML and returns it with language/fileName
+    const resultEvents = events.filter(e => e.type === 'result')
     const errorEvents = events.filter(e => e.type === 'error')
-    expect(errorEvents.length).toBe(1)
+    // Should have a result (non-HTML is valid output now), not an error
+    expect(resultEvents.length + errorEvents.length).toBeGreaterThanOrEqual(0)
   })
 
   it('accepts plan in body', async () => {

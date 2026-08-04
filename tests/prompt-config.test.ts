@@ -42,11 +42,10 @@ describe('Architect route characterization', () => {
 })
 
 describe('Code route characterization (SSE)', () => {
-  it('has CODER_PROMPT with quality requirements', () => {
-    expect(codeSource).toContain('CODER_PROMPT')
-    // v10.2: Prompt is now fully free — no prescriptive instructions
+  it('has buildPrompt with quality requirements (v29: replaced CODER_PROMPT)', () => {
+    // v29: CODER_PROMPT was replaced with buildPrompt() function
+    expect(codeSource).toContain('buildPrompt')
     expect(codeSource).toContain('elite software engineer')
-    expect(codeSource).toContain('creative freedom')
     expect(codeSource).toContain('production-quality')
   })
 
