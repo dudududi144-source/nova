@@ -417,6 +417,10 @@ export default function Home() {
   const [templates, setTemplates] = useState<PromptTemplate[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
   const [saveTemplateName, setSaveTemplateName] = useState('')
+  // v29.10: Backups panel — download NOVA backup ZIP files
+  const [showBackups, setShowBackups] = useState(false)
+  const [backupFiles, setBackupFiles] = useState<{ name: string; size: number; sizeFormatted: string; modified: string; url: string }[]>([])
+  const [loadingBackups, setLoadingBackups] = useState(false)
   // v15: Quick mode — smaller token budget for faster builds (~2min vs ~5min)
   const [quickMode, setQuickMode] = useState(false)
   const quickModeRef = useRef(false)
@@ -584,6 +588,19 @@ export default function Home() {
     quickModeRef.current = quickMode
     try { localStorage.setItem('nova_quick_mode', String(quickMode)) } catch {}
   }, [quickMode])
+
+  // v29.10: Load backup files when panel opens
+  useEffect(() => {
+    if (!showBackups) return
+    setLoadingBackups(true)
+    fetch('/api/backup')
+      .then(r => r.json())
+      .then(d => {
+        setBackupFiles(d.files || [])
+        setLoadingBackups(false)
+      })
+      .catch(() => setLoadingBackups(false))
+  }, [showBackups])
 
   // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
   // to avoid double-firing in React StrictMode.
@@ -3262,6 +3279,15 @@ export default function Home() {
                   >
                     Clear
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBackups(true)}
+                    disabled={loading || refining}
+                    className="flex-1 rounded border border-border/40 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50"
+                    title="Download NOVA backup ZIP files"
+                  >
+                    Backups
+                  </button>
                 </div>
               )}
             </div>
@@ -4157,6 +4183,67 @@ export default function Home() {
               sandbox="allow-scripts"
               className="h-full w-full border-0 bg-neutral-950"
             />
+          </div>
+        </div>
+      )}
+
+      {/* v29.10: Backups panel — download NOVA backup ZIP files */}
+      {showBackups && (
+        <div
+          role="dialog"
+          aria-label="Backup files"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowBackups(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg border border-border/40 bg-card p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">NOVA Backups</h2>
+              <button
+                type="button"
+                onClick={() => setShowBackups(false)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-3 text-[11px] text-muted-foreground">
+              Download NOVA backup files. Click a file to download it.
+            </p>
+            <div className="max-h-[60vh] overflow-y-auto">
+              {loadingBackups ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading...
+                </div>
+              ) : backupFiles.length === 0 ? (
+                <div className="py-4 text-sm text-muted-foreground">No backup files found.</div>
+              ) : (
+                <ul className="space-y-1">
+                  {backupFiles.map(f => (
+                    <li key={f.name}>
+                      <a
+                        href={f.url}
+                        download={f.name}
+                        className="flex items-center justify-between rounded border border-border/40 px-3 py-2 text-xs transition-colors hover:bg-accent"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Download className="h-3 w-3 text-muted-foreground" />
+                          <span className="font-mono text-foreground">{f.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <span>{f.sizeFormatted}</span>
+                          <span className="text-[10px]">{new Date(f.modified).toLocaleDateString()}</span>
+                        </div>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
       )}
