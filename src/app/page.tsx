@@ -3318,6 +3318,27 @@ export default function Home() {
                     {probeResult.functionalScore}% fn
                   </span>
                 )}
+                {/* v29: Re-test button — re-runs the interaction probe on the current HTML.
+                    Useful when the probe is updated or when loading old builds from history. */}
+                {result && !loading && !refining && !autoFixing && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={async () => {
+                      if (!result) return
+                      setProbeResult(null)
+                      const isGame = /\b(game|snake|tetris|chess|puzzle|arcade|play|score)\b/i.test(result.mission)
+                      const probe = await probeApp(result.html, isGame)
+                      setProbeResult({ ...probe, summary: `${result.id} ${probe.summary}` })
+                      toast.success(`Probe complete: ${probe.functionalScore}% functional (${probe.functionalClicks}/${probe.buttonsClicked} buttons work)`)
+                    }}
+                    title="Re-run the interaction probe to test all buttons"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Re-test
+                  </Button>
+                )}
                 {/* v3: Auto-fix button — appears when runtime errors found OR functional score is low */}
                 {result && !loading && !refining && !autoFixing && (runtimeErrors.length > 0 || (probeResult && probeResult.errors.length > 0) || (probeResult && probeResult.functionalScore < 50 && probeResult.buttonsClicked > 0)) && (
                   <Button
