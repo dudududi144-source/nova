@@ -4715,3 +4715,34 @@ KNOWN ISSUE:
 
 GITHUB: rabotatony/nova — all work pushed
 Latest commit: 356a68e v29.5: Add Copy output button to RunPanel
+
+---
+Task ID: 641-660
+Agent: main (Z.ai Code)
+Task: v29.6-v29.8 — Run from editor + Copy output + Smart download
+
+v29.6: Run from Live Code Editor
+- Run button in Live Code Editor for non-HTML output
+- Runs edited code directly via /api/run sandbox
+- For multi-file: updates primary file's content
+- Shows toast with result (success/error)
+
+v29.7: Fix characterization tests
+- Updated code-route-sse test: non-HTML no longer returns error
+- Updated prompt-config test: CODER_PROMPT → buildPrompt
+- Updated page-config test: Content-Type check for build flows only
+
+v29.8: Smart download
+- downloadHtml() detects non-HTML and uses correct file extension
+- Uses result.fileName (script.py, query.sql, etc.)
+- Sets correct MIME type per language
+- Download button label: 'HTML' → 'Code' for non-HTML
+
+VERIFICATION:
+- 205 tests pass (0 fail)
+- 0 lint errors
+- /api/run verified: print(42) → ok:true, stdout:'42'
+- UI loads in browser (verified multiple times)
+- GitHub: all commits pushed successfully
+
+GITHUB: rabotatony/nova — latest commit 7104c71
