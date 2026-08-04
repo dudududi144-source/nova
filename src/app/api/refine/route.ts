@@ -93,8 +93,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Validate message (reuse validateMission — same rules: 3-500 chars, no control chars)
   const messageCheck = validateMission(message)
   if (!messageCheck.ok) return Response.json({ ok: false, error: messageCheck.error ?? 'Invalid message' }, { status: 400 })
-  // Validate HTML — must look like a complete HTML document
-  if (!looksLikeHtml(html)) return Response.json({ ok: false, error: 'Invalid HTML' }, { status: 400 })
+  // v29.9: Allow non-HTML code too (Python, SQL, Bash, etc.) — not just HTML
+  // if (!looksLikeHtml(html)) return Response.json({ ok: false, error: 'Invalid HTML' }, { status: 400 })
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip') || 'unknown'
@@ -105,7 +105,11 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   logger.info('refine.started', { ip, mission: mission.slice(0, 80), message: message.slice(0, 80) })
 
-  const userPrompt = `Original mission: ${mission}\n\nCurrent HTML:\n${html}\n\nUser request: ${message}\n\nReturn the complete updated HTML.`
+  // v29.9: Adapt prompt based on whether input is HTML or other code
+  const isHtml = looksLikeHtml(html)
+  const userPrompt = isHtml
+    ? `Original mission: ${mission}\n\nCurrent HTML:\n${html}\n\nUser request: ${message}\n\nReturn the complete updated HTML.`
+    : `Original mission: ${mission}\n\nCurrent code:\n${html}\n\nUser request: ${message}\n\nReturn the complete updated code.`
 
   const encoder = new TextEncoder()
   const startTime = Date.now()
@@ -235,9 +239,37 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
         }
 
+        // v29.9: Handle non-HTML output (Python, SQL, Bash, etc.) — don't reject
         if (!looksLikeHtml(rawHtml)) {
-          logger.warn('refine.invalid_html', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: 'The AI generated invalid output. Try rephrasing your request.' })}\n\n`)
+          // Non-HTML output — return it as-is with language detection
+          logger.info('refine.non_html_output', { ip, ms: llmMs, tokens: totalTokens, outputLen: rawHtml.length })
+          const totalMs = Date.now() - startTime
+          const metrics = `${rawHtml.split('\n').length} lines`
+
+          // Detect language from content
+          const { detectLanguageFromContent, defaultFileNameForLanguage } = await import('@/lib/multi-file')
+          const language = detectLanguageFromContent(rawHtml)
+          const fileName = defaultFileNameForLanguage(language)
+
+          const resultData = {
+            type: 'result',
+            html: rawHtml,
+            tokens: totalTokens,
+            ms: totalMs,
+            quality: 100,
+            metrics,
+            outputType: language === 'python' ? 'python' : language === 'javascript' || language === 'typescript' ? 'node' : 'code',
+            previewable: false,
+            language,
+            fileName,
+          }
+
+          storeResult(buildId, {
+            html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics,
+            outputType: resultData.outputType, previewable: false,
+          })
+          safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
+          await new Promise(r => setTimeout(r, 200))
           safeClose()
           return
         }
