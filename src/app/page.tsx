@@ -215,6 +215,8 @@ function RunCodeButton({ result }: { result: BuildResult }) {
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState<{ stdout: string; stderr: string; exitCode: number; ms: number; timedOut: boolean } | null>(null)
   const [showOutput, setShowOutput] = useState(false)
+  const [showStdin, setShowStdin] = useState(false)
+  const [stdin, setStdin] = useState('')
 
   const handleRun = useCallback(async () => {
     if (!result || running) return
@@ -225,6 +227,9 @@ function RunCodeButton({ result }: { result: BuildResult }) {
       const lang = result.language || 'text'
       const payload: Record<string, unknown> = {
         language: lang === 'javascript' || lang === 'js' || lang === 'node' ? 'javascript' : lang,
+      }
+      if (stdin.trim()) {
+        payload.stdin = stdin
       }
       if (result.files && result.files.length > 0) {
         payload.files = result.files.map(f => ({ path: f.path, content: f.content }))
@@ -258,7 +263,7 @@ function RunCodeButton({ result }: { result: BuildResult }) {
     } finally {
       setRunning(false)
     }
-  }, [result, running])
+  }, [result, running, stdin])
 
   return (
     <>
@@ -297,6 +302,15 @@ function RunCodeButton({ result }: { result: BuildResult }) {
                 )}
                 <button
                   type="button"
+                  onClick={() => setShowStdin(!showStdin)}
+                  className={`rounded p-1 transition-colors ${showStdin ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'}`}
+                  title="Toggle stdin input"
+                  aria-label="Toggle stdin input"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowOutput(false)}
                   className="rounded p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                   aria-label="Close"
@@ -305,6 +319,32 @@ function RunCodeButton({ result }: { result: BuildResult }) {
                 </button>
               </div>
             </div>
+            {showStdin && (
+              <div className="mb-3">
+                <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                  stdin input
+                </label>
+                <textarea
+                  value={stdin}
+                  onChange={(e) => setStdin(e.target.value)}
+                  className="h-20 w-full resize-none rounded border border-border/40 bg-neutral-950 p-2 font-mono text-[11px] text-neutral-300 focus:outline-none"
+                  placeholder="Enter input for the script (stdin)..."
+                  spellCheck={false}
+                />
+                <div className="mt-1 flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 gap-1 text-[10px] text-emerald-400 hover:bg-emerald-500/10"
+                    onClick={handleRun}
+                    disabled={running}
+                  >
+                    {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                    Run with stdin
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="max-h-[60vh] overflow-auto rounded-md bg-neutral-950 p-4 font-mono text-[12px]">
               {running ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
