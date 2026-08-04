@@ -491,11 +491,30 @@ export function parseOutput(text: string): MultiFileResult {
   }
 
   // Case 5: Fallback — treat as a single code file
-  const file: OutputFile = { path: 'output.txt', content: stripped, language: 'text' }
+  // v29: Use content-based language detection so Python/SQL/Bash/etc. get proper
+  // syntax highlighting instead of being labeled as 'text'.
+  const detectedLanguage = detectLanguageFromContent(stripped)
+  const fileName = defaultFileNameForLanguage(detectedLanguage)
+  const file: OutputFile = { path: fileName, content: stripped, language: detectedLanguage }
+  // Map detected language to an output type
+  const langToType: Record<string, OutputType> = {
+    python: 'python',
+    javascript: 'node',
+    typescript: 'node',
+    bash: 'code',
+    sql: 'code',
+    json: 'code',
+    yaml: 'code',
+    rust: 'code',
+    go: 'code',
+    markdown: 'code',
+    css: 'code',
+  }
+  const fallbackType = langToType[detectedLanguage] ?? 'code'
   return {
-    type: 'code',
+    type: fallbackType,
     files: [file],
-    primaryFile: 'output.txt',
+    primaryFile: fileName,
     previewable: false,
   }
 }

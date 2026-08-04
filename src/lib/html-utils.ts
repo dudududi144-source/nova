@@ -10,13 +10,16 @@
  * Strip markdown code fences from LLM output.
  * Handles: ```html, ```, 4+ backtick fences, empty first block, whitespace,
  * and any language identifier (javascript, css, etc. — not just html/htm).
+ * v29: Also handles file path identifiers like ```file:server_config.json
+ *      and ```file:src/App.tsx — the LLM uses these for multi-file output.
  * Returns the first non-empty fence block, or the trimmed text if no fences.
  */
 export function stripCodeFences(text: string): string {
   // Find all fence blocks. Allow any language identifier (or none).
   // Handles 3+ backticks (``` or ```` or more).
   // v10.3: Also handles prose before/after fences (Qwen adds explanations)
-  const fenceRegex = /`{3,}\s*[a-zA-Z0-9_-]*\s*\n?([\s\S]*?)\n?`{3,}/g
+  // v29: Extended character class to allow `:`, `.`, `/` for file:path identifiers
+  const fenceRegex = /`{3,}\s*[a-zA-Z0-9_:/.\-]*\s*\n?([\s\S]*?)\n?`{3,}/g
   let match
   while ((match = fenceRegex.exec(text)) !== null) {
     const content = match[1].trim()

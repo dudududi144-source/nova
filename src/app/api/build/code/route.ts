@@ -141,6 +141,21 @@ OUTPUT FORMAT:
   Repeat for each file.
 - If the request is for a web app that needs HTML, output a complete HTML file.
 
+CRITICAL — CODE MUST BE IMMEDIATELY RUNNABLE:
+- The user will click a "Run" button to execute your code in a sandbox.
+- The code MUST produce visible output when run (print to stdout).
+- The code MUST complete within 10 seconds — NO infinite loops, NO long sleeps, NO monitoring loops.
+- For Python: include a \`if __name__ == "__main__":\` block that runs demo/test cases.
+- For Node.js: include demo calls at the end that console.log results.
+- For Bash: include echo statements showing what the script does. Run ONCE and exit.
+- For monitoring scripts (disk usage, log watcher, etc.): do ONE check and print the result. Do NOT loop.
+- Include at least 3-5 test cases that demonstrate the code works correctly.
+- Example: if writing a prime checker, test with known primes (2, 3, 5, 7, 11) and composites (4, 6, 8, 9, 10).
+- The sandbox has NO network access — don't call external APIs or pip install.
+- The sandbox has NO stdin — don't use input(). Hardcode test values instead.
+- The sandbox has NO mail/cron/systemd — don't use system services.
+- Execution timeout is 10 seconds — keep algorithms efficient.
+
 QUALITY RULES:
 - Write clean, idiomatic code following best practices for the language.
 - Add comments for complex logic.
@@ -152,10 +167,10 @@ QUALITY RULES:
 - If writing a query, make it optimized and safe (parameterized).
 
 LANGUAGE-SPECIFIC:
-- Python: Use type hints, docstrings, follow PEP 8. Include requirements if needed.
-- Node.js: Use modern ES modules or CommonJS appropriately. Include package.json if needed.
-- SQL: Use proper indexing, parameterized queries, CTEs for readability.
-- Bash: Use set -e, proper quoting, error handling.
+- Python: Use type hints, docstrings, follow PEP 8. Include a main() function with test cases.
+- Node.js: Use modern ES modules or CommonJS appropriately. Include demo output at the end.
+- SQL: Use proper indexing, parameterized queries, CTEs for readability. Include sample SELECT statements.
+- Bash: Use set -e, proper quoting, error handling. Echo what the script is doing.
 - Config files: Use proper syntax, add comments explaining each option.
 
 VERIFICATION: Before outputting, mentally trace through the code and verify:
@@ -163,6 +178,8 @@ VERIFICATION: Before outputting, mentally trace through the code and verify:
 - All functions are called with correct arguments
 - Error handling covers edge cases
 - The code is complete and runnable
+- Running the code will produce visible output (stdout)
+- Test cases demonstrate the code works correctly
 
 If a plan is provided, use it as inspiration, not a constraint.
 
