@@ -968,6 +968,17 @@ interface RunPanelProps {
 function RunPanel({ result, running, onClose }: RunPanelProps) {
   const hasOutput = result && (result.stdout || result.stderr)
   const success = result && result.exitCode === 0
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    if (!result) return
+    try {
+      const text = result.stdout + (result.stderr ? '\n--- stderr ---\n' + result.stderr : '')
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
+  }, [result])
 
   return (
     <div className="flex max-h-[40%] min-h-[160px] flex-col border-t border-border/40 bg-neutral-950">
@@ -988,15 +999,28 @@ function RunPanel({ result, running, onClose }: RunPanelProps) {
             </>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-          title="Close output panel"
-          aria-label="Close output panel"
-        >
-          <X className="h-3 w-3" />
-        </button>
+        <div className="flex items-center gap-1">
+          {hasOutput && !running && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              title="Copy output"
+              aria-label="Copy output"
+            >
+              {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            title="Close output panel"
+            aria-label="Close output panel"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-[11px] leading-relaxed">
         {running ? (
