@@ -4813,3 +4813,34 @@ USER CAN NOW DOWNLOAD BACKUPS:
 4. Click any file to download it
 
 GITHUB: rabotatony/nova — latest commit 06126ba
+
+---
+Task ID: 701-720
+Agent: main (Z.ai Code)
+Task: v29.12-v29.13 — Backup CRUD + history delete
+
+v29.12: Delete backup feature
+- DELETE /api/backup?file=name.zip endpoint
+- Path traversal protection
+- Delete button (trash icon) in Backups panel
+- Confirmation dialog before deletion
+- VERIFIED: file deleted, count 14→13
+
+v29.13: Delete individual history items
+- Delete button (trash icon) next to each build in version history
+- Confirmation dialog
+- Updates history state + localStorage
+- Toast notification on success
+- No need to clear ALL history — can remove specific versions
+
+VERIFICATION:
+- 205 tests pass (0 fail)
+- 0 lint errors
+- /api/backup CRUD all verified:
+  - GET (list): 14 files
+  - GET (download): 1.3MB
+  - POST (create): 150 files, 1.3MB
+  - DELETE: file removed successfully
+- New backup created: nova-backup-2026-08-04T19-17-49.zip
+
+GITHUB: rabotatony/nova — latest commit a2230d0
