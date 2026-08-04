@@ -24,7 +24,7 @@ import { checkPlanAdherence } from '@/lib/plan-adherence'
 import { analyzeHtml } from '@/lib/static-analysis'
 import { registerBuild, storeResult, storeError } from '@/lib/build-store'
 import { recordSuccess, recordFailure } from '@/lib/model-circuit-breaker'
-import { parseOutput } from '@/lib/multi-file'
+import { parseOutput, detectLanguageFromContent, defaultFileNameForLanguage } from '@/lib/multi-file'
 import { isTokenRouterConfigured, tokenRouterStream } from '@/lib/tokenrouter'
 import { isDashScopeConfigured, dashscopeStream } from '@/lib/dashscope'
 
@@ -446,44 +446,48 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         if (!isHtmlOutput) {
           // v28: Non-HTML output (Python, Node, SQL, config, etc.)
-          // Don't try to process it as HTML — send it as-is with file info
+          // v29: Use content-based language detection (more accurate than mission keywords)
           logger.info('code.non_html_output', { ip, ms: llmMs, tokens: totalTokens, outputLen: rawHtml.length })
 
-          // Detect language from mission
-          const missionLower = mission.toLowerCase()
-          let language = 'text'
-          let fileName = 'output.txt'
-          if (missionLower.includes('python') || missionLower.includes('.py')) { language = 'python'; fileName = 'script.py' }
-          else if (missionLower.includes('sql') || missionLower.includes('query')) { language = 'sql'; fileName = 'query.sql' }
-          else if (missionLower.includes('bash') || missionLower.includes('shell') || missionLower.includes('.sh')) { language = 'bash'; fileName = 'script.sh' }
-          else if (missionLower.includes('json')) { language = 'json'; fileName = 'config.json' }
-          else if (missionLower.includes('yaml') || missionLower.includes('yml')) { language = 'yaml'; fileName = 'config.yaml' }
-          else if (missionLower.includes('node') || missionLower.includes('.js')) { language = 'javascript'; fileName = 'script.js' }
-          else if (missionLower.includes('typescript') || missionLower.includes('.ts')) { language = 'typescript'; fileName = 'script.ts' }
+          const language = detectLanguageFromContent(rawHtml)
+          const fileName = defaultFileNameForLanguage(language)
 
           const totalMs = Date.now() - startTime
           const metrics = { summary: `${rawHtml.split('\n').length} lines · ${language}` }
-          logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: rawHtml.length, score: 100, metrics: metrics.summary })
+          logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: rawHtml.length, score: 100, metrics: metrics.summary, language, fileName })
 
-          // Parse for multi-file output
           const multiFileResult = parseOutput(rawHtml)
+          let finalFiles = multiFileResult.files
+          if (finalFiles.length === 1 && finalFiles[0] && finalFiles[0]!.path === 'output.txt') {
+            finalFiles = [{ path: fileName, content: rawHtml, language }]
+          }
+
           const resultData: Record<string, unknown> = {
             type: 'result',
-            html: rawHtml, // Store as html field for compatibility (used by download, share, etc.)
+            html: rawHtml,
             tokens: totalTokens,
             ms: totalMs,
             quality: 100,
             metrics: metrics.summary,
-            outputType: multiFileResult.type,
-            previewable: false, // Non-HTML can't be previewed in iframe
+            outputType: multiFileResult.type === 'code'
+              ? (language === 'python' ? 'python' : language === 'javascript' || language === 'typescript' ? 'node' : 'code')
+              : multiFileResult.type,
+            previewable: false,
+            language,
+            fileName,
           }
-          if (multiFileResult.files.length > 1 || multiFileResult.type !== 'html-app') {
-            resultData.files = multiFileResult.files
-            resultData.outputType = multiFileResult.type
-            resultData.previewable = multiFileResult.previewable
+          if (finalFiles.length > 0) {
+            resultData.files = finalFiles
           }
 
-          storeResult(buildId, { html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics: metrics.summary, files: multiFileResult.files, outputType: multiFileResult.type, previewable: false })
+          storeResult(buildId, {
+            html: rawHtml, tokens: totalTokens, ms: totalMs, quality: 100, metrics: metrics.summary,
+            files: finalFiles,
+            outputType: multiFileResult.type === 'code'
+              ? (language === 'python' ? 'python' : language === 'javascript' || language === 'typescript' ? 'node' : 'code')
+              : multiFileResult.type,
+            previewable: false,
+          })
           safeEnqueue(`data: ${JSON.stringify(resultData)}\n\n`)
           // v28: Wait a bit before closing to ensure client receives the result
           await new Promise(r => setTimeout(r, 200))

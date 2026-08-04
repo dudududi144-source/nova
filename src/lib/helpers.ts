@@ -17,6 +17,10 @@ export interface BuildResult {
   /** Optional: whether this build can be previewed in NOVA's sandboxed iframe.
    *  false for non-HTML outputs (React/Python/Node) — show FileViewer instead. */
   previewable?: boolean
+  /** v29: detected programming language for non-HTML output (e.g. 'python', 'javascript', 'bash'). */
+  language?: string
+  /** v29: default filename for non-HTML output (e.g. 'script.py', 'script.sh'). */
+  fileName?: string
   /** Optional: quality score (0-100) from the static analyzer. */
   quality?: number
   /** Optional: Unix timestamp (ms) when the build was created. */

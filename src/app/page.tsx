@@ -789,6 +789,9 @@ export default function Home() {
       let finalFiles: { path: string; content: string; language: string }[] | undefined
       let finalOutputType: string | undefined
       let finalPreviewable: boolean | undefined
+      // v29: Language + filename for non-HTML output
+      let finalLanguage: string | undefined
+      let finalFileName: string | undefined
       // v16: Quality breakdown capture
       let finalQualityBreakdown: { checks: { name: string; passed: boolean; detail: string }[]; missingFeatures: string[]; staticIssues: { severity: string; message: string }[]; truncated: boolean } | null = null
 
@@ -873,6 +876,9 @@ export default function Home() {
               if (Array.isArray(evt.files)) finalFiles = evt.files
               if (typeof evt.outputType === 'string') finalOutputType = evt.outputType
               if (typeof evt.previewable === 'boolean') finalPreviewable = evt.previewable
+              // v29: Capture language + fileName for non-HTML output
+              if (typeof evt.language === 'string') finalLanguage = evt.language
+              if (typeof evt.fileName === 'string') finalFileName = evt.fileName
               // v16: Capture quality breakdown for the insights panel
               if (Array.isArray(evt.checks) || Array.isArray(evt.missingFeatures) || Array.isArray(evt.staticIssues) || evt.truncated) {
                 finalQualityBreakdown = {
@@ -912,6 +918,9 @@ export default function Home() {
               if (Array.isArray(evt.files)) finalFiles = evt.files
               if (typeof evt.outputType === 'string') finalOutputType = evt.outputType
               if (typeof evt.previewable === 'boolean') finalPreviewable = evt.previewable
+              // v29: Capture language + fileName (final flush)
+              if (typeof evt.language === 'string') finalLanguage = evt.language
+              if (typeof evt.fileName === 'string') finalFileName = evt.fileName
             } else if (evt.type === 'error') {
               streamError = evt.error ?? 'Unknown error'
             }
@@ -951,6 +960,9 @@ export default function Home() {
                 if (Array.isArray(pollData.files)) finalFiles = pollData.files
                 if (typeof pollData.outputType === 'string') finalOutputType = pollData.outputType
                 if (typeof pollData.previewable === 'boolean') finalPreviewable = pollData.previewable
+                // v29: Capture language + fileName from poll response
+                if (typeof pollData.language === 'string') finalLanguage = pollData.language
+                if (typeof pollData.fileName === 'string') finalFileName = pollData.fileName
                 break
               } else if (pollData.status === 'failed') {
                 fail(pollData.error || 'Build failed on server')
@@ -981,6 +993,9 @@ export default function Home() {
         files: finalFiles,
         outputType: finalOutputType,
         previewable: finalPreviewable,
+        // v29: Language + filename for non-HTML output (used by FileViewer Run button)
+        language: finalLanguage,
+        fileName: finalFileName,
         // v11: Quality + timestamp for version history
         quality: finalQuality,
         timestamp: Date.now(),
@@ -3867,43 +3882,26 @@ export default function Home() {
                   </div>
                 ) : result && result.previewable === false ? (
                   /* v28: Code viewer — for non-HTML output (Python, SQL, Bash, etc.)
-                      Shows the code in a FileViewer if files exist, otherwise in a simple code block */
+                      v29: Always use FileViewer (with Run button for executable languages).
+                      If files aren't populated, create a single file entry from result.html. */
                   <div className="h-full min-h-[400px] p-2">
-                    {result.files && result.files.length > 0 ? (
-                      <FileViewer
-                        files={result.files}
-                        title={result.outputType ? `Files · ${result.outputType}` : 'Files'}
-                        className="h-full"
-                      />
-                    ) : (
-                      <div className="flex h-full flex-col">
-                        <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
-                          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                            {result.outputType || 'Code'}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 gap-1 text-[10px]"
-                            onClick={() => {
-                              if (result?.html) {
-                                navigator.clipboard?.writeText(result.html).then(() => toast.success('Code copied')).catch(() => toast.error('Copy failed'))
-                              }
-                            }}
-                          >
-                            <Copy className="h-3 w-3" />
-                            Copy
-                          </Button>
-                        </div>
-                        <pre className="flex-1 overflow-auto bg-neutral-950 p-4 text-[12px] text-neutral-300">
-                          <code>{result.html}</code>
-                        </pre>
-                      </div>
-                    )}
+                    <FileViewer
+                      files={result.files && result.files.length > 0
+                        ? result.files
+                        : [{
+                            path: result.fileName || 'output.txt',
+                            content: result.html,
+                            language: result.language || 'text',
+                          }]}
+                      title={result.outputType
+                        ? `Files · ${result.outputType}${result.language ? ` · ${result.language}` : ''}`
+                        : 'Files'}
+                      className="h-full"
+                    />
                   </div>
                 ) : (
                   /* Responsive preview wrapper — centers iframe when a specific width is selected */
-                  <div className={`flex min-h-full ${previewWidth === 'full' ? 'w-full' : 'justify-center pt-4 pb-4'}`}>
+                  <div className={`flex h-full ${previewWidth === 'full' ? 'w-full' : 'justify-center pt-4 pb-4'}`}>
                     <iframe
                       key={result?.id ?? 'loading'}
                       srcDoc={(loading || refining) && livePreviewHtml

@@ -144,9 +144,14 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
             // After clicking, read again. If nothing changed, the button might not work.
 
             // Find elements that likely hold state (text content that might change)
+            // v29: Added more common state selectors that LLMs actually use
             const stateSelectors = ['#counter', '#score', '#result', '#output', '#display',
                                     '.counter', '.score', '.result', '.output', '.display',
-                                    '[data-state]', '#count', '#value', '#total']
+                                    '[data-state]', '#count', '#value', '#total',
+                                    '#counterValue', '#counter-value', '#number', '#num',
+                                    '#timer', '#time', '#elapsed', '#status', '#message',
+                                    '.value', '.count', '.number', '.timer', '.time',
+                                    'h1', 'h2', '.title', '.heading']
             const stateEls: { selector: string, el: Element }[] = []
             for (const sel of stateSelectors) {
               const el = doc.querySelector(sel)
@@ -164,9 +169,30 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
               const beforeElementCount = doc.querySelectorAll('*').length
               // Also check specific state selectors
               const before = stateEls.map(s => ({ sel: s.selector, val: s.el.textContent?.trim().slice(0, 100) ?? '' }))
+              // v29: Capture style/attribute state (display, className, disabled)
+              const beforeStyles = stateEls.map(s => {
+                const el = s.el as HTMLElement
+                return {
+                  display: el.style?.display ?? '',
+                  className: el.className ?? '',
+                  disabled: (el as HTMLButtonElement).disabled ?? false,
+                }
+              })
+              // v29: Capture modal/overlay display states
+              const beforeModals = Array.from(doc.querySelectorAll('[class*="modal"], [class*="overlay"], [class*="dialog"], [class*="popup"]')).map(el => ({
+                el: el as HTMLElement,
+                display: (el as HTMLElement).style?.display ?? '',
+              }))
 
               try {
-                (btn as HTMLButtonElement).click()
+                // v29: Dispatch full interaction sequence: mousedown → mouseup → click
+                // Many apps use mousedown/mouseup instead of click (e.g., long-press support)
+                const btnEl = btn as HTMLButtonElement
+                try {
+                  btnEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+                  btnEl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+                } catch { /* MouseEvent may not be available */ }
+                btnEl.click()
                 buttonsClicked++
                 interactions++
 
@@ -177,7 +203,7 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
 
                 let somethingChanged = false
 
-                // Check state selector changes
+                // Check state selector text changes
                 for (let j = 0; j < before.length; j++) {
                   if (before[j].val !== after[j].val) {
                     stateChanges.push({
@@ -186,6 +212,33 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
                       after: after[j].val,
                       changed: true,
                     })
+                    somethingChanged = true
+                  }
+                }
+
+                // v29: Check style/attribute changes (display, className, disabled)
+                const afterStyles = stateEls.map(s => {
+                  const el = s.el as HTMLElement
+                  return {
+                    display: el.style?.display ?? '',
+                    className: el.className ?? '',
+                    disabled: (el as HTMLButtonElement).disabled ?? false,
+                  }
+                })
+                for (let j = 0; j < beforeStyles.length; j++) {
+                  if (beforeStyles[j].display !== afterStyles[j]?.display ||
+                      beforeStyles[j].className !== afterStyles[j]?.className ||
+                      beforeStyles[j].disabled !== afterStyles[j]?.disabled) {
+                    somethingChanged = true
+                  }
+                }
+
+                // v29: Check modal display changes (display:none → display:flex means button works)
+                const afterModals = beforeModals.map(m => ({
+                  display: (m.el as HTMLElement).style?.display ?? '',
+                }))
+                for (let j = 0; j < beforeModals.length; j++) {
+                  if (beforeModals[j].display !== afterModals[j]?.display) {
                     somethingChanged = true
                   }
                 }

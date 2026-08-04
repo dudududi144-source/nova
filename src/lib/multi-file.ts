@@ -96,6 +96,124 @@ export function detectLanguage(filePath: string): string {
   return EXTENSION_MAP[ext] ?? 'text'
 }
 
+// ── Content-based language detection ──
+
+/**
+ * Detect programming language from raw code content (heuristic).
+ * Used when the LLM emits raw code without any path/extension info.
+ * Much more accurate than guessing from mission keywords.
+ */
+export function detectLanguageFromContent(code: string): string {
+  if (!code || !code.trim()) return 'text'
+  const cleaned = code.replace(/^[\s\n]*:[^\n]*\n/, '').trim()
+  const trimmed = cleaned
+  const lines = trimmed.split('\n')
+  const lower = trimmed.toLowerCase()
+
+  // Shebang lines — strongest signal
+  if (trimmed.startsWith('#!')) {
+    if (lower.includes('python')) return 'python'
+    if (lower.includes('bash') || lower.includes('/sh')) return 'bash'
+    if (lower.includes('node')) return 'javascript'
+    if (lower.includes('ruby')) return 'ruby'
+    if (lower.includes('perl')) return 'perl'
+  }
+
+  // JSON — try to parse
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try { JSON.parse(trimmed); return 'json' } catch { /* not valid JSON */ }
+  }
+
+  // HTML
+  if (lower.startsWith('<!doctype') || lower.startsWith('<html')) return 'html'
+
+  // Bash — check BEFORE Python (bash has elif, print, etc.)
+  const bashOnlySignals = [
+    /^\s*set\s+-[a-z]/m, /^\s*export\s+\w+=/m, /\$\(\s*[\w'"]/m, /\$\{\w+[^}]*\}/m,
+    /\$\w+/m, /^\s*if\s+\[\s+/m, /^\s*while\s+\[\s+/m, /^\s*fi\s*$/m,
+    /^\s*done\s*$/m, /^\s*esac\s*$/m, /^\s*then\s*$/m, /^\s*case\s+\w+\s+in\s*$/m,
+    /`\w+\s+[^`]*`/m, /^\s*echo\s+["'']?/m, /^\s*printf\s+/m,
+  ]
+  let bashScore = 0
+  for (const re of bashOnlySignals) if (re.test(trimmed)) bashScore++
+  const veryDistinctBash = /^\s*(fi|done|esac)\s*$/m.test(trimmed) || /^\s*export\s+\w+=/m.test(trimmed) || /\$\(\s*[\w'"]/m.test(trimmed)
+  if (veryDistinctBash || bashScore >= 2) return 'bash'
+
+  // Python
+  const pythonSignals = [
+    /^\s*def\s+\w+\s*\(/m, /^\s*class\s+\w+\s*[\(:]/m, /^\s*import\s+\w+/m,
+    /^\s*from\s+\w+\s+import\s+/m, /^\s*if\s+__name__\s*==\s*['"]__main__['"]\s*:/m,
+    /^\s*print\s*\(/m, /^\s*with\s+open\s*\(/m, /^\s*elif\s+\w+.*:\s*$/m,
+    /^\s*raise\s+\w+/m, /^\s*lambda\s+/m,
+  ]
+  let pythonScore = 0
+  for (const re of pythonSignals) if (re.test(trimmed)) pythonScore++
+  if (pythonScore >= 2) return 'python'
+
+  // SQL
+  const sqlStrongRegex = /\b(create\s+table|drop\s+table|alter\s+table|create\s+index|create\s+view|insert\s+into|delete\s+from|update\s+\w+\s+set)\b/i
+  if (sqlStrongRegex.test(trimmed)) return 'sql'
+  const sqlRegex = /\b(select)\b/i
+  if (sqlRegex.test(trimmed)) {
+    const sqlKeywords = (lower.match(/\b(from|where|select|insert|update|delete|create|table|index|join|inner|left|right|group\s+by|order\s+by|having)\b/g) || []).length
+    if (sqlKeywords >= 2) return 'sql'
+  }
+
+  // Rust
+  const rustSignals = [/^\s*fn\s+\w+\s*\(/m, /^\s*let\s+mut\s+/m, /^\s*pub\s+fn\s+/m, /^\s*use\s+std::/m, /^\s*impl\s+\w+/m]
+  let rustScore = 0
+  for (const re of rustSignals) if (re.test(trimmed)) rustScore++
+  if (rustScore >= 2) return 'rust'
+
+  // Go
+  const goSignals = [/^\s*package\s+\w+/m, /^\s*func\s+\w+\s*\(/m, /^\s*import\s*\(/m, /^\s*type\s+\w+\s+struct\s*\{/m]
+  let goScore = 0
+  for (const re of goSignals) if (re.test(trimmed)) goScore++
+  if (goScore >= 2) return 'go'
+
+  // YAML
+  const yamlLines = lines.filter(l => /^\s*[\w-]+\s*:\s*\S*/.test(l) && !l.includes('{') && !l.includes('}'))
+  if (yamlLines.length >= 3 && !trimmed.includes(';') && !trimmed.includes('/*') && !trimmed.includes('//')) {
+    const hasPythonIndent = /^(\s{4}|\t)\s*\w+\s*:/m.test(trimmed)
+    if (!hasPythonIndent || pythonScore === 0) return 'yaml'
+  }
+
+  // TypeScript vs JavaScript
+  const tsSignals = [/:\s*(string|number|boolean|any|void|never|unknown)\b/g, /interface\s+\w+/g, /type\s+\w+\s*=/g, /<\w+>.*\(/g, /\bas\s+\w+/g]
+  let tsScore = 0
+  for (const re of tsSignals) if (re.test(trimmed)) tsScore++
+  const jsSignals = [/^\s*const\s+\w+\s*=/m, /^\s*let\s+\w+\s*=/m, /^\s*function\s+\w+\s*\(/m, /=>\s*[{(]/m, /require\s*\(/m, /console\.(log|error|warn|info)\s*\(/m, /^\s*import\s+.*\s+from\s+['"]/m]
+  let jsScore = 0
+  for (const re of jsSignals) if (re.test(trimmed)) jsScore++
+  if (tsScore >= 2 && jsScore >= 1) return 'typescript'
+  if (tsScore >= 1) return 'typescript'
+  if (jsScore >= 2) return 'javascript'
+  if (/console\.(log|error|warn|info)\s*\(/m.test(trimmed)) return 'javascript'
+
+  // Markdown
+  if (/^#{1,6}\s+\w+/m.test(trimmed) && /\*\*[^*]+\*\*/m.test(trimmed)) return 'markdown'
+
+  // CSS
+  if (/[\w-]+\s*:\s*[^;]+;/.test(trimmed) && /[.#]?[\w-]+\s*\{/.test(trimmed)) return 'css'
+
+  return 'text'
+}
+
+/**
+ * Pick a sensible filename for a single-file code output based on language.
+ */
+export function defaultFileNameForLanguage(language: string): string {
+  const map: Record<string, string> = {
+    python: 'script.py', sql: 'query.sql', bash: 'script.sh',
+    javascript: 'script.js', typescript: 'script.ts', json: 'config.json',
+    yaml: 'config.yaml', rust: 'main.rs', go: 'main.go', java: 'Main.java',
+    c: 'main.c', cpp: 'main.cpp', csharp: 'Program.cs', php: 'script.php',
+    ruby: 'script.rb', markdown: 'README.md', css: 'styles.css',
+    html: 'index.html', text: 'output.txt',
+  }
+  return map[language] ?? 'output.txt'
+}
+
 // ── Output type detection ──
 
 /**

@@ -107,7 +107,7 @@ export class PreviewErrorBoundary extends Component<Props, State> {
     // The `key` prop forces React to remount children on recovery — without it,
     // a crashed component might keep its broken internal state.
     return (
-      <div key={this.state.recoveryKey} className="h-full">
+      <div key={this.state.recoveryKey} className={`flex h-full flex-col ${this.props.className ?? ''}`}>
         {this.props.children}
       </div>
     )

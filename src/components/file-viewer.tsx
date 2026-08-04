@@ -33,6 +33,10 @@ import {
   Download,
   Check,
   FileArchive,
+  Play,
+  Loader2,
+  Terminal,
+  X,
 } from 'lucide-react'
 import { createZip } from '@/lib/zip'
 import { detectLanguage } from '@/lib/multi-file'
@@ -745,6 +749,12 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
   )
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
   const [copiedPath, setCopiedPath] = useState<string | null>(null)
+  // v29: Run panel state — for executing Python/Node/Bash code
+  const [runResult, setRunResult] = useState<{
+    stdout: string; stderr: string; exitCode: number; ms: number; timedOut: boolean
+  } | null>(null)
+  const [running, setRunning] = useState(false)
+  const [showRunPanel, setShowRunPanel] = useState(false)
 
   const tree = useMemo(() => buildTree(files), [files])
 
@@ -752,6 +762,13 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
     () => files.find(f => f.path === selectedPath) ?? files[0] ?? null,
     [files, selectedPath],
   )
+
+  // v29: Check if the selected file is executable (python/javascript/bash)
+  const isExecutable = useMemo(() => {
+    if (!selectedFile) return false
+    const lang = selectedFile.language || detectLanguage(selectedFile.path)
+    return ['python', 'javascript', 'js', 'node', 'bash', 'sh', 'shell'].includes(lang)
+  }, [selectedFile])
 
   const toggleFolder = useCallback((path: string) => {
     setCollapsedFolders(prev => {
@@ -807,6 +824,52 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
     }
   }, [files])
 
+  // v29: Run the selected file's code via /api/run endpoint.
+  // For multi-file projects, send ALL files so imports work.
+  const handleRun = useCallback(async () => {
+    if (!selectedFile || running) return
+    const lang = selectedFile.language || detectLanguage(selectedFile.path)
+    setRunning(true)
+    setShowRunPanel(true)
+    setRunResult(null)
+    try {
+      const payload: Record<string, unknown> = {
+        language: lang === 'javascript' || lang === 'js' || lang === 'node' ? 'javascript' : lang,
+      }
+      if (files.length > 1) {
+        payload.files = files.map(f => ({ path: f.path, content: f.content }))
+        payload.primaryFile = selectedFile.path
+      } else {
+        payload.code = selectedFile.content
+      }
+
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (data.ok === true || typeof data.stdout === 'string') {
+        setRunResult({
+          stdout: data.stdout ?? '', stderr: data.stderr ?? '',
+          exitCode: data.exitCode ?? 0, ms: data.ms ?? 0, timedOut: data.timedOut ?? false,
+        })
+      } else {
+        setRunResult({
+          stdout: '', stderr: data.error ?? 'Unknown error',
+          exitCode: -1, ms: 0, timedOut: false,
+        })
+      }
+    } catch (err) {
+      setRunResult({
+        stdout: '', stderr: `Network error: ${err instanceof Error ? err.message : String(err)}`,
+        exitCode: -1, ms: 0, timedOut: false,
+      })
+    } finally {
+      setRunning(false)
+    }
+  }, [selectedFile, running, files])
+
   if (!files || files.length === 0) {
     return (
       <div className={`flex items-center justify-center p-8 text-sm text-muted-foreground ${className}`}>
@@ -820,15 +883,29 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border/40 bg-card/60 px-3 py-2">
         <span className="text-xs font-medium text-foreground">{title}</span>
-        <button
-          type="button"
-          onClick={handleDownloadZip}
-          className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-          title="Download all as ZIP"
-        >
-          <FileArchive className="h-3 w-3" />
-          ZIP
-        </button>
+        <div className="flex items-center gap-1">
+          {isExecutable && (
+            <button
+              type="button"
+              onClick={handleRun}
+              disabled={running}
+              className="flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+              title="Run code (execute in sandbox)"
+            >
+              {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              {running ? 'Running...' : 'Run'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleDownloadZip}
+            className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            title="Download all as ZIP"
+          >
+            <FileArchive className="h-3 w-3" />
+            ZIP
+          </button>
+        </div>
       </div>
 
       {/* Body: tree + content */}
@@ -845,7 +922,7 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
           />
         </div>
 
-        {/* File content */}
+        {/* File content + Run panel */}
         {selectedFile ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <FileHeader
@@ -853,13 +930,93 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
               copied={copiedPath === selectedFile.path}
               onCopy={() => handleCopy(selectedFile)}
               onDownload={() => handleDownloadFile(selectedFile)}
+              isExecutable={isExecutable}
+              onRun={handleRun}
+              running={running}
             />
-            <FileContent file={selectedFile} />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <FileContent file={selectedFile} />
+              {showRunPanel && (
+                <RunPanel
+                  result={runResult}
+                  running={running}
+                  onClose={() => { setShowRunPanel(false); setRunResult(null) }}
+                />
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             Select a file
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Run panel — shows stdout/stderr from code execution ──
+
+interface RunPanelProps {
+  result: {
+    stdout: string; stderr: string; exitCode: number; ms: number; timedOut: boolean
+  } | null
+  running: boolean
+  onClose: () => void
+}
+
+function RunPanel({ result, running, onClose }: RunPanelProps) {
+  const hasOutput = result && (result.stdout || result.stderr)
+  const success = result && result.exitCode === 0
+
+  return (
+    <div className="flex max-h-[40%] min-h-[160px] flex-col border-t border-border/40 bg-neutral-950">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/30 px-3 py-1.5">
+        <div className="flex items-center gap-2">
+          <Terminal className="h-3 w-3 text-emerald-400" />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            {running ? 'Running...' : 'Output'}
+          </span>
+          {result && !running && (
+            <>
+              <span className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${
+                success ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+              }`}>
+                {success ? 'SUCCESS' : result.timedOut ? 'TIMEOUT' : `EXIT ${result.exitCode}`}
+              </span>
+              <span className="text-[10px] text-muted-foreground/60">{result.ms}ms</span>
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          title="Close output panel"
+          aria-label="Close output panel"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-[11px] leading-relaxed">
+        {running ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin text-emerald-400" />
+            <span>Executing code in sandbox...</span>
+          </div>
+        ) : !hasOutput ? (
+          <div className="text-muted-foreground/60">
+            {success ? '(no output — script ran successfully but printed nothing)' : 'No output.'}
+          </div>
+        ) : (
+          <>
+            {result!.stdout && (
+              <pre className="whitespace-pre-wrap break-words text-emerald-300">{result!.stdout}</pre>
+            )}
+            {result!.stderr && (
+              <pre className="whitespace-pre-wrap break-words text-red-400">{result!.stderr}</pre>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -966,9 +1123,13 @@ interface FileHeaderProps {
   copied: boolean
   onCopy: () => void
   onDownload: () => void
+  // v29: Run button props — only shown for executable languages
+  isExecutable?: boolean
+  onRun?: () => void
+  running?: boolean
 }
 
-function FileHeader({ file, copied, onCopy, onDownload }: FileHeaderProps) {
+function FileHeader({ file, copied, onCopy, onDownload, isExecutable, onRun, running }: FileHeaderProps) {
   const lineCount = file.content.split('\n').length
   const charCount = file.content.length
   const detected = detectLanguage(file.path)
@@ -985,6 +1146,18 @@ function FileHeader({ file, copied, onCopy, onDownload }: FileHeaderProps) {
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {isExecutable && onRun && (
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running}
+            className="flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-1 text-[10px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+            title="Run code (execute in sandbox)"
+          >
+            {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            {running ? 'Running...' : 'Run'}
+          </button>
+        )}
         <button
           type="button"
           onClick={onCopy}

@@ -24,6 +24,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     return Response.json({ error: 'Build not found', status: 'not_found', requestedId: id }, { status: 404 })
   }
 
+  // v29: Detect language from the first file's language field (if present)
+  const firstFile = result.files?.[0]
+  const language = firstFile?.language
+  const fileName = firstFile?.path
+
   return Response.json({
     status: result.status,
     html: result.html || undefined,
@@ -34,6 +39,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     files: result.files,
     outputType: result.outputType,
     previewable: result.previewable,
+    language,
+    fileName,
     suggestions: result.suggestions,
     error: result.error,
   }, { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } })
