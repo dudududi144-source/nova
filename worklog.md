@@ -4584,3 +4584,46 @@ POST-PROCESSING PIPELINE (unchanged, 6 stages):
 4. fixForms 5. fixCss 6. injectRuntimeErrorCapture
 
 Pushed to GitHub: 2d03c58..fe247d0
+
+---
+Task ID: 581-600
+Agent: main (Z.ai Code)
+Task: v29 — Load v28 from GitHub + add code execution
+
+CRITICAL FIX: Previous session was working on v10.13 (old state) instead of
+the latest v28 from GitHub. User pointed this out. Fixed by:
+1. git fetch origin — pulled latest from GitHub
+2. git reset --hard origin/main — loaded v28 (fca2781)
+3. Now have ALL v28 work: math-fixer, form-fixer, css-fixer, smart-suggestions,
+   build-stats, build-health, mission-analysis, prompt-templates, live editor,
+   version history, etc.
+
+ADDED v29 FEATURES ON TOP OF v28:
+1. /api/run endpoint — Python/JS/Bash execution sandbox
+   - VERIFIED: print(42) → ok:true, stdout:'42', exitCode:0, ms:23
+
+2. detectLanguageFromContent() — content-based language detection
+   - More accurate than v28's mission-keyword approach
+   - 22 unit tests pass
+
+3. Run button + RunPanel in FileViewer
+   - Green Run button for executable languages
+   - Shows real stdout/stderr
+
+4. PreviewErrorBoundary layout fix (iframe 150px → 328px+)
+
+5. Interaction probe fix (mousedown/mouseup + style change detection)
+
+6. BuildResult interface + SSE handler updated with language/fileName fields
+
+7. Code route uses detectLanguageFromContent() instead of mission keywords
+
+BACKUP:
+- download/nova-v29-on-v28-20260804-120306.zip (501KB, 157 files)
+- download/nova-v29-on-v28-git-bundle.bundle (47MB, full history)
+
+TESTS: 137 pass (22 language detection + 115 existing)
+Lint: 0 errors
+
+GITHUB PUSH: Failed — no credentials available (no GH_TOKEN, no SSH keys, no gh CLI)
+All work saved locally in: git commit 5bc08ef + ZIP + git bundle
