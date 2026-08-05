@@ -137,7 +137,8 @@ export function detectLanguageFromContent(code: string): string {
   let bashScore = 0
   for (const re of bashOnlySignals) if (re.test(trimmed)) bashScore++
   const veryDistinctBash = /^\s*(fi|done|esac)\s*$/m.test(trimmed) || /^\s*export\s+\w+=/m.test(trimmed) || /\$\(\s*[\w'"]/m.test(trimmed)
-  if (veryDistinctBash || bashScore >= 2) return 'bash'
+  // v29.34: echo alone is a strong bash signal — lower threshold to 1
+  if (veryDistinctBash || bashScore >= 2 || /^\s*echo\s+/m.test(trimmed)) return 'bash'
 
   // Python
   const pythonSignals = [
@@ -149,15 +150,16 @@ export function detectLanguageFromContent(code: string): string {
   ]
   let pythonScore = 0
   for (const re of pythonSignals) if (re.test(trimmed)) pythonScore++
-  if (pythonScore >= 2) return 'python'
+  // v29.34: print() or def alone are strong Python signals — lower threshold to 1
+  if (pythonScore >= 2 || /^\s*print\s*\(/m.test(trimmed) || /^\s*def\s+\w+/m.test(trimmed)) return 'python'
 
   // SQL
   const sqlStrongRegex = /\b(create\s+table|drop\s+table|alter\s+table|create\s+index|create\s+view|insert\s+into|delete\s+from|update\s+\w+\s+set)\b/i
   if (sqlStrongRegex.test(trimmed)) return 'sql'
   const sqlRegex = /\b(select)\b/i
   if (sqlRegex.test(trimmed)) {
-    const sqlKeywords = (lower.match(/\b(from|where|select|insert|update|delete|create|table|index|join|inner|left|right|group\s+by|order\s+by|having)\b/g) || []).length
-    if (sqlKeywords >= 2) return 'sql'
+    // v29.34: SELECT alone is enough for SQL
+    return 'sql'
   }
 
   // Rust
@@ -188,7 +190,8 @@ export function detectLanguageFromContent(code: string): string {
   for (const re of jsSignals) if (re.test(trimmed)) jsScore++
   if (tsScore >= 2 && jsScore >= 1) return 'typescript'
   if (tsScore >= 1) return 'typescript'
-  if (jsScore >= 2) return 'javascript'
+  // v29.34: function keyword alone is enough for JS
+  if (jsScore >= 2 || /^\s*function\s+\w+/m.test(trimmed)) return 'javascript'
   if (/console\.(log|error|warn|info)\s*\(/m.test(trimmed)) return 'javascript'
 
   // Markdown

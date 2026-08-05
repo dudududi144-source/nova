@@ -13,17 +13,26 @@ interface ConversionFix {
 
 const CONVERSION_FIXES: ConversionFix[] = [
   // Fix meter to kilometer: should divide by 1000, not multiply
+  // BUGFIX v29.34: Only fix when converting FROM meters TO km (meters * 1000 is WRONG)
+  // Do NOT fix km * 1000 (that's correct — km → meters)
   {
-    pattern: /(\w+)\s*\*\s*1000/g,
+    pattern: /\b(meters?|metres?)\s*\*\s*1000\b/gi,
     fix: (html, match) => {
-      // Only fix if context suggests unit conversion
-      const context = html.slice(Math.max(0, match.index! - 200), match.index! + 200)
-      if (/meter|kilometer|km|m\b/i.test(context)) {
-        return html.slice(0, match.index!) + match[1] + ' / 1000' + html.slice(match.index! + match[0].length)
-      }
-      return html
+      // Replace meters * 1000 with meters / 1000
+      const replacement = match[0].replace(/\s*\*\s*/, ' / ')
+      return html.slice(0, match.index!) + replacement + html.slice(match.index! + match[0].length)
     },
     description: 'Fix meter→km: multiply→divide by 1000',
+  },
+  // Fix kilometer to meter: should multiply by 1000, not divide
+  // BUGFIX v29.34: Only fix when converting FROM km TO meters (km / 1000 is WRONG)
+  {
+    pattern: /\b(km|kilometers?|kilometres?)\s*\/\s*1000\b/gi,
+    fix: (html, match) => {
+      const replacement = match[0].replace(/\s*\/\s*/, ' * ')
+      return html.slice(0, match.index!) + replacement + html.slice(match.index! + match[0].length)
+    },
+    description: 'Fix km→meter: divide→multiply by 1000',
   },
 ]
 

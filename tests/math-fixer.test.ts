@@ -25,16 +25,20 @@ describe('fixConversionMath', () => {
     expect(fixed).not.toContain('total / 1000')
   })
 
-  it('fixes when context has "kilometer" keyword within 200 chars before the match', () => {
+  it('does NOT fix when variable is not "meters" (old context-based behavior removed)', () => {
+    // v29.34: Only fixes when the variable name IS "meters/metre" or "km/kilometer"
+    // Context-based detection was removed (caused false positives)
     const html = `<script>// convert from kilometer const km = value * 1000;</script>`
     const fixed = fixConversionMath(html)
-    expect(fixed).toContain('value / 1000')
+    // value is not "meters", so it should NOT be fixed
+    expect(fixed).toContain('value * 1000')
   })
 
-  it('fixes when context has "km" keyword after the match', () => {
+  it('does NOT fix when variable is not "meters" (context "km" in comment)', () => {
     const html = `<script>const x = v * 1000; // store in km</script>`
     const fixed = fixConversionMath(html)
-    expect(fixed).toContain('v / 1000')
+    // v is not "meters", so it should NOT be fixed
+    expect(fixed).toContain('v * 1000')
   })
 
   it('returns empty string unchanged', () => {
@@ -46,14 +50,13 @@ describe('fixConversionMath', () => {
     expect(fixConversionMath(html)).toBe(html)
   })
 
-  it('handles multiple multiply-by-1000 matches and fixes only those in conversion context', () => {
-    // The "price * 1000" is isolated far from any meter/km keyword (>200 chars away).
-    const padding = 'x'.repeat(220)
-    const html = `<script>const km = meters * 1000;</script>${padding}<script>const total = price * 1000;</script>${padding}<script>const km2 = length * 1000; // km output</script>`
+  it('handles multiple matches — only fixes "meters * 1000", not other variables', () => {
+    // v29.34: Only "meters" variable is fixed, "price" and "length" are not
+    const html = `<script>const km = meters * 1000; const total = price * 1000; const km2 = length * 1000;</script>`
     const fixed = fixConversionMath(html)
     expect(fixed).toContain('meters / 1000')
-    expect(fixed).toContain('price * 1000') // price calc untouched (>200 chars from meter/km)
-    expect(fixed).toContain('length / 1000')
+    expect(fixed).toContain('price * 1000') // price calc untouched
+    expect(fixed).toContain('length * 1000') // length is not "meters"
   })
 
   it('is idempotent — running twice produces the same output', () => {
@@ -75,10 +78,12 @@ describe('fixConversionMath', () => {
     expect(fixConversionMath(html)).toBe(html)
   })
 
-  it('handles multiply-by-1000 in a different variable name', () => {
+  it('does NOT fix when variable is "distance" (not "meters")', () => {
+    // v29.34: Only "meters"/"metres" variable name triggers the fix
     const html = `<script>const km = distance * 1000; // meter to km</script>`
     const fixed = fixConversionMath(html)
-    expect(fixed).toContain('distance / 1000')
+    // distance is not "meters", so it should NOT be fixed
+    expect(fixed).toContain('distance * 1000')
   })
 
   it('does not modify division-by-1000 (already correct)', () => {
