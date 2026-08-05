@@ -128,10 +128,17 @@ export function stripBlockedAPIs(html: string): string {
 })();
 </script>`
 
-  // Inject polyfill right after <head>
+  // Inject polyfill right after <head>, or after <html>, or at the start
   const headMatch = result.match(/<head[^>]*>/i)
   if (headMatch) {
     result = result.replace(/<head[^>]*>/i, headMatch[0] + polyfill)
+  } else {
+    const htmlMatch = result.match(/<html[^>]*>/i)
+    if (htmlMatch) {
+      result = result.replace(/<html[^>]*>/i, htmlMatch[0] + polyfill)
+    } else {
+      result = polyfill + result
+    }
   }
 
   return result
