@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3, Bookmark, Trash2, Code } from 'lucide-react'
+import { Sparkles, Play, Loader2, Download, RotateCcw, AlertCircle, Zap, X, RefreshCw, Plus, Send, MessageSquare, Copy, ExternalLink, Bug, CheckCircle2, XCircle, GitCompare, Share2, GitBranch, Maximize2, Wand2, Check, Undo2, BarChart3, Bookmark, Trash2, Code, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -459,6 +459,15 @@ export default function Home() {
   const [saveTemplateName, setSaveTemplateName] = useState('')
   // v29.10: Backups panel — download NOVA backup ZIP files
   const [showBackups, setShowBackups] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [apiSettings, setApiSettings] = useState<{
+    keys: {
+      zai: { configured: boolean; masked: string; source: string }
+      dashscope: { configured: boolean; masked: string; source: string }
+      tokenrouter: { configured: boolean; masked: string; source: string }
+    }
+    models: { 'z-ai': boolean; qwen: boolean; kimi: boolean }
+  } | null>(null)
   const [backupFiles, setBackupFiles] = useState<{ name: string; size: number; sizeFormatted: string; modified: string; url: string }[]>([])
   const [loadingBackups, setLoadingBackups] = useState(false)
   // v15: Quick mode — smaller token budget for faster builds (~2min vs ~5min)
@@ -641,6 +650,15 @@ export default function Home() {
       })
       .catch(() => setLoadingBackups(false))
   }, [showBackups])
+
+  // v29.39: Load API settings when panel opens
+  useEffect(() => {
+    if (!showSettings) return
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(d => setApiSettings(d))
+      .catch(() => {})
+  }, [showSettings])
 
   // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
   // to avoid double-firing in React StrictMode.
@@ -2494,6 +2512,16 @@ export default function Home() {
           )}
           {/* v10: Dark/light mode toggle for NOVA UI */}
           <ThemeToggle />
+          {/* v29.39: Settings button — configure API keys */}
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1 rounded-md border border-border/40 px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+            title="API Settings — configure LLM API keys"
+          >
+            <Settings className="h-3 w-3" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
           {/* v4: Build-memory badge — shown when the current result was restored from IndexedDB */}
           {memoryHit && result && (
             <span
@@ -4355,6 +4383,101 @@ export default function Home() {
                 </ul>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* v29.39: Settings panel — configure API keys */}
+      {showSettings && (
+        <div
+          role="dialog"
+          aria-label="API Settings"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg border border-border/40 bg-card p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">API Settings</h2>
+              <button
+                type="button"
+                onClick={() => setShowSettings(false)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-4 text-[11px] text-muted-foreground">
+              Configure LLM API keys. Keys are stored in memory (not disk) and take precedence over environment variables.
+            </p>
+            {apiSettings ? (
+              <div className="space-y-4">
+                {[
+                  { id: 'zai', label: 'Z.AI (Primary)', key: 'zaiApiKey' },
+                  { id: 'dashscope', label: 'DashScope / Qwen (Secondary)', key: 'dashscopeApiKey' },
+                  { id: 'tokenrouter', label: 'TokenRouter / Kimi (Tertiary)', key: 'tokenrouterApiKey' },
+                ].map(({ id, label, key }) => {
+                  const info = (apiSettings.keys as Record<string, { configured: boolean; masked: string; source: string }>)[id]
+                  return (
+                    <div key={id} className="rounded-md border border-border/40 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-medium">{label}</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] ${info?.configured ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/20 text-muted-foreground'}`}>
+                          {info?.configured ? 'Configured' : 'Not set'}
+                        </span>
+                      </div>
+                      {info?.configured && (
+                        <p className="mb-2 text-[10px] text-muted-foreground/60">
+                          Current: {info.masked} ({info.source})
+                        </p>
+                      )}
+                      <input
+                        type="password"
+                        placeholder="Enter API key..."
+                        className="w-full rounded border border-border/40 bg-background px-2 py-1.5 text-[11px] focus:outline-none focus:border-primary"
+                        onChange={async (e) => {
+                          const value = e.target.value
+                          if (!value) return
+                          try {
+                            const res = await fetch('/api/settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ [key]: value }),
+                            })
+                            const data = await res.json()
+                            if (data.ok) {
+                              setApiSettings({ keys: data.keys, models: data.models })
+                              toast.success(`${label} key updated`)
+                              e.target.value = ''
+                            }
+                          } catch {
+                            toast.error('Failed to update key')
+                          }
+                        }}
+                      />
+                    </div>
+                  )
+                })}
+                <div className="rounded-md bg-muted/10 p-3 text-[10px] text-muted-foreground">
+                  <p className="font-medium">Available models:</p>
+                  <div className="mt-1 flex gap-2">
+                    {Object.entries(apiSettings.models).map(([model, available]) => (
+                      <span key={model} className={`rounded px-1.5 py-0.5 text-[9px] ${available ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/20 text-muted-foreground/50'}`}>
+                        {model === 'z-ai' ? 'Z.AI' : model === 'qwen' ? 'Qwen' : 'Kimi'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            )}
           </div>
         </div>
       )}

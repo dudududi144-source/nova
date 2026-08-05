@@ -51,7 +51,7 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   if (!js.trim()) {
     // v29.36: Even without <script>, check onclick handlers — they might reference
     // undefined functions that the LLM forgot to define
-    const issues: AnalyzeIssue[] = []
+    const issues: StaticAnalysisIssue[] = []
     const eventAttrMatches = html.matchAll(/\son(?:click|change|input|submit|load|keydown|keyup|keypress|mouseover|mouseout|focus|blur)\s*=\s*["']([^"']+)["']/gi)
     for (const m of eventAttrMatches) {
       const handlerCode = m[1]

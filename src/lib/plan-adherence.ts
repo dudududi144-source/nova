@@ -77,8 +77,8 @@ export function checkPlanAdherence(html: string, plan: unknown): PlanAdherenceRe
 
   // Check keyFunctions (v29.36: handle objects too)
   if (Array.isArray(p.keyFunctions) || Array.isArray(p.key_functions)) {
-    const fnList = Array.isArray(p.keyFunctions) ? p.keyFunctions : p.key_functions
-    for (const fn of fnList!) {
+    const fnList = (Array.isArray(p.keyFunctions) ? p.keyFunctions : p.key_functions) as unknown[]
+    for (const fn of fnList) {
       let fnName: string
       if (typeof fn === 'string') {
         fnName = fn

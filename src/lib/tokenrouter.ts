@@ -76,8 +76,25 @@ export interface TokenRouterResult {
  * Returns false if TOKENROUTER_API_KEY is missing or empty.
  */
 export function isTokenRouterConfigured(): boolean {
-  const key = process.env.TOKENROUTER_API_KEY
+  // v29.39: Check settings first, then env
+  let key: string | undefined
+  try {
+    const settings = globalThis as unknown as { __novaSettings?: { tokenrouterApiKey?: string } }
+    key = settings.__novaSettings?.tokenrouterApiKey?.trim() || undefined
+  } catch {}
+  if (!key) key = process.env.TOKENROUTER_API_KEY
   return typeof key === 'string' && key.trim().length > 0
+}
+
+// v29.39: Get effective API key (settings > env)
+function getApiKey(): string | undefined {
+  let key: string | undefined
+  try {
+    const settings = globalThis as unknown as { __novaSettings?: { tokenrouterApiKey?: string } }
+    key = settings.__novaSettings?.tokenrouterApiKey?.trim() || undefined
+  } catch {}
+  if (!key) key = process.env.TOKENROUTER_API_KEY
+  return key
 }
 
 // ── Streaming chat ──
@@ -109,7 +126,7 @@ export async function* tokenRouterStream(
   const maxTokens = opts.maxTokens ?? 8000
   const timeoutMs = opts.timeoutMs ?? 60_000
 
-  const apiKey = process.env.TOKENROUTER_API_KEY
+  const apiKey = getApiKey() // v29.39: settings > env
   if (!apiKey) {
     yield { text: '', fullText: '', done: true, tokens: 0, ms: 0, error: 'TokenRouter API key not configured' }
     return
@@ -322,7 +339,7 @@ export async function tokenRouterChat(
   const maxTokens = opts.maxTokens ?? 8000
   const timeoutMs = opts.timeoutMs ?? 60_000
 
-  const apiKey = process.env.TOKENROUTER_API_KEY
+  const apiKey = getApiKey() // v29.39: settings > env
   if (!apiKey) {
     return { ok: false, text: '', tokens: 0, ms: 0, error: 'TokenRouter API key not configured' }
   }

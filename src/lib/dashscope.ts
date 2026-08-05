@@ -29,17 +29,29 @@ export interface DashScopeChunk {
 }
 
 let client: OpenAI | null = null
+let lastApiKey: string | null = null
 
 function getClient(): OpenAI {
-  if (client) return client
-  const apiKey = process.env.DASHSCOPE_API_KEY
-  if (!apiKey || apiKey === 'your-key-here') {
-    throw new Error('DASHSCOPE_API_KEY not configured')
+  // v29.39: Check settings first, then env var
+  let apiKey: string | undefined
+  try {
+    // Dynamic import to avoid circular dependency
+    const settings = globalThis as unknown as { __novaSettings?: { dashscopeApiKey?: string } }
+    apiKey = settings.__novaSettings?.dashscopeApiKey?.trim() || undefined
+  } catch {}
+  if (!apiKey) {
+    apiKey = process.env.DASHSCOPE_API_KEY
   }
+  if (!apiKey || apiKey === 'your-key-here') {
+    throw new Error('DASHSCOPE_API_KEY not configured. Set it in Settings or .env')
+  }
+  // Recreate client if key changed (e.g., user updated it via Settings)
+  if (client && lastApiKey === apiKey) return client
   client = new OpenAI({
     baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     apiKey,
   })
+  lastApiKey = apiKey
   return client
 }
 
@@ -47,7 +59,13 @@ function getClient(): OpenAI {
  * Check if DashScope is configured (has a valid API key).
  */
 export function isDashScopeConfigured(): boolean {
-  const key = process.env.DASHSCOPE_API_KEY
+  // v29.39: Check settings first, then env
+  let key: string | undefined
+  try {
+    const settings = globalThis as unknown as { __novaSettings?: { dashscopeApiKey?: string } }
+    key = settings.__novaSettings?.dashscopeApiKey?.trim() || undefined
+  } catch {}
+  if (!key) key = process.env.DASHSCOPE_API_KEY
   return !!key && key !== 'your-key-here' && key.length > 10
 }
 
