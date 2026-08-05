@@ -123,10 +123,19 @@ export function extractStepsFromPlan(plan: unknown, mission: string): string[] {
 
   // Add feature-based steps (with type guard — features could contain non-strings)
   // v26: Handle both 'features' and 'key_features' (architect returns key_features)
+  // v29.37: Features can be objects with 'name' property — extract name instead of String(object)
   const features = p.features || p.key_features
   if (features && Array.isArray(features) && features.length > 0) {
     for (const f of features.slice(0, 5)) {
-      steps.push(`Building: ${typeof f === 'string' ? f : String(f)}...`)
+      let featureName: string
+      if (typeof f === 'string') {
+        featureName = f
+      } else if (f && typeof f === 'object' && typeof (f as Record<string, unknown>).name === 'string') {
+        featureName = (f as Record<string, unknown>).name as string
+      } else {
+        featureName = String(f)
+      }
+      steps.push(`Building: ${featureName}...`)
     }
   } else {
     // Fall back to mission-based feature steps
