@@ -513,21 +513,13 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         // Truncation detection + continuation retry (only for HTML)
+        // v29.23: Skip truncation retry — it causes a second LLM call that doubles memory
+        // and crashes the server. Accept truncated output instead.
         if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
           logger.warn('code.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
-          // Send progress event
-          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
-
-          const lastChars = rawHtml.slice(-1000)
-          const retryResult = await llmChat(
-            'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
-            `The previous output was truncated. Last 1000 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
-            { maxTokens: 16000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
-          )
-          if (retryResult.ok) {
-            rawHtml = rawHtml + stripCodeFences(retryResult.text)
-            logger.info('code.retry_completed', { ip, ms: retryResult.ms, tokens: retryResult.tokens, totalLen: rawHtml.length })
-          }
+          // v29.23: Don't retry — just close the HTML manually to make it valid
+          rawHtml = rawHtml + '\n</body>\n</html>'
+          logger.info('code.truncated_fixed', { ip, totalLen: rawHtml.length })
         }
 
         // v28: looksLikeHtml already checked above — if we're here, it's HTML
@@ -599,8 +591,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         // v14 ROAST FIX: Skip retry if the build already took too long (>120s) —
         // retry adds 25s+ and rarely improves quality. Better to ship what we have.
         // v15: Also skip retry in Quick mode — Quick mode prioritizes speed over perfection.
+        // v29.23: Skip retry entirely in production — it doubles memory usage and causes crashes
         const elapsedSoFar = Date.now() - startTime
-        const shouldRetry = (!staticAnalysis.passed || !validation.passed || !planAdherence.adherent) && combinedHint && elapsedSoFar < 120_000 && !isQuickMode
+        const shouldRetry = false
         if (shouldRetry) {
           logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, elapsedMs: elapsedSoFar, retrying: true })
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor(elapsedSoFar / 1000) })}\n\n`)
