@@ -4844,3 +4844,253 @@ VERIFICATION:
 - New backup created: nova-backup-2026-08-04T19-17-49.zip
 
 GITHUB: rabotatony/nova — latest commit a2230d0
+
+---
+Task ID: 1000
+Agent: test-author (Z.ai Code)
+Task: Create comprehensive test suites for 11 untested source modules.
+
+MODULES COVERED (316 tests total, 0 fail, 0 lint errors):
+1. src/lib/math-fixer.ts          → tests/math-fixer.test.ts          (24 tests)
+2. src/lib/form-fixer.ts          → tests/form-fixer.test.ts          (17 tests)
+3. src/lib/css-fixer.ts           → tests/css-fixer.test.ts           (21 tests)
+4. src/lib/build-store.ts         → tests/build-store.test.ts         (16 tests)
+5. src/lib/helpers.ts             → tests/helpers.test.ts             (53 tests)
+6. src/lib/plan-adherence.ts      → tests/plan-adherence.test.ts      (23 tests)
+7. src/lib/smart-suggestions.ts   → tests/smart-suggestions.test.ts   (25 tests)
+8. src/lib/design-tokens.ts       → tests/design-tokens.test.ts       (37 tests)
+9. src/lib/runtime-errors.ts      → tests/runtime-errors.test.ts      (28 tests)
+10. src/lib/logger.ts              → tests/logger.test.ts              (32 tests)
+11. src/lib/model-circuit-breaker.ts → tests/model-circuit-breaker.test.ts (40 tests)
+
+Each test file covers: every exported function, edge cases (empty/null/undefined/invalid),
+normal cases, error cases, and idempotency where applicable. See /agent-ctx/1000-test-author.md
+for the full per-module coverage breakdown.
+
+VERIFICATION:
+- bun run lint: 0 errors (5 pre-existing warnings in unrelated files)
+- All 11 test files pass individually
+- All 316 tests pass together (972 expect() calls, 90ms total)
+
+KEY TEST DESIGN NOTES:
+- Module-level singletons (build-store, model-circuit-breaker) use unique IDs / careful test
+  ordering to minimize state pollution. Threshold-reaching tests in model-circuit-breaker.test.ts
+  are placed at the END of the file because disabledUntil persists for 2 minutes.
+- Context-aware regex tests (math-fixer 200-char window, smart-suggestions keyword suppression)
+  were carefully crafted to isolate context.
+- No DOM dependency — all tests run in pure Node/Bun.
+
+
+---
+Task ID: 1001
+Agent: test-author (Z.ai Code)
+Task: Create comprehensive test suites for 6 untested source modules.
+
+MODULES COVERED (289 tests total, 0 fail, 0 lint errors):
+
+1. src/lib/interaction-probe.ts → tests/interaction-probe.test.ts (36 tests)
+   - probeApp (shape only — DOM-dependent, not testable in pure Node):
+     function exists, returns a Promise, rejects in DOM-less env, accepts
+     (string, boolean) signature.
+   - formatProbeErrors (pure logic, exhaustive):
+     - Empty/no-op cases: empty errors array returns '', default ProbeResult
+       shape returns ''.
+     - Single error formatting: type+msg, line:col location, omitting location
+       when line=0/undefined, Stack section inclusion/omission (empty string
+       and undefined), stack truncation (boundary tests at 200/201 chars),
+       empty message, very long message (no truncation).
+     - Multiple errors: numbered list starting at 1, order preservation,
+       newline joining.
+     - All 8 error type labels verified: error, promise, console.error,
+       click-error, input-error, key-error, probe-error, iframe-error.
+     - Header / interactions count: "Runtime errors found when testing the
+       app" prefix, includes count, 0 interactions, large counts.
+     - Type narrowing / defensive: minimal ProbeResult, all-fields-populated.
+
+2. src/lib/json-extract.ts → tests/json-extract.test.ts (42 tests)
+   - extractBalancedJson: function shape.
+   - Error cases: empty string, whitespace, no opening brace, no matching
+     close, malformed JSON, trailing comma, only closing brace.
+   - Simple valid cases: empty object, number/string/boolean/null values,
+     nested arrays, nested objects, whitespace inside, newlines inside.
+   - String literal edge cases: brace inside string, escaped quote, escaped
+     backslash, backslash outside strings, escaped newlines, many braces.
+   - Prose/mixed content: leading prose, trailing prose, trailing prose
+     ending with brace (killer case), multiple objects (returns first),
+     malformed second object.
+   - Code fence handling: ```json, ``` (no lang), prose+fence, fence without
+     closing ``` (fallback), case-insensitive language label.
+   - Large/nested: depth-50 nesting, 1000-element array, 100-key object.
+   - Unicode: unicode values, emoji, unicode escape sequences, unicode keys.
+
+3. src/lib/sse-reader.ts → tests/sse-reader.test.ts (40 tests)
+   - readSseStream: function shape, no body → onError, each event type
+     (progress/token/buildId/result/error), terminal behavior (result+error
+     stop stream, no trailing handlers fire).
+   - Result event field coercion: html/tokens/ms type coercion, missing
+     html→'', non-number tokens/ms→0, optional fields (quality/metrics/
+     outputType/previewable) passthrough + omission, files array parsing
+     (path/content/language, name fallback, language default 'text', filter
+     no-path entries, filter non-object entries, coerce non-string content).
+   - Multiple events: in-order dispatch, partial event across chunks, single
+     chunk with multiple events.
+   - CRLF normalization (\r\n → \n).
+   - Decoder flush (event without trailing \n\n).
+   - Malformed/unknown: malformed JSON (skipped), unknown type (skipped),
+     empty data lines, non-"data: " prefix, non-object JSON.
+   - Missing fields: progress/token/buildId/error default values.
+   - Timeout: fires onError with timeout message, message includes seconds.
+   - Abort signal: already-aborted returns silently, mid-stream abort
+     returns silently (no onError).
+   - Stream error → onError.
+   - Handler optionality: no handlers, terminal event with no matching
+     handler, error event with no onError handler.
+
+4. src/lib/llm-fallback.ts → tests/llm-fallback.test.ts (31 tests)
+   - executeWithFallback: function shape.
+   - Primary (z-ai) succeeds: returns primary result, calls llmChat once,
+     doesn't call tokenRouterChat, passes system+user prompts, passes
+     maxTokens/temperature/timeoutMs/signal.
+   - Primary fails, fallback to tokenrouter: falls back, returns secondary
+     result, uses maxTokens >= 8000 for tokenRouter (Math.max enforcement),
+     uses 8000 when undefined, drops reasoning field (LlmResult shape).
+   - Both fail: returns error (secondary's error when primary tried),
+     coherent error string.
+   - allowFallback=false: returns primary on success, returns primary error
+     directly on failure, doesn't call tokenRouter.
+   - primaryModel override: tokenrouter as primary, falls back to z-ai,
+     maxTokens passthrough with Math.max enforcement.
+   - ms field: non-negative on success and failure.
+   - getFallbackHealth: function, returns both model keys, boolean values,
+     tokenrouter always true, z-ai true when breaker not tripped.
+   - Error shape consistency: result has ok/text/tokens/ms, error is string.
+   - LAST GROUP (trips z-ai circuit breaker): allowFallback=false + primary
+     unavailable → "temporarily unavailable" error; allowFallback=true +
+     primary unavailable → falls back to secondary; both unavailable →
+     "All AI models unavailable" error.
+
+5. src/lib/dashscope.ts → tests/dashscope.test.ts (50 tests)
+   - isDashScopeConfigured: env variations (valid, undefined, empty,
+     placeholder "your-key-here", <11 chars, 10-char boundary, 11-char
+     boundary).
+   - dashscopeChat (non-streaming) — "not configured" tests run FIRST to
+     avoid module-level client cache: missing key → error, placeholder →
+     error.
+   - dashscopeChat success: ok+text+tokens, passes system+user prompts as
+     messages, default model qwen-flash-character, custom model/temp/
+     maxTokens passthrough, default temp 0.4, default maxTokens 32000,
+     stream:false, sums prompt+completion tokens, missing usage→0, null
+     content→empty response error.
+   - dashscopeChat errors: empty text, whitespace text, 429 → rate limited,
+     "rate limit" lowercase → rate limited, generic error, non-Error
+     rejection, error message inclusion, non-negative ms.
+   - dashscopeChat abort signal: already-aborted signal → fail.
+   - dashscopeStream — "not configured" tests run FIRST.
+   - dashscopeStream function shape + returns async generator.
+   - dashscopeStream success: content chunks + final done chunk, aggregates
+     content, skips empty choices, skips delta without content, no usage→0
+     tokens, passes prompts, default model, custom model/temp/maxTokens,
+     stream:true + stream_options.include_usage.
+   - dashscopeStream errors: 429→rate limited, "rate limit" lowercase,
+     AbortError→cancelled, "aborted" message→cancelled, generic error,
+     non-Error rejection, error chunk done=true and ms>=0.
+
+6. src/lib/tokenrouter.ts → tests/tokenrouter.test.ts (90 tests)
+   - DEFAULT_MODEL constant: string, expected value 'moonshotai/kimi-k3-free'.
+   - isTokenRouterConfigured: valid key, undefined, empty, whitespace-only
+     (false), whitespace-padded key (true — uses .trim().length > 0).
+   - tokenRouterChat: function shape, not configured (missing key, empty).
+   - tokenRouterChat success: ok+text+tokens, passes prompts as messages,
+     Bearer token, posts to /chat/completions, default model, custom model/
+     temp/maxTokens, default temp 0.4, default maxTokens 8000, stream:false,
+     sums tokens, missing usage→0, exposes reasoning_content.
+   - tokenRouterChat empty/reasoning-only: empty content, whitespace content,
+     reasoning but no content → specific error, null content, missing
+     choices array.
+   - tokenRouterChat HTTP errors: 401/403→auth, 429→busy, 500/503→server
+     error, 400→generic status, doesn't leak body, non-negative ms.
+   - tokenRouterChat fetch rejection: ENOTFOUND→network, ECONNREFUSED→network,
+     429→busy, "rate limit"→busy, unknown→generic, non-Error rejection.
+   - tokenRouterChat abort: already-aborted→cancelled, passes signal to fetch.
+   - tokenRouterStream: function shape, returns async generator, not
+     configured.
+   - tokenRouterStream success: content chunks + final, aggregates, tracks
+     reasoning_content separately, stream ending without [DONE], tracks
+     usage from final chunk, passes prompts, Bearer token, stream:true,
+     stream_options.include_usage, skips malformed JSON, skips non-"data: "
+     lines.
+   - tokenRouterStream reasoning but no content (with/without [DONE]).
+   - tokenRouterStream HTTP errors: 401, 429, 500, null body, no body leak,
+     done+ms.
+   - tokenRouterStream fetch rejection: already-aborted→cancelled, network
+     error, 429-style, unknown.
+   - critiqueHtml: function shape, JSON suggestions parsing, brace-extraction
+     fallback, prose-by-newline fallback, HTML >8000 chars truncation, no
+     truncation for short HTML, mission in prompt, suggestion truncation to
+     200 chars, non-string filter, empty-string filter, 5-suggestion limit,
+     200-char line filter.
+   - critiqueHtml errors: tokenRouterChat fails, empty suggestions→fallback,
+     empty content→ok:false, whitespace-only content→ok:false, no
+     suggestions field→fallback, non-array suggestions→fallback, reasoning
+     passthrough.
+   - critiqueHtml not configured.
+
+TEST STRATEGY NOTES:
+
+1. **Mock patterns used**:
+   - `mock.module('../src/lib/llm', ...)` and `mock.module('../src/lib/
+     tokenrouter', ...)` for llm-fallback tests (mocks the LLM client
+     modules with controllable mock functions).
+   - `mock.module('openai', ...)` for dashscope tests (mocks the OpenAI SDK
+     with a class whose `chat.completions.create` is a controllable mock).
+   - `globalThis.fetch = mockFetch` for tokenrouter tests (restored in
+     afterAll to prevent leakage in sequential mode).
+   - Built `makeResponse({ status, body, json, text })` helper to construct
+     fake Response objects with proper body handling (including null body).
+
+2. **Module-level singleton handling**:
+   - `dashscope.ts` caches the OpenAI client at module scope. "not configured"
+     tests run FIRST in the file (before any test that calls getClient with
+     a valid env) to verify the env-check throws before the cache is set.
+   - `model-circuit-breaker.ts` trips for 2 minutes once 5 failures are
+     recorded. `recordSuccess` does NOT reset `disabledUntil`. The
+     breaker-tripping tests in `llm-fallback.test.ts` are placed in a
+     separate describe block at the END of the file, with a clear comment
+     explaining the state pollution risk.
+
+3. **SSE stream construction**:
+   - Built `makeResponse(chunks)` helper that wraps string chunks in a
+     ReadableStream for `readSseStream` tests.
+   - Built `makeHangingResponse()` for timeout tests (never closes).
+   - Built `makeErrorResponse()` for stream-error tests (errors via
+     controller.error()).
+
+4. **Async generator mocking** (dashscopeStream):
+   - Built `makeStream(chunks)` helper that returns an object with a
+     `[Symbol.asyncIterator]` generator, matching the OpenAI SDK's stream
+     shape.
+
+5. **Boundary tests**:
+   - isDashScopeConfigured: 10-char vs 11-char key boundary.
+   - formatProbeErrors: 200-char vs 201-char stack truncation boundary.
+   - critiqueHtml: 8000-char HTML truncation boundary.
+
+VERIFICATION:
+- bun run lint: 0 errors (5 pre-existing warnings in unrelated files).
+- bun test tests/{MODULE}.test.ts: all 6 files pass individually.
+- bun test (6 files together): 289 pass, 0 fail, 496 expect() calls, 1.2s.
+- bun test --parallel (full suite): 1490 pass, 2 pre-existing fails (in
+  refine-route-sse.test.ts, NOT caused by my tests — verified by removing
+  my tests and re-running: 1201 pass, 2 fail).
+- My tests add 289 passing tests (1490 - 1201 = 289) and 0 new failures.
+
+FILES CREATED:
+- tests/interaction-probe.test.ts  (36 tests, 57 expect() calls)
+- tests/json-extract.test.ts       (42 tests, 42 expect() calls)
+- tests/sse-reader.test.ts         (40 tests, 65 expect() calls)
+- tests/llm-fallback.test.ts       (31 tests, 66 expect() calls)
+- tests/dashscope.test.ts          (50 tests, 95 expect() calls)
+- tests/tokenrouter.test.ts        (90 tests, 171 expect() calls)
+- /agent-ctx/1001-test-author.md   (this work record)
+
+TOTAL: 289 tests, 496 expect() calls, 0 failures, 0 lint errors.

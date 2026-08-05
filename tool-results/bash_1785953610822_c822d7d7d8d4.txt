@@ -1,0 +1,1051 @@
+
+tests/enhance-route.test.ts:
+(pass) POST /api/enhance > returns 200 + enhanced prompt for valid input [1.31ms]
+(pass) POST /api/enhance > returns 400 for missing prompt [0.13ms]
+(pass) POST /api/enhance > returns 400 for empty prompt [0.07ms]
+(pass) POST /api/enhance > returns 400 for whitespace-only prompt [0.06ms]
+(pass) POST /api/enhance > returns 400 for too-short prompt (< 3 chars) [0.04ms]
+(pass) POST /api/enhance > returns 400 for invalid JSON body [0.03ms]
+(pass) POST /api/enhance > returns 400 when prompt is not a string [0.04ms]
+(pass) POST /api/enhance > strips surrounding quotes from enhanced text [0.12ms]
+(pass) POST /api/enhance > strips code fences from enhanced text [0.11ms]
+{"ts":"2026-08-05T18:13:28.380Z","level":"warn","event":"enhance.short_result","ip":"60.0.0.9","enhancedLen":2,"originalLen":29}
+(pass) POST /api/enhance > returns original prompt when enhanced is shorter (sanity check) [0.11ms]
+(pass) POST /api/enhance > returns 502 when LLM fails [0.13ms]
+(pass) POST /api/enhance > returns 413 for oversized body [0.10ms]
+(pass) POST /api/enhance > passes the user prompt to the LLM [0.08ms]
+
+tests/build-memory.test.ts:
+(pass) normalizeMission > returns empty string for empty input [0.05ms]
+(pass) normalizeMission > returns empty string for null/undefined input [0.01ms]
+(pass) normalizeMission > lowercases the mission [0.36ms]
+(pass) normalizeMission > sorts words alphabetically [0.03ms]
+(pass) normalizeMission > is word-order independent [0.03ms]
+(pass) normalizeMission > strips punctuation [0.03ms]
+(pass) normalizeMission > collapses whitespace [0.04ms]
+(pass) normalizeMission > handles unicode characters by stripping them [0.13ms]
+(pass) normalizeMission > preserves digits [0.02ms]
+(pass) normalizeMission > preserves letters and spaces only [0.03ms]
+(pass) normalizeMission > produces stable output for the same input [0.02ms]
+(pass) normalizeMission > returns a single word unchanged (just lowercased) [0.02ms]
+(pass) normalizeMission > handles strings with only punctuation [0.01ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > cacheBuild resolves without throwing [0.29ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > findCachedBuildNormalized resolves to null [0.09ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > findSimilarBuilds resolves to empty array [0.23ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > getRecentBuilds resolves to empty array [0.03ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > getAllBuilds resolves to empty array [0.05ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > cleanupExpired resolves to 0 [0.06ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > clearAllBuilds resolves without throwing [0.05ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > cacheBuild does not throw for low quality [0.05ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > cacheBuild does not throw for high quality [0.03ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > findSimilarBuilds with custom limit does not throw [0.02ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > getRecentBuilds with custom limit does not throw [0.03ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > multiple sequential calls all succeed [0.06ms]
+(pass) build-memory — graceful fallback when IndexedDB is unavailable > normalizeMission can be used to pre-normalize for cacheBuild [0.10ms]
+
+tests/architect-route.test.ts:
+(pass) POST /api/build/architect > returns 400 for missing mission [0.42ms]
+(pass) POST /api/build/architect > returns 200 with plan for valid mission [0.43ms]
+(pass) POST /api/build/architect > returns 200 with null plan when LLM fails (graceful degradation) [0.17ms]
+(pass) POST /api/build/architect > handles malformed JSON from LLM gracefully [0.20ms]
+(pass) POST /api/build/architect > returns JSON content-type [0.11ms]
+(pass) POST /api/build/architect > logs architect.started and architect.completed [0.15ms]
+(pass) POST /api/build/architect > calls llmChat exactly once [0.11ms]
+
+tests/build-intelligence.test.ts:
+(pass) enrichMission > detects snake/game missions [0.22ms]
+(pass) enrichMission > detects todo/task missions [0.03ms]
+(pass) enrichMission > detects calculator missions [0.06ms]
+(pass) enrichMission > detects color palette missions [0.07ms]
+(pass) enrichMission > detects timer missions [0.03ms]
+(pass) enrichMission > detects markdown editor missions [0.02ms]
+(pass) enrichMission > handles unknown missions with generic hints [0.02ms]
+(pass) enrichMission > always adds general quality hints [0.02ms]
+(pass) enrichMission > enriched text includes original mission [0.02ms]
+(pass) enrichMission > ALWAYS includes general hints in enriched text, even for unknown missions (roast #7 fix) [0.02ms]
+(pass) enrichMission > preserves original mission [0.02ms]
+(pass) enrichMission > detects calc at end of sentence (word boundary) [0.02ms]
+(pass) enrichMission > detects calc before punctuation [0.02ms]
+(pass) enrichMission > does NOT detect calc as substring of another word [0.02ms]
+(pass) validateOutput > passes for complete HTML with canvas and game loop [0.55ms]
+(pass) validateOutput > fails for missing DOCTYPE [0.14ms]
+(pass) validateOutput > fails for missing closing tags [0.20ms]
+(pass) validateOutput > fails for too small output [0.11ms]
+(pass) validateOutput > checks game-specific features for game missions [0.09ms]
+(pass) validateOutput > checks todo-specific features for todo missions [0.07ms]
+(pass) validateOutput > checks calculator-specific features for calc missions [0.11ms]
+(pass) validateOutput > generates retry hint when score < 70 [0.05ms]
+(pass) validateOutput > does not generate retry hint when score >= 70 [0.05ms]
+(pass) validateOutput > score is 0-100 [0.06ms]
+(pass) estimateTokenBudget > returns default 6000 for null plan [0.05ms]
+(pass) estimateTokenBudget > returns default 6000 for non-object plan [0.01ms]
+(pass) estimateTokenBudget > estimates based on features and functions [0.04ms]
+(pass) estimateTokenBudget > clamps to minimum 5000 [0.01ms]
+(pass) estimateTokenBudget > clamps to maximum 16000 [0.03ms]
+(pass) estimateTokenBudget > handles plan with missing fields [0.01ms]
+(pass) analyzeQuality > analyzes a complete HTML app [0.22ms]
+(pass) analyzeQuality > detects when canvas is absent [0.04ms]
+(pass) analyzeQuality > detects when animations are absent [0.01ms]
+(pass) analyzeQuality > handles empty HTML [0.02ms]
+(pass) analyzeQuality > summary contains key metrics [0.02ms]
+
+tests/run-api.test.ts:
+(skip) POST /api/run — code execution sandbox > executes Python print
+(skip) POST /api/run — code execution sandbox > executes Python math
+(skip) POST /api/run — code execution sandbox > captures Python errors
+(skip) POST /api/run — code execution sandbox > executes JavaScript console.log
+(skip) POST /api/run — code execution sandbox > executes Bash echo
+(skip) POST /api/run — code execution sandbox > rejects missing language
+(skip) POST /api/run — code execution sandbox > rejects missing code
+(skip) POST /api/run — code execution sandbox > rejects unsupported language
+
+tests/rate-limit-concurrency.test.ts:
+(pass) RateLimiter — concurrency and rejection safety > does not increment count when rejecting (after max reached) [0.11ms]
+(pass) RateLimiter — concurrency and rejection safety > handles concurrent checks from same IP synchronously [0.04ms]
+(pass) RateLimiter — concurrency and rejection safety > resetInMs decreases over time (window is fixed, not sliding) [9.84ms]
+(pass) RateLimiter — concurrency and rejection safety > handles max=0 (block everything) [0.05ms]
+(pass) RateLimiter — concurrency and rejection safety > handles max=1 (allow first, block rest) [0.03ms]
+
+tests/prompt-config.test.ts:
+(pass) Architect route characterization > has ARCHITECT_PROMPT with JSON format [0.02ms]
+(pass) Architect route characterization > has maxDuration of 30
+(pass) Architect route characterization > has rate limiter
+(pass) Architect route characterization > has structured logging [0.02ms]
+(pass) Architect route characterization > validates mission before rate limiting [0.02ms]
+(pass) Code route characterization (SSE) > has buildPrompt with quality requirements (v29: replaced CODER_PROMPT) [0.06ms]
+(pass) Code route characterization (SSE) > returns SSE stream (text/event-stream) [0.03ms]
+(pass) Code route characterization (SSE) > has keepalive progress events [0.03ms]
+(pass) Code route characterization (SSE) > has truncation detection + continuation retry [0.02ms]
+(pass) Code route characterization (SSE) > has no arbitrary maxTokens limit (32000 = generous) [0.01ms]
+(pass) Code route characterization (SSE) > has maxDuration of 180 [0.03ms]
+(pass) Code route characterization (SSE) > sends result and error event types [0.03ms]
+(pass) Code route characterization (SSE) > has CSP injection after HTML validation [0.02ms]
+(pass) Code route characterization (SSE) > clears keepalive on success, error, and exception [0.01ms]
+(pass) Code route characterization (SSE) > has structured logging [0.02ms]
+(pass) Refine route characterization (SSE) > has REFINE_PROMPT with refinement rules [0.03ms]
+(pass) Refine route characterization (SSE) > returns SSE stream [0.02ms]
+(pass) Refine route characterization (SSE) > has keepalive progress events [0.01ms]
+(pass) Refine route characterization (SSE) > has maxDuration of 180
+(pass) Refine route characterization (SSE) > has no arbitrary maxTokens limit (uses estimateTokenBudget) [0.01ms]
+(pass) Refine route characterization (SSE) > has truncation detection [0.01ms]
+(pass) Refine route characterization (SSE) > has structured logging [0.02ms]
+
+tests/static-analysis.test.ts:
+(pass) Static Analysis — getElementById checks > passes when all getElementById calls reference existing IDs [0.87ms]
+(pass) Static Analysis — getElementById checks > catches getElementById with typo in ID name [0.45ms]
+(pass) Static Analysis — getElementById checks > catches getElementById for ID that completely does not exist [0.22ms]
+(pass) Static Analysis — getElementById checks > suggests close match for typos [0.08ms]
+(pass) Static Analysis — addEventListener checks > passes when addEventListener references defined functions [0.08ms]
+(pass) Static Analysis — addEventListener checks > catches addEventListener referencing undefined function [0.05ms]
+(pass) Static Analysis — addEventListener checks > passes when using arrow function in addEventListener [0.04ms]
+(pass) Static Analysis — undeclared variables > catches variable assigned without declaration [0.07ms]
+(pass) Static Analysis — undeclared variables > passes when variables are declared [0.04ms]
+(pass) Static Analysis — real-world buggy HTML > catches multiple bugs in a realistic snake game [0.15ms]
+(pass) Static Analysis — real-world buggy HTML > passes clean HTML with no bugs [0.06ms]
+(pass) Static Analysis — edge cases > handles HTML with no script tags [0.02ms]
+(pass) Static Analysis — edge cases > handles empty script tag [0.01ms]
+(pass) Static Analysis — edge cases > deduplicates identical issues [0.11ms]
+
+tests/error-recovery.test.ts:
+(pass) analyzeError > categorizes cancelled errors [0.17ms]
+(pass) analyzeError > categorizes 429 rate-limit errors [0.02ms]
+(pass) analyzeError > categorizes rate limit text (no 429) [0.01ms]
+(pass) analyzeError > categorizes timeout errors [0.01ms]
+(pass) analyzeError > flags long-mission timeout as high severity [0.03ms]
+(pass) analyzeError > categorizes network errors [0.01ms]
+(pass) analyzeError > categorizes empty output [0.19ms]
+(pass) analyzeError > categorizes invalid output [0.01ms]
+(pass) analyzeError > categorizes unknown errors as fallback [0.02ms]
+(pass) analyzeError > accepts Error objects [0.01ms]
+(pass) analyzeError > accepts string messages [0.01ms]
+(pass) analyzeError > returns title and message for every category [0.06ms]
+(pass) analyzeError > returns at least one suggestion for every category [0.04ms]
+(pass) analyzeError > handles empty error message [0.01ms]
+(pass) analyzeError > handles null/undefined error gracefully [0.01ms]
+(pass) analyzeError > detects empty output caused by vague mission
+(pass) analyzeError > cancelled takes priority over 429
+(pass) assessMissionVagueness > returns null for empty mission [0.01ms]
+(pass) assessMissionVagueness > flags mission shorter than 12 chars as vague [0.01ms]
+(pass) assessMissionVagueness > does not flag a 12+ char mission with enough words [0.04ms]
+(pass) assessMissionVagueness > flags mission with only filler words [0.02ms]
+(pass) assessMissionVagueness > flags "make an app" as filler [0.01ms]
+(pass) assessMissionVagueness > does not flag a specific mission [0.01ms]
+(pass) assessMissionVagueness > flags mission with one significant word [0.01ms]
+(pass) assessMissionVagueness > returns canRetry=false for vague missions [0.01ms]
+(pass) assessMissionComplexity > returns null for empty mission [0.06ms]
+(pass) assessMissionComplexity > returns null for simple mission [0.14ms]
+(pass) assessMissionComplexity > flags very long mission (>600 chars) as complex [0.13ms]
+(pass) assessMissionComplexity > flags missions with 4+ distinct app types [0.04ms]
+(pass) assessMissionComplexity > does not flag missions with 3 app types [0.02ms]
+(pass) assessMissionComplexity > includes simplified version in suggestions for long mission [0.03ms]
+(pass) assessMissionComplexity > returns canRetry=false for complex missions [0.02ms]
+(pass) simplifyMission > returns empty for empty input [0.01ms]
+(pass) simplifyMission > returns the input unchanged if short and simple [0.01ms]
+(pass) simplifyMission > cuts at the first "with" feature list [0.01ms]
+(pass) simplifyMission > cuts at the first "and" feature list [0.01ms]
+(pass) simplifyMission > cuts at the first sentence [0.04ms]
+(pass) simplifyMission > cuts at "including" [0.01ms]
+(pass) simplifyMission > truncates very long single clauses to 200 chars [0.03ms]
+(pass) simplifyMission > handles "featuring" separator [0.01ms]
+(pass) suggestRelatedMissions > returns 3 suggestions [0.03ms]
+(pass) suggestRelatedMissions > returns ambitious suggestions for "snake" [0.04ms]
+(pass) suggestRelatedMissions > returns ambitious suggestions for "task"
+(pass) suggestRelatedMissions > returns ambitious suggestions for "calc"
+(pass) suggestRelatedMissions > returns ambitious suggestions for "timer"
+(pass) suggestRelatedMissions > returns ambitious suggestions for "palette" [0.01ms]
+(pass) suggestRelatedMissions > returns ambitious suggestions for "markdown" [0.01ms]
+(pass) suggestRelatedMissions > returns ambitious fallback for unrelated mission [0.02ms]
+(pass) suggestRelatedMissions > returns non-empty strings [0.03ms]
+(pass) suggestRelatedMissions > handles empty mission gracefully
+
+tests/e2e-proof.test.ts:
+(skip) E2E Proof 1: Counter app > should have increment button with defined handler and no blocked APIs
+(skip) E2E Proof 2: Todo app > should have add button + input + list with defined handlers
+(skip) E2E Proof 3: HTML structure > should generate valid complete HTML
+
+tests/rate-limit.test.ts:
+(pass) RateLimiter > allows first request [0.08ms]
+(pass) RateLimiter > counts down remaining [0.06ms]
+(pass) RateLimiter > blocks after max reached [0.03ms]
+(pass) RateLimiter > tracks different keys independently [0.03ms]
+(pass) RateLimiter > resets after the window expires [1101.04ms]
+(pass) RateLimiter > returns resetInMs > 0 when blocked [0.13ms]
+(pass) RateLimiter > reset(key) clears a single key [0.06ms]
+(pass) RateLimiter > resetAll() clears all keys [0.05ms]
+(pass) RateLimiter > cleanup() removes expired entries [1100.56ms]
+(pass) RateLimiter > handles unknown key gracefully [0.10ms]
+
+tests/v3-modules.test.ts:
+(pass) design-tokens > generates tokens for default theme (slate) [0.13ms]
+(pass) design-tokens > generates tokens for all 5 themes [0.14ms]
+(pass) design-tokens > includes base classes (.btn, .card, .input) [0.03ms]
+(pass) design-tokens > falls back to slate for unknown theme [0.02ms]
+(pass) design-tokens > DESIGN_TOKENS_INSTRUCTION tells LLM to use tokens [0.02ms]
+(pass) runtime-errors > injects error capture script into HTML with <head> [0.19ms]
+(pass) runtime-errors > does not inject twice [0.03ms]
+(pass) runtime-errors > injects even without <head> tag [0.02ms]
+(pass) runtime-errors > RUNTIME_ERROR_SCRIPT captures errors, promises, and console.error [0.02ms]
+(pass) plan-adherence > returns adherent=true for null plan [0.20ms]
+(pass) plan-adherence > returns adherent=true for undefined plan [0.01ms]
+(pass) plan-adherence > detects when features are present in HTML [0.16ms]
+(pass) plan-adherence > detects when features are missing from HTML [0.06ms]
+(pass) plan-adherence > checks keyFunctions [0.05ms]
+(pass) plan-adherence > checks title [0.03ms]
+(pass) plan-adherence > generates retry hint with missing features [0.05ms]
+
+tests/cycle-9.test.ts:
+(pass) stripCodeFences — 4+ backtick fences > handles 4-backtick fences [0.17ms]
+(pass) stripCodeFences — 4+ backtick fences > handles 5-backtick fences [0.01ms]
+(pass) stripCodeFences — 4+ backtick fences > handles 4-backtick fences without language
+(pass) stripCodeFences — 4+ backtick fences > handles mixed 3 and 4 backtick fences (returns first non-empty)
+(pass) stripCodeFences — 4+ backtick fences > still handles 3-backtick fences (regression)
+(pass) logger — level filtering > respects LOG_LEVEL=warn (filters out info and debug) [0.16ms]
+(pass) logger — level filtering > respects LOG_LEVEL=error (filters out info, debug, warn) [0.06ms]
+(pass) logger — level filtering > defaults to info level when LOG_LEVEL not set [0.03ms]
+(pass) logger — level filtering > defaults to warn level in production [0.03ms]
+(pass) logger — level filtering > handles invalid LOG_LEVEL gracefully [0.03ms]
+(pass) logger — level filtering > debug level logs everything [0.11ms]
+(pass) injectCsp — defensive edge cases > handles HTML with XML declaration before doctype [0.13ms]
+(pass) injectCsp — defensive edge cases > handles HTML with comment before head [0.02ms]
+(pass) injectCsp — defensive edge cases > preserves all attributes on html tag [0.02ms]
+
+tests/language-detection.test.ts:
+(pass) detectLanguageFromContent > detects Python with def and print [0.63ms]
+(pass) detectLanguageFromContent > detects Python with import [0.04ms]
+(pass) detectLanguageFromContent > detects Python with if __name__ [0.02ms]
+(pass) detectLanguageFromContent > detects Bash with shebang [0.01ms]
+(pass) detectLanguageFromContent > detects Bash with if/fi [0.01ms]
+(pass) detectLanguageFromContent > detects Bash with export [0.01ms]
+(pass) detectLanguageFromContent > detects SQL SELECT [0.09ms]
+(pass) detectLanguageFromContent > detects SQL CREATE TABLE [0.02ms]
+(pass) detectLanguageFromContent > detects JSON object [0.03ms]
+(pass) detectLanguageFromContent > detects YAML [0.11ms]
+(pass) detectLanguageFromContent > detects JavaScript with const and require [0.11ms]
+(pass) detectLanguageFromContent > detects JavaScript with console.log [0.04ms]
+(pass) detectLanguageFromContent > detects TypeScript with interface [0.09ms]
+(pass) detectLanguageFromContent > returns text for empty [0.01ms]
+(pass) detectLanguageFromContent > returns text for plain English [0.07ms]
+(pass) detectLanguageFromContent > strips leading :filename markers [0.02ms]
+(pass) defaultFileNameForLanguage > python → script.py [0.07ms]
+(pass) defaultFileNameForLanguage > bash → script.sh
+(pass) defaultFileNameForLanguage > sql → query.sql
+(pass) defaultFileNameForLanguage > json → config.json
+(pass) defaultFileNameForLanguage > text → output.txt
+(pass) defaultFileNameForLanguage > unknown → output.txt
+
+tests/pipeline-progress.test.ts:
+(pass) PIPELINE_STAGES > has exactly 5 stages [0.03ms]
+(pass) PIPELINE_STAGES > has stages in correct order: plan → code → analyze → validate → done [0.05ms]
+(pass) PIPELINE_STAGES > each stage has a non-empty label [0.04ms]
+(pass) PIPELINE_STAGES > each stage has a non-empty shortLabel [0.02ms]
+(pass) PIPELINE_STAGES > each stage has a non-empty description [0.01ms]
+(pass) PIPELINE_STAGES > each stage has an icon component [0.02ms]
+(pass) stageFromProgressStep — code route steps > maps "Writing HTML structure..." → code [0.08ms]
+(pass) stageFromProgressStep — code route steps > maps "Adding CSS styles..." → code [0.02ms]
+(pass) stageFromProgressStep — code route steps > maps "Implementing JavaScript logic..." → code [0.02ms]
+(pass) stageFromProgressStep — code route steps > maps "Adding interactivity..." → code [0.01ms]
+(pass) stageFromProgressStep — code route steps > maps "Polishing the UI..." → code
+(pass) stageFromProgressStep — code route steps > maps "Finalizing the code..." → validate [0.02ms]
+(pass) stageFromProgressStep — code route steps > maps "Completing truncated output..." → code
+(pass) stageFromProgressStep — code route steps > maps "Fixing bugs found by analysis..." → analyze
+(pass) stageFromProgressStep — refine route steps > maps "Analyzing current code..." → analyze
+(pass) stageFromProgressStep — refine route steps > maps "Understanding your request..." → plan [0.01ms]
+(pass) stageFromProgressStep — refine route steps > maps "Planning the changes..." → plan
+(pass) stageFromProgressStep — refine route steps > maps "Applying modifications..." → code
+(pass) stageFromProgressStep — refine route steps > maps "Verifying everything still works..." → validate
+(pass) stageFromProgressStep — refine route steps > maps "Finalizing the update..." → validate
+(pass) stageFromProgressStep — edge cases > returns plan for empty string
+(pass) stageFromProgressStep — edge cases > returns plan for whitespace-only string [0.02ms]
+(pass) stageFromProgressStep — edge cases > returns plan for null/undefined input [0.01ms]
+(pass) stageFromProgressStep — edge cases > returns plan for unknown step text [0.01ms]
+(pass) stageFromProgressStep — edge cases > is case-insensitive [0.02ms]
+(pass) stageFromProgressStep — edge cases > trims leading/trailing whitespace
+(pass) stageFromProgressStep — edge cases > handles "Verifying" without trailing text
+(pass) stageFromProgressStep — edge cases > handles "Validating" as validate [0.02ms]
+(pass) stageFromProgressStep — edge cases > handles "Fixing bugs" as analyze
+(pass) stageFromProgressStep — edge cases > handles "Analyzing code" as analyze [0.01ms]
+(pass) stageFromProgressStep — edge cases > handles "Planning" early steps as plan [0.01ms]
+(pass) stageFromProgressStep — edge cases > handles "Building" as code [0.01ms]
+(pass) stageFromProgressStep — edge cases > handles "Designing" as code
+(pass) stageFromProgressStep — edge cases > returns one of the 5 valid stage keys [0.09ms]
+(pass) stageFromProgressStep — edge cases > all 5 stages are reachable from some input [0.06ms]
+
+tests/error-boundary.test.ts:
+(pass) ErrorBoundary (characterization) > has mounted flag to prevent setState after unmount [0.03ms]
+(pass) ErrorBoundary (characterization) > has error ID generation [0.01ms]
+(pass) ErrorBoundary (characterization) > has focus management (focus trap) [0.02ms]
+(pass) ErrorBoundary (characterization) > has ARIA dialog roles [0.02ms]
+(pass) ErrorBoundary (characterization) > has two recovery options [0.01ms]
+(pass) ErrorBoundary (characterization) > clearHistoryAndReload has error handling (not empty catch)
+(pass) ErrorBoundary (characterization) > logs to console with error ID [0.01ms]
+(pass) ErrorBoundary (characterization) > uses class component (not function — needed for error boundaries) [0.02ms]
+
+tests/page-config.test.ts:
+(pass) page.tsx (characterization) > has maxLength on textarea [0.12ms]
+(pass) page.tsx (characterization) > has autoFocus on textarea [0.07ms]
+(pass) page.tsx (characterization) > has sandbox="allow-scripts" on iframe (no allow-same-origin) [0.17ms]
+(pass) page.tsx (characterization) > uses srcDoc (not blob URL) [0.10ms]
+(pass) page.tsx (characterization) > has aria-busy on root container (includes refining) [0.06ms]
+(pass) page.tsx (characterization) > has Content-Type check before res.json() call in build/refine flows [0.04ms]
+(pass) page.tsx (characterization) > has fail() helper for error handling [0.04ms]
+(pass) page.tsx (characterization) > has cancelBuild separate from reset [0.16ms]
+(pass) page.tsx (characterization) > has keyboard shortcuts (Esc, Cmd+S, Cmd+Enter) [0.13ms]
+(pass) page.tsx (characterization) > has elapsed time counter [0.08ms]
+(pass) page.tsx (characterization) > examples auto-build (not just setMission) [0.04ms]
+(pass) page.tsx (characterization) > has inline confirm/cancel for clear history (not window.confirm) [0.11ms]
+(pass) page.tsx (characterization) > has character count display [0.09ms]
+(pass) page.tsx (characterization) > has prefers-reduced-motion in globals.css [0.08ms]
+(pass) page.tsx (characterization) > imports helpers from lib/helpers.ts [0.11ms]
+(pass) page.tsx (characterization) > does NOT duplicate BuildResult interface (imports from helpers) [0.33ms]
+
+tests/golden-templates.test.ts:
+(pass) GOLDEN_TEMPLATES > has at least 3 templates [0.02ms]
+(pass) GOLDEN_TEMPLATES > each template has a unique id [0.04ms]
+(pass) GOLDEN_TEMPLATES > each template has a non-empty name [0.03ms]
+(pass) GOLDEN_TEMPLATES > each template has at least one keyword [0.04ms]
+(pass) GOLDEN_TEMPLATES > each template has complete HTML [0.03ms]
+(pass) GOLDEN_TEMPLATES > templates include snake-game, todo-app, calculator [0.02ms]
+(pass) GOLDEN_TEMPLATES > template HTML is dark-themed [0.05ms]
+(pass) findTemplate > returns null for empty mission [0.07ms]
+(pass) findTemplate > returns null for whitespace-only mission [0.01ms]
+(pass) findTemplate > returns snake-game for "snake game" mission [0.10ms]
+(pass) findTemplate > does NOT match "game" alone to snake-game (too generic) [0.03ms]
+(pass) findTemplate > returns todo-app for "todo app" mission [0.02ms]
+(pass) findTemplate > returns todo-app for "task list" mission [0.04ms]
+(pass) findTemplate > returns calculator for "calculator" mission [0.05ms]
+(pass) findTemplate > returns calculator for "math calc" mission [0.02ms]
+(pass) findTemplate > returns null for unrelated mission [0.02ms]
+(pass) findTemplate > returns null for too-short / vague mission [0.02ms]
+(pass) findTemplate > is case-insensitive [0.05ms]
+(pass) findTemplate > word-boundary matches prevent false positives (e.g. "todo" in "autodo") [0.01ms]
+(pass) findTemplate > multi-word keyword "snake game" matches the literal phrase [0.02ms]
+(pass) findTemplate > prefers higher-scoring template when multiple match [0.04ms]
+(pass) findTemplate > returns null for mission with no keyword overlap [0.02ms]
+(pass) findTemplate > handles missions with extra prose around the keyword [0.02ms]
+(pass) findTemplate > handles missions with punctuation around keywords [0.03ms]
+(pass) buildSeededPrompt > includes the mission [0.06ms]
+(pass) buildSeededPrompt > includes the template name [0.02ms]
+(pass) buildSeededPrompt > includes the template description [0.02ms]
+(pass) buildSeededPrompt > includes the template HTML inline [0.03ms]
+(pass) buildSeededPrompt > instructs the LLM to use the template as a baseline [0.07ms]
+(pass) buildSeededPrompt > instructs the LLM to output the COMPLETE modified HTML [0.02ms]
+(pass) buildSeededPrompt > works for all templates [0.07ms]
+(pass) buildSeededPrompt > preserves the mission exactly (no truncation) [0.05ms]
+
+tests/cycle-8.test.ts:
+(pass) injectCsp — case-insensitive existing CSP > detects existing CSP with uppercase Content-Security-Policy [0.09ms]
+(pass) injectCsp — case-insensitive existing CSP > detects existing CSP with mixed case [0.02ms]
+(pass) injectCsp — case-insensitive existing CSP > detects existing CSP with no quotes on http-equiv [0.01ms]
+(pass) injectCsp — case-insensitive existing CSP > detects existing CSP with single quotes [0.01ms]
+(pass) logger > logger.info outputs JSON with level and event [0.15ms]
+(pass) logger > logger.warn outputs to console.warn [0.06ms]
+(pass) logger > logger.error outputs to console.error [0.03ms]
+(pass) logger > logger handles empty context [0.03ms]
+(pass) logger > logger handles complex nested context [0.05ms]
+(pass) filename sanitization (download) > handles normal mission [0.07ms]
+(pass) filename sanitization (download) > collapses consecutive non-alphanumeric chars [0.01ms]
+(pass) filename sanitization (download) > trims leading and trailing dashes [0.01ms]
+(pass) filename sanitization (download) > falls back to app.html when mission is all non-alphanumeric [0.02ms]
+(pass) filename sanitization (download) > handles empty mission
+(pass) filename sanitization (download) > handles unicode mission (non-alphanumeric stripped) [0.02ms]
+(pass) filename sanitization (download) > truncates to 30 chars before sanitizing [0.01ms]
+
+tests/mission-isolation.test.ts:
+(pass) mission module isolation > validateMission is a real function (not undefined from mock) [0.02ms]
+(pass) validateMission — works correctly from mission module > accepts normal mission [0.02ms]
+(pass) validateMission — works correctly from mission module > rejects empty string
+(pass) validateMission — works correctly from mission module > rejects whitespace-only
+(pass) validateMission — works correctly from mission module > rejects too short (< 3 chars)
+(pass) validateMission — works correctly from mission module > accepts exactly 3 chars
+(pass) validateMission — works correctly from mission module > rejects too long (> 2000 chars) [0.02ms]
+(pass) validateMission — works correctly from mission module > accepts exactly 2000 chars [0.01ms]
+(pass) validateMission — works correctly from mission module > rejects DEL character (\x7F)
+(pass) validateMission — works correctly from mission module > rejects C1 control chars (\x80-\x9F) [0.01ms]
+(pass) validateMission — works correctly from mission module > accepts tab character
+(pass) validateMission — works correctly from mission module > accepts newline character
+(pass) validateMission — works correctly from mission module > accepts unicode [0.03ms]
+(pass) validateMission — works correctly from mission module > trims before validating [0.03ms]
+(pass) validateMission — works correctly from mission module > returns error message on failure [0.03ms]
+
+tests/mission-analysis.test.ts:
+(pass) analyzeMission > complexity detection > detects simple apps [0.43ms]
+(pass) analyzeMission > complexity detection > detects medium complexity [0.07ms]
+(pass) analyzeMission > complexity detection > detects complex apps with multiple complex keywords [0.09ms]
+(pass) analyzeMission > complexity detection > detects complex apps with complex keyword + multiple features [0.04ms]
+(pass) analyzeMission > complexity detection > provides complexity reason [0.04ms]
+(pass) analyzeMission > vagueness detection > detects too-vague prompts [0.02ms]
+(pass) analyzeMission > vagueness detection > detects "an app" as too-vague [0.02ms]
+(pass) analyzeMission > vagueness detection > detects short vague prompts [0.03ms]
+(pass) analyzeMission > vagueness detection > does not flag detailed prompts as vague [0.03ms]
+(pass) analyzeMission > vagueness detection > provides vagueness reason when vague [0.02ms]
+(pass) analyzeMission > over-scope detection > detects operating system requests [0.03ms]
+(pass) analyzeMission > over-scope detection > detects database server requests [0.04ms]
+(pass) analyzeMission > over-scope detection > does not flag normal apps as too complex [0.03ms]
+(pass) analyzeMission > time estimation > estimates time based on complexity [0.05ms]
+(pass) analyzeMission > time estimation > estimates more time for more features [0.04ms]
+(pass) analyzeMission > time estimation > returns reasonable time range (1-15 min) [0.03ms]
+(pass) analyzeMission > model recommendation > recommends Qwen for simple apps [0.02ms]
+(pass) analyzeMission > model recommendation > recommends Z.AI for medium apps [0.03ms]
+(pass) analyzeMission > model recommendation > recommends Kimi for complex apps [0.02ms]
+(pass) analyzeMission > model recommendation > provides model reason [0.02ms]
+(pass) analyzeMission > suggestions > suggests adding features for vague prompts [0.04ms]
+(pass) analyzeMission > suggestions > suggests simplifying for over-scoped requests [0.04ms]
+(pass) analyzeMission > suggestions > gives positive feedback for good prompts [0.05ms]
+(pass) analyzeMission > suggestions > warns about too many features [0.04ms]
+(pass) analyzeMission > edge cases > handles empty string [0.07ms]
+(pass) analyzeMission > edge cases > handles very long prompts [0.06ms]
+(pass) analyzeMission > edge cases > is case-insensitive [0.05ms]
+
+tests/build-health.test.ts:
+(pass) calculateBuildHealth > returns A for excellent builds [0.20ms]
+(pass) calculateBuildHealth > returns B for good builds [0.02ms]
+(pass) calculateBuildHealth > returns C for acceptable builds [0.02ms]
+(pass) calculateBuildHealth > returns D for poor builds (low quality) [0.02ms]
+(pass) calculateBuildHealth > returns D for truncated builds regardless of quality [0.02ms]
+(pass) calculateBuildHealth > returns D for very slow builds [0.02ms]
+(pass) calculateBuildHealth > returns D for many missing features [0.01ms]
+(pass) calculateBuildHealth > returns D for many static errors [0.01ms]
+(pass) calculateBuildHealth > provides reasons for the grade [0.04ms]
+(pass) calculateBuildHealth > A grade requires fast build (<3min) [0.02ms]
+(pass) calculateBuildHealth > provides correct color classes [0.03ms]
+
+tests/backup-api.test.ts:
+(skip) GET /api/backup — list backups > returns list of backup files
+(skip) GET /api/backup — list backups > each file has required fields
+(skip) POST /api/backup — create backup > creates a new backup ZIP
+(skip) Security > rejects path traversal in download
+(skip) Security > rejects non-existent file download
+(skip) Security > rejects path traversal in delete
+
+tests/edge-cases.test.ts:
+(pass) stripCodeFences — edge cases (cycle 6) > handles empty first fence block, returns content from second [0.04ms]
+(pass) stripCodeFences — edge cases (cycle 6) > handles whitespace-only first fence block [0.01ms]
+(pass) stripCodeFences — edge cases (cycle 6) > returns first non-empty fence when multiple blocks exist [0.01ms]
+(pass) stripCodeFences — edge cases (cycle 6) > returns trimmed text when all fence blocks are empty [0.14ms]
+(pass) stripCodeFences — edge cases (cycle 6) > still handles single fence block correctly (regression) [0.01ms]
+(pass) stripCodeFences — edge cases (cycle 6) > still handles no fences correctly (regression) [0.02ms]
+(pass) looksLikeHtml — additional edge cases > accepts HTML with BOM prefix (BOM is whitespace, trimmed by trimStart) [0.06ms]
+(pass) looksLikeHtml — additional edge cases > accepts HTML with leading newlines [0.02ms]
+(pass) looksLikeHtml — additional edge cases > accepts HTML with leading tabs [0.01ms]
+(pass) looksLikeHtml — additional edge cases > rejects SVG documents [0.01ms]
+(pass) looksLikeHtml — additional edge cases > rejects XML documents
+
+tests/csp.test.ts:
+(pass) injectCsp > injects CSP meta after <head> [0.10ms]
+(pass) injectCsp > injects CSP after <head> with attributes [0.05ms]
+(pass) injectCsp > injects <head> if missing but <html> exists [0.05ms]
+(pass) injectCsp > strips existing CSP and injects NOVA's strict CSP (roast #4 security fix) [0.04ms]
+(pass) injectCsp > handles case-insensitive HEAD tag [0.01ms]
+(pass) injectCsp > includes connect-src none to block fetch [0.01ms]
+(pass) injectCsp > includes script-src unsafe-inline for inline scripts
+(pass) injectCsp > preserves the rest of the HTML [0.02ms]
+
+tests/build-id.test.ts:
+(pass) newBuildId uniqueness > generates unique IDs in rapid succession [7.42ms]
+(pass) newBuildId uniqueness > generates IDs with the correct prefix [0.07ms]
+(pass) newBuildId uniqueness > generates IDs with 3 parts (prefix, timestamp, random) [0.05ms]
+(pass) newBuildId uniqueness > generates IDs that are sortable by time (roughly) [0.03ms]
+(pass) sanitizeFilename > handles normal mission [0.04ms]
+(pass) sanitizeFilename > collapses consecutive non-alphanumeric chars [0.02ms]
+(pass) sanitizeFilename > trims leading and trailing dashes
+(pass) sanitizeFilename > falls back to app.html when mission is all non-alphanumeric
+(pass) sanitizeFilename > handles empty mission
+(pass) sanitizeFilename > handles unicode mission (non-alphanumeric stripped) [0.01ms]
+(pass) sanitizeFilename > truncates to 30 chars before sanitizing [0.02ms]
+(pass) sanitizeFilename > handles mission with numbers [0.01ms]
+(pass) sanitizeFilename > handles mission with special chars [0.01ms]
+(pass) sanitizeFilename > handles mission with only spaces
+(pass) validateHistory > returns empty array for non-array input [0.06ms]
+(pass) validateHistory > returns empty array for empty array [0.02ms]
+(pass) validateHistory > filters out invalid items [0.08ms]
+(pass) validateHistory > caps at 30 items [0.14ms]
+(pass) validateHistory > accepts all-valid array [0.05ms]
+(pass) normalizeMission > lowercases and trims [0.07ms]
+(pass) normalizeMission > collapses whitespace [0.01ms]
+(pass) normalizeMission > removes punctuation
+(pass) normalizeMission > groups case variations together
+(pass) normalizeMission > groups punctuation variations together
+(pass) normalizeMission > handles empty string [0.02ms]
+(pass) groupHistoryByMission > groups builds with the same normalized mission [0.12ms]
+(pass) groupHistoryByMission > keeps newest-first within each group [0.04ms]
+(pass) groupHistoryByMission > caps at maxPerGroup versions per mission [0.08ms]
+(pass) groupHistoryByMission > caps at maxGroups groups [0.13ms]
+(pass) groupHistoryByMission > returns empty for empty input [0.01ms]
+(pass) isValidHistoryItem > accepts valid item [0.02ms]
+(pass) isValidHistoryItem > rejects null
+(pass) isValidHistoryItem > rejects non-object
+(pass) isValidHistoryItem > rejects missing fields [0.03ms]
+(pass) isValidHistoryItem > rejects wrong types [0.02ms]
+(pass) isValidHistoryItem > type narrowing works (assigns to BuildResult) [0.01ms]
+
+tests/file-viewer.test.ts:
+(pass) tokenizeLine — JavaScript > recognizes keywords [0.35ms]
+(pass) tokenizeLine — JavaScript > recognizes function calls [0.03ms]
+(pass) tokenizeLine — JavaScript > recognizes string literals (double quotes) [0.02ms]
+(pass) tokenizeLine — JavaScript > recognizes string literals (single quotes) [0.03ms]
+(pass) tokenizeLine — JavaScript > recognizes template literals (backticks) [0.02ms]
+(pass) tokenizeLine — JavaScript > recognizes line comments [0.03ms]
+(pass) tokenizeLine — JavaScript > recognizes block comment start [0.02ms]
+(pass) tokenizeLine — JavaScript > continues block comment across lines [0.02ms]
+(pass) tokenizeLine — JavaScript > ends block comment with */ [0.02ms]
+(pass) tokenizeLine — JavaScript > recognizes numbers [0.03ms]
+(pass) tokenizeLine — JavaScript > recognizes decimal numbers [0.02ms]
+(pass) tokenizeLine — JavaScript > recognizes boolean keywords [0.02ms]
+(pass) tokenizeLine — JavaScript > preserves whitespace indentation [0.05ms]
+(pass) tokenizeLine — TypeScript > recognizes TS keywords (interface, type) [0.03ms]
+(pass) tokenizeLine — TypeScript > recognizes TS type keyword [0.03ms]
+(pass) tokenizeLine — TypeScript > recognizes TS access modifiers [0.02ms]
+(pass) tokenizeLine — Python > recognizes def keyword [0.05ms]
+(pass) tokenizeLine — Python > recognizes class keyword [0.03ms]
+(pass) tokenizeLine — Python > recognizes # comments [0.02ms]
+(pass) tokenizeLine — Python > recognizes return keyword [0.02ms]
+(pass) tokenizeLine — Python > recognizes True/False/None [0.06ms]
+(pass) tokenizeLine — Python > recognizes triple-quoted strings as part of one line [0.03ms]
+(pass) tokenizeLine — HTML > recognizes tag names [0.24ms]
+(pass) tokenizeLine — HTML > recognizes closing tags [0.04ms]
+(pass) tokenizeLine — HTML > recognizes attributes [0.03ms]
+(pass) tokenizeLine — HTML > recognizes attribute string values [0.02ms]
+(pass) tokenizeLine — HTML > recognizes HTML comments [0.01ms]
+(pass) tokenizeLine — HTML > handles self-closing tags [0.04ms]
+(pass) tokenizeLine — CSS > recognizes property names (followed by :) [0.19ms]
+(pass) tokenizeLine — CSS > recognizes hex colors [0.04ms]
+(pass) tokenizeLine — CSS > recognizes sizes with units [0.03ms]
+(pass) tokenizeLine — CSS > recognizes block comments [0.02ms]
+(pass) tokenizeLine — CSS > recognizes string values [0.01ms]
+(pass) tokenizeLine — JSON > recognizes object keys (strings followed by colon) [0.15ms]
+(pass) tokenizeLine — JSON > recognizes string values [0.04ms]
+(pass) tokenizeLine — JSON > recognizes numbers [0.03ms]
+(pass) tokenizeLine — JSON > recognizes true/false/null keywords [0.02ms]
+(pass) tokenizeLine — JSON > recognizes negative numbers [0.02ms]
+(pass) tokenizeLine — Markdown > recognizes headings [0.12ms]
+(pass) tokenizeLine — Markdown > recognizes level-2 headings [0.02ms]
+(pass) tokenizeLine — Markdown > recognizes inline code [0.08ms]
+(pass) tokenizeLine — Markdown > recognizes bold [0.02ms]
+(pass) tokenizeLine — Markdown > recognizes list items [0.04ms]
+(pass) tokenizeLine — Markdown > recognizes numbered list items [0.02ms]
+(pass) tokenizeLine — Bash > recognizes # comments [0.05ms]
+(pass) tokenizeLine — Bash > recognizes if/then/fi keywords [0.04ms]
+(pass) tokenizeLine — Bash > recognizes echo keyword [0.02ms]
+(pass) tokenizeLine — Bash > recognizes string literals [0.02ms]
+(pass) tokenizeLine — edge cases > handles empty line [0.02ms]
+(pass) tokenizeLine — edge cases > handles whitespace-only line [0.02ms]
+(pass) tokenizeLine — edge cases > handles unknown language as text (no keywords) [0.04ms]
+(pass) tokenizeLine — edge cases > handles mixed content (keyword + string + comment) [0.08ms]
+(pass) tokenizeLine — edge cases > does not break on strings containing special chars [0.02ms]
+(pass) tokenizeLine — edge cases > handles block comment ending mid-line [0.03ms]
+(pass) tokenizeLine — edge cases > preserves the order of tokens [0.03ms]
+(pass) tokenizeLine — edge cases > handles JSX/TSX same as JS for basic syntax [0.07ms]
+
+tests/build-steps.test.ts:
+(pass) extractStepsFromMission > extracts snake game steps [0.19ms]
+(pass) extractStepsFromMission > extracts todo app steps [0.02ms]
+(pass) extractStepsFromMission > extracts calculator steps [0.02ms]
+(pass) extractStepsFromMission > extracts color palette steps [0.01ms]
+(pass) extractStepsFromMission > extracts markdown editor steps [0.01ms]
+(pass) extractStepsFromMission > extracts timer steps [0.01ms]
+(pass) extractStepsFromMission > extracts generic steps for unknown mission [0.01ms]
+(pass) extractStepsFromMission > always starts with Analyzing and ends with Finalizing [0.07ms]
+(pass) extractStepsFromMission > generates different steps for different missions [0.02ms]
+(pass) extractStepsFromPlan > uses plan features when available [0.14ms]
+(pass) extractStepsFromPlan > falls back to mission steps when plan is null [0.01ms]
+(pass) extractStepsFromPlan > falls back to mission steps when plan has no features [0.02ms]
+(pass) extractStepsFromPlan > includes layout when available [0.03ms]
+(pass) getPlanSummary > returns null for null plan [0.03ms]
+(pass) getPlanSummary > returns summary with title, type, features [0.02ms]
+(pass) getPlanSummary > returns partial summary when some fields missing [0.04ms]
+(pass) getPlanSummary > returns null for empty object [0.01ms]
+
+tests/roast-cycle-4.test.ts:
+(pass) injectCsp — always strips existing CSP (roast #4 security fix) > strips permissive CSP and injects strict CSP [0.05ms]
+(pass) injectCsp — always strips existing CSP (roast #4 security fix) > strips multiple existing CSP metas and injects one strict CSP [0.03ms]
+(pass) looksLikeHtml — strips leading comments (roast #4 fix) > accepts HTML with leading comment before doctype [0.02ms]
+(pass) looksLikeHtml — strips leading comments (roast #4 fix) > accepts HTML with leading comment before <html>
+(pass) looksLikeHtml — strips leading comments (roast #4 fix) > still rejects plain text
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > extracts JSON from prose [0.06ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > extracts JSON from code fences [0.03ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > handles nested braces in strings [0.02ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > handles nested objects [0.02ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > handles escaped quotes in strings [0.01ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > throws when no JSON found [0.04ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > does not grab trailing prose with a } [0.01ms]
+(pass) extractBalancedJson — robust JSON extraction (roast #4 fix) > handles multiple JSON objects (takes first balanced) [0.02ms]
+
+tests/build-stats.test.ts:
+(pass) build-stats > loadBuildStats > returns empty stats when nothing stored [0.11ms]
+(pass) build-stats > loadBuildStats > loads stored stats [0.05ms]
+(pass) build-stats > loadBuildStats > handles corrupted data gracefully [0.06ms]
+(pass) build-stats > loadBuildStats > merges with defaults for missing fields [0.04ms]
+(pass) build-stats > recordBuildInStats > records first build [0.11ms]
+(pass) build-stats > recordBuildInStats > records second build with better quality [0.05ms]
+(pass) build-stats > recordBuildInStats > tracks total time and tokens [0.02ms]
+(pass) build-stats > recordBuildInStats > handles missing quality (defaults to 0) [0.02ms]
+(pass) build-stats > recordBuildInStats > handles missing ms and tokens [0.02ms]
+(pass) build-stats > recordBuildInStats > sets firstBuildAt and lastBuildAt [0.02ms]
+(pass) build-stats > recordRefineInStats > increments refine count [0.03ms]
+(pass) build-stats > resetBuildStats > clears all stats [0.07ms]
+(pass) build-stats > formatStats > formats empty stats [0.17ms]
+(pass) build-stats > formatStats > formats stats with builds [0.15ms]
+(pass) build-stats > formatStats > includes model usage when present [0.09ms]
+
+tests/format.test.ts:
+(pass) formatTokens > formats small numbers as-is [0.05ms]
+(pass) formatTokens > formats thousands with k suffix [0.03ms]
+(pass) formatTokens > formats millions with M suffix [0.02ms]
+(pass) formatMs > handles null and 0 [0.03ms]
+(pass) formatMs > formats milliseconds [0.01ms]
+(pass) formatMs > formats seconds [0.02ms]
+(pass) timeAgo > returns "just now" for recent times [0.08ms]
+(pass) timeAgo > returns minutes [0.02ms]
+(pass) timeAgo > returns hours [0.02ms]
+(pass) timeAgo > returns days [0.02ms]
+(pass) timeAgo > returns "unknown" for invalid dates (roast #7 fix) [0.01ms]
+(pass) BUILD_STAGES > has 7 stages
+(pass) BUILD_STAGES > stages are in progress order [0.03ms]
+(pass) BUILD_STAGES > first stage is architect_start [0.01ms]
+(pass) BUILD_STAGES > last stage is complete with 100%
+(pass) BUILD_STAGES > each stage has label and short [0.06ms]
+(pass) getCurrentStage > returns complete stage when isComplete [0.03ms]
+(pass) getCurrentStage > returns streaming stage when isStreaming [0.01ms]
+(pass) getCurrentStage > returns architect_start for early builds [0.01ms]
+(pass) getCurrentStage > returns architect_done after 3s [0.01ms]
+(pass) getCurrentStage > returns code_start when has plan but not streaming (waiting for first token)
+
+tests/llm.test.ts:
+(pass) validateMission > rejects empty string [0.04ms]
+(pass) validateMission > rejects whitespace-only string [0.03ms]
+(pass) validateMission > rejects string shorter than 3 chars after trim [0.02ms]
+(pass) validateMission > accepts exactly 3 chars [0.01ms]
+(pass) validateMission > accepts exactly 2000 chars [0.02ms]
+(pass) validateMission > rejects 2001 chars (max is 2000) [0.02ms]
+(pass) validateMission > rejects control characters [0.02ms]
+(pass) validateMission > accepts normal missions [0.01ms]
+(pass) validateMission > trims before validating
+(pass) validateMission > accepts unicode [0.01ms]
+(pass) validateMission > accepts newlines and tabs (not control chars in the rejected range) [0.02ms]
+(pass) validateMission > does not mutate input [0.02ms]
+(pass) stripCodeFences > strips ```html fences [0.02ms]
+(pass) stripCodeFences > strips ``` fences without language [0.01ms]
+(pass) stripCodeFences > strips ```htm fences
+(pass) stripCodeFences > returns text as-is when no fences (trimmed) [0.01ms]
+(pass) stripCodeFences > handles empty string
+(pass) stripCodeFences > only strips the first fence block
+(pass) stripCodeFences > does not strip unclosed fences [0.02ms]
+(pass) looksLikeHtml > accepts complete HTML document with doctype [0.01ms]
+(pass) looksLikeHtml > accepts complete HTML document with <html> tag
+(pass) looksLikeHtml > accepts with leading whitespace [0.01ms]
+(pass) looksLikeHtml > accepts uppercase DOCTYPE [0.01ms]
+(pass) looksLikeHtml > rejects HTML fragment starting with <div> [0.01ms]
+(pass) looksLikeHtml > rejects HTML fragment with <body> but no <html> or doctype
+(pass) looksLikeHtml > rejects LLM conversational output [0.01ms]
+(pass) looksLikeHtml > rejects empty string
+(pass) looksLikeHtml > rejects whitespace-only [0.01ms]
+(pass) looksLikeHtml > rejects plain text [0.01ms]
+(pass) looksLikeHtml > rejects JSON
+(pass) looksLikeHtml > rejects markdown
+(pass) looksLikeHtml > rejects <html> not at start (conversational prefix)
+
+tests/html-utils-isolation.test.ts:
+(pass) html-utils module isolation > stripCodeFences is a real function (not undefined from mock) [0.02ms]
+(pass) html-utils module isolation > looksLikeHtml is a real function (not undefined from mock)
+(pass) html-utils module isolation > injectCsp is a real function (not undefined from mock)
+(pass) stripCodeFences — works correctly from html-utils module > strips ```html fences [0.02ms]
+(pass) stripCodeFences — works correctly from html-utils module > handles 4-backtick fences [0.01ms]
+(pass) stripCodeFences — works correctly from html-utils module > handles javascript language identifier
+(pass) stripCodeFences — works correctly from html-utils module > returns text as-is when no fences
+(pass) looksLikeHtml — works correctly from html-utils module > accepts complete HTML with doctype [0.01ms]
+(pass) looksLikeHtml — works correctly from html-utils module > accepts HTML with <html> tag
+(pass) looksLikeHtml — works correctly from html-utils module > rejects HTML fragments
+(pass) looksLikeHtml — works correctly from html-utils module > rejects plain text
+(pass) injectCsp — works correctly from html-utils module > injects CSP into <head> [0.03ms]
+(pass) injectCsp — works correctly from html-utils module > ALWAYS strips existing CSP and injects NOVA's lockdown CSP (roast #4 security fix) [0.02ms]
+(pass) injectCsp — works correctly from html-utils module > preserves html tag attributes [0.01ms]
+
+tests/roast-cycle-3.test.ts:
+(pass) injectCsp — does NOT match <header> (roast #3 fix) > injects CSP into <head> but not <header> [0.05ms]
+(pass) injectCsp — does NOT match <header> (roast #3 fix) > handles <head with attributes> [0.02ms]
+(pass) injectCsp — does NOT match <header> (roast #3 fix) > handles <header> with no <head> (should inject <head>, not use <header>) [0.02ms]
+(pass) looksLikeHtml — strips BOM (roast #3 fix) > accepts HTML with UTF-8 BOM prefix [0.01ms]
+(pass) looksLikeHtml — strips BOM (roast #3 fix) > still accepts HTML without BOM
+(pass) validateHistory — dedupes by id (roast #3 fix) > removes duplicate IDs (keeps first occurrence) [0.07ms]
+(pass) validateHistory — dedupes by id (roast #3 fix) > keeps all items when no duplicates [0.02ms]
+(pass) validateHistory — dedupes by id (roast #3 fix) > handles empty array [0.01ms]
+(pass) stripCodeFences — does NOT shred HTML containing backticks (roast #3 fix) > returns HTML as-is when it starts with <!DOCTYPE (no fence stripping) [0.02ms]
+
+tests/roast-cycle-2.test.ts:
+(pass) analyzeQuality — CSS rule counting (roast #2 fix) > counts CSS rules only inside <style> tags [0.13ms]
+(pass) analyzeQuality — CSS rule counting (roast #2 fix) > returns 0 CSS rules when no <style> tag [0.02ms]
+(pass) analyzeQuality — CSS rule counting (roast #2 fix) > handles multiple <style> tags [0.03ms]
+(pass) analyzeQuality — CSS rule counting (roast #2 fix) > handles empty <style> tag [0.02ms]
+(pass) logger — crash protection (roast #2 fix) > does not crash on circular references [3.28ms]
+(pass) logger — crash protection (roast #2 fix) > does not crash on BigInt values [0.12ms]
+(pass) logger — crash protection (roast #2 fix) > still logs normal objects correctly [0.06ms]
+
+tests/suggestions.test.ts:
+(pass) getSuggestionsForMission > returns game suggestions for "snake game" [0.09ms]
+(pass) getSuggestionsForMission > returns game suggestions for "2048 puzzle" [0.04ms]
+(pass) getSuggestionsForMission > returns dashboard suggestions for "crypto dashboard" [0.02ms]
+(pass) getSuggestionsForMission > returns todo suggestions for "todo app" [0.01ms]
+(pass) getSuggestionsForMission > returns editor suggestions for "markdown editor" [0.04ms]
+(pass) getSuggestionsForMission > returns timer suggestions for "pomodoro timer" [0.02ms]
+(pass) getSuggestionsForMission > returns art suggestions for "pixel art editor" [0.02ms]
+(pass) getSuggestionsForMission > returns default suggestions for unrecognized mission [0.03ms]
+(pass) getSuggestionsForMission > is case-insensitive [0.04ms]
+(pass) getSuggestionsForMission > always returns exactly 4 suggestions [0.07ms]
+(pass) getSuggestionsForMission > matches partial keywords (substring match) [0.01ms]
+(pass) getSuggestionsForMission > returns default for empty string [0.01ms]
+(pass) getSuggestionsForMission > does NOT match "memory" in "in-memory persistence" (todo app) [0.02ms]
+(pass) getSuggestionsForMission > matches "memory card" for memory card games
+
+tests/cycle-11.test.ts:
+(pass) RateLimiter — memory protection (maxKeys) > caps the number of tracked keys at maxKeys [0.20ms]
+(pass) RateLimiter — memory protection (maxKeys) > does not evict when updating an existing key [0.03ms]
+(pass) RateLimiter — memory protection (maxKeys) > evicts the oldest entry (earliest resetAt) [4.55ms]
+(pass) RateLimiter — memory protection (maxKeys) > default maxKeys is 10000 [0.12ms]
+(pass) RateLimiter — memory protection (maxKeys) > size getter returns current key count [0.05ms]
+(pass) localStorage history validation (type-narrowing) > accepts a valid history item [0.05ms]
+(pass) localStorage history validation (type-narrowing) > rejects null
+(pass) localStorage history validation (type-narrowing) > rejects non-object (string)
+(pass) localStorage history validation (type-narrowing) > rejects non-object (number) [0.01ms]
+(pass) localStorage history validation (type-narrowing) > rejects object with missing id [0.02ms]
+(pass) localStorage history validation (type-narrowing) > rejects object with wrong type for id [0.01ms]
+(pass) localStorage history validation (type-narrowing) > rejects object with wrong type for tokens [0.01ms]
+(pass) localStorage history validation (type-narrowing) > rejects object with wrong type for html [0.01ms]
+(pass) localStorage history validation (type-narrowing) > rejects object with wrong type for mission [0.01ms]
+(pass) localStorage history validation (type-narrowing) > rejects empty object
+(pass) localStorage history validation (type-narrowing) > filters out invalid items from an array (simulate the useEffect) [0.05ms]
+
+tests/run-api-multifile.test.ts:
+(skip) POST /api/run — multi-file execution > executes multi-file Python with imports
+(skip) POST /api/run — multi-file execution > detects primary file from multiple files
+(skip) POST /api/run — multi-file execution > handles 3-file Python project
+(skip) POST /api/run — multi-file execution > handles subdirectory imports
+(skip) POST /api/run — multi-file execution > rejects empty files array
+
+tests/refine-route-sse.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'llmChatStream' not found in module '/home/z/my-project/src/lib/llm.ts'.
+-------------------------------
+
+
+tests/zip.test.ts:
+(pass) crc32 > returns 0 for empty input [0.08ms]
+(pass) crc32 > returns the known CRC for "hello" [0.03ms]
+(pass) crc32 > returns the known CRC for "123456789" [0.01ms]
+(pass) crc32 > returns the known CRC for "The quick brown fox..." [0.02ms]
+(pass) crc32 > is deterministic [0.02ms]
+(pass) crc32 > returns different CRCs for different inputs [0.02ms]
+(pass) createZip — structure > returns a Uint8Array [0.31ms]
+(pass) createZip — structure > starts with the local file header signature PK\x03\x04 [0.09ms]
+(pass) createZip — structure > ends with the end-of-central-directory signature PK\x05\x06 [0.04ms]
+(pass) createZip — structure > contains a central directory entry signature PK\x01\x02 [0.08ms]
+(pass) createZip — structure > empty ZIP is exactly 22 bytes (just the end record) [0.02ms]
+(pass) createZip — single file > stores the filename [0.11ms]
+(pass) createZip — single file > stores the file content after the local header + name [0.06ms]
+(pass) createZip — single file > stores the correct CRC in the local header [0.03ms]
+(pass) createZip — single file > uses compression method 0 (STORE) [0.02ms]
+(pass) createZip — single file > sets the UTF-8 flag (bit 11) [0.02ms]
+(pass) createZip — multiple files > writes all file contents in order [0.06ms]
+(pass) createZip — multiple files > end-of-central-directory record has correct file count [0.04ms]
+(pass) createZip — multiple files > handles empty file content [0.02ms]
+(pass) createZip — multiple files > handles binary content (Uint8Array) [0.03ms]
+(pass) createZip — multiple files > handles UTF-8 filenames [0.02ms]
+(pass) createZip — multiple files > handles UTF-8 content [0.08ms]
+(pass) createZip — multiple files > handles subdirectory paths in filenames [0.06ms]
+(pass) createZip — edge cases > throws on more than 65535 files [0.16ms]
+(pass) createZip — edge cases > does not throw for exactly 1 file [0.07ms]
+(pass) createZip — edge cases > preserves content with special characters [0.05ms]
+(pass) createZip — edge cases > handles very large single file (>64KB) [0.97ms]
+(pass) createZip — edge cases > CRC is correct for binary content [0.05ms]
+
+tests/prompt-templates.test.ts:
+(pass) prompt-templates > loadTemplates > returns empty array when nothing stored [0.10ms]
+(pass) prompt-templates > loadTemplates > loads stored templates [0.09ms]
+(pass) prompt-templates > loadTemplates > handles corrupted data [0.05ms]
+(pass) prompt-templates > loadTemplates > filters out invalid entries [0.03ms]
+(pass) prompt-templates > addTemplate > creates a new template [0.14ms]
+(pass) prompt-templates > addTemplate > persists to localStorage [0.06ms]
+(pass) prompt-templates > addTemplate > dedupes by name — replaces existing [0.04ms]
+(pass) prompt-templates > addTemplate > trims name and caps at 60 chars [0.03ms]
+(pass) prompt-templates > addTemplate > trims prompt [0.02ms]
+(pass) prompt-templates > deleteTemplate > removes template by id [0.07ms]
+(pass) prompt-templates > deleteTemplate > does nothing for non-existent id [0.02ms]
+(pass) prompt-templates > markTemplateUsed > updates lastUsedAt timestamp [0.10ms]
+(pass) prompt-templates > markTemplateUsed > does nothing for non-existent id [0.03ms]
+(pass) prompt-templates > getTemplateById > returns template by id [0.03ms]
+(pass) prompt-templates > getTemplateById > returns null for non-existent id [0.01ms]
+(pass) prompt-templates > saveTemplates > caps at 50 templates [0.13ms]
+
+tests/diff.test.ts:
+(pass) diffStrings > returns identical=true for equal texts [0.37ms]
+(pass) diffStrings > returns identical=true for two empty strings [0.02ms]
+(pass) diffStrings > marks all lines as added when old is empty [0.08ms]
+(pass) diffStrings > marks all lines as removed when new is empty [0.02ms]
+(pass) diffStrings > detects additions at the end [0.04ms]
+(pass) diffStrings > detects removals at the end [0.03ms]
+(pass) diffStrings > detects modifications in the middle [0.02ms]
+(pass) diffStrings > preserves line numbers for unchanged lines [0.02ms]
+(pass) diffStrings > null line numbers for added lines [0.03ms]
+(pass) diffStrings > null line numbers for removed lines [0.07ms]
+(pass) diffStrings > includes a summary string [0.05ms]
+(pass) diffStrings > normalizes \r\n line endings [0.03ms]
+(pass) diffStrings > normalizes \r line endings [0.01ms]
+(pass) diffStrings > handles trailing newline (no empty last line) [0.01ms]
+(pass) diffStrings > falls back to naive diff beyond MAX_LINES [1.34ms]
+(pass) diffStrings > fast-paths identical long inputs without computing LCS [0.40ms]
+(pass) diffStrings > detects reordering (line moved) [0.05ms]
+(pass) diffStringsCompact > returns identical result unchanged [0.17ms]
+(pass) diffStringsCompact > includes only changed regions + context [0.12ms]
+(pass) diffStringsCompact > includes context lines around changes [0.07ms]
+(pass) diffStringsCompact > inserts "..." separator between non-adjacent change regions [0.11ms]
+(pass) diffStringsCompact > respects the contextLines parameter [0.12ms]
+(pass) diffStringsCompact > caps context at 50 lines [0.03ms]
+(pass) diffStringsCompact > does not modify the stats from the full diff [0.05ms]
+(pass) diffBuilds > diffs the HTML of two builds [0.07ms]
+(pass) diffBuilds > returns identical=true for identical builds [0.02ms]
+(pass) buildsIdentical > returns true for identical HTML [0.03ms]
+(pass) buildsIdentical > returns false for different HTML lengths (fast path) [0.01ms]
+(pass) buildsIdentical > returns false for same-length different HTML [0.01ms]
+(pass) buildsIdentical > returns false for null/undefined builds [0.02ms]
+(pass) buildsIdentical > short-circuits on length difference (does not compute full diff) [0.01ms]
+
+tests/language-detection-extended.test.ts:
+(pass) detectLanguageFromContent — edge cases > detects Python with class and type hints [0.11ms]
+(pass) detectLanguageFromContent — edge cases > detects Python with list comprehension [0.04ms]
+(pass) detectLanguageFromContent — edge cases > detects Bash with case statement [0.02ms]
+(pass) detectLanguageFromContent — edge cases > detects SQL with JOIN [0.04ms]
+(pass) detectLanguageFromContent — edge cases > detects JSON array [0.03ms]
+(pass) detectLanguageFromContent — edge cases > detects YAML with nested structure [0.06ms]
+(pass) detectLanguageFromContent — edge cases > detects TypeScript with generics [0.05ms]
+(pass) detectLanguageFromContent — edge cases > returns text for plain English [0.02ms]
+(pass) detectLanguageFromContent — edge cases > returns text for empty string
+(pass) detectLanguageFromContent — edge cases > strips leading :filename markers [0.03ms]
+(pass) defaultFileNameForLanguage — all languages > python → script.py [0.02ms]
+(pass) defaultFileNameForLanguage — all languages > bash → script.sh
+(pass) defaultFileNameForLanguage — all languages > sql → query.sql [0.01ms]
+(pass) defaultFileNameForLanguage — all languages > javascript → script.js [0.01ms]
+(pass) defaultFileNameForLanguage — all languages > typescript → script.ts
+(pass) defaultFileNameForLanguage — all languages > json → config.json
+(pass) defaultFileNameForLanguage — all languages > yaml → config.yaml
+(pass) defaultFileNameForLanguage — all languages > rust → main.rs [0.01ms]
+(pass) defaultFileNameForLanguage — all languages > go → main.go
+(pass) defaultFileNameForLanguage — all languages > text → output.txt
+(pass) defaultFileNameForLanguage — all languages > unknown → output.txt [0.03ms]
+
+tests/run-api-stdin.test.ts:
+(skip) POST /api/run — stdin support > Python reads from stdin
+(skip) POST /api/run — stdin support > Python input() reads single line
+(skip) POST /api/run — stdin support > Python reads multiple inputs
+(skip) POST /api/run — stdin support > Bash reads from stdin
+(skip) POST /api/run — stdin support > Node.js reads from stdin
+(skip) POST /api/run — stdin support > works without stdin (backward compatibility)
+(skip) POST /api/run — stdin support > empty stdin is ignored
+
+tests/validate-output-v2.test.ts:
+(pass) validateOutput v2 — weighted scoring > returns high score (>=95) for a fully compliant HTML [0.13ms]
+(pass) validateOutput v2 — weighted scoring > penalizes missing DOCTYPE heavily (weight 15) [0.05ms]
+(pass) validateOutput v2 — weighted scoring > penalizes missing closing tags heavily (weight 15) [0.04ms]
+(pass) validateOutput v2 — weighted scoring > rewards try-catch error handling (weight 5) [0.13ms]
+(pass) validateOutput v2 — weighted scoring > rewards CSS transitions (weight 5) [0.07ms]
+(pass) validateOutput v2 — accessibility checks > rewards aria-labels on interactive elements [0.06ms]
+(pass) validateOutput v2 — accessibility checks > rewards semantic HTML (main, header, section, etc.) [0.10ms]
+(pass) validateOutput v2 — accessibility checks > rewards lang attribute on <html> [0.06ms]
+(pass) validateOutput v2 — security checks > penalizes localStorage usage (weight 10) [0.05ms]
+(pass) validateOutput v2 — security checks > penalizes sessionStorage usage [0.06ms]
+(pass) validateOutput v2 — security checks > penalizes document.cookie usage [0.04ms]
+(pass) validateOutput v2 — retry hint sorts by weight > retry hint lists highest-weight failures first [0.10ms]
+
+tests/edge-cases-2.test.ts:
+(pass) looksLikeHtml — comment edge cases > accepts HTML starting with comment then doctype (roast #4 fix) [0.03ms]
+(pass) looksLikeHtml — comment edge cases > accepts HTML with leading newlines and tabs
+(pass) looksLikeHtml — comment edge cases > rejects empty string
+(pass) looksLikeHtml — comment edge cases > rejects only whitespace
+(pass) injectCsp — additional edge cases > handles HTML with multiple heads (invalid but defensive) [0.08ms]
+(pass) injectCsp — additional edge cases > handles self-closing head tag [0.01ms]
+(pass) injectCsp — additional edge cases > preserves existing meta tags in head [0.02ms]
+(pass) stripCodeFences — additional edge cases > handles fences with extra whitespace [0.02ms]
+(pass) stripCodeFences — additional edge cases > handles fences with Windows line endings
+(pass) stripCodeFences — additional edge cases > handles nested backticks in content [0.01ms]
+
+tests/cycle-10.test.ts:
+(pass) stripCodeFences — non-html language identifiers > handles ```javascript fence [0.03ms]
+(pass) stripCodeFences — non-html language identifiers > handles ```css fence [0.01ms]
+(pass) stripCodeFences — non-html language identifiers > handles ```js fence
+(pass) stripCodeFences — non-html language identifiers > handles ```python fence [0.01ms]
+(pass) stripCodeFences — non-html language identifiers > handles fence with underscores in language (text_html)
+(pass) stripCodeFences — non-html language identifiers > handles fence with hyphens in language (html-5) [0.03ms]
+(pass) stripCodeFences — non-html language identifiers > handles fence with numbers in language (html5) [0.02ms]
+(pass) stripCodeFences — non-html language identifiers > still handles html fence (regression)
+(pass) stripCodeFences — non-html language identifiers > still handles no-language fence (regression)
+(pass) validateMission — extended control characters > rejects DEL character (\x7F) [0.02ms]
+(pass) validateMission — extended control characters > rejects C1 extended control chars (\x80-\x9F) [0.02ms]
+(pass) validateMission — extended control characters > still accepts tab character (\x09)
+(pass) validateMission — extended control characters > still accepts newline character (\x0A)
+(pass) validateMission — extended control characters > still accepts carriage return (\x0D)
+(pass) validateMission — extended control characters > still rejects C0 control chars (regression) [0.01ms]
+(pass) validateMission — extended control characters > accepts normal text (regression)
+(pass) validateMission — extended control characters > accepts unicode (regression) [0.01ms]
+
+tests/multi-file.test.ts:
+(pass) detectLanguage > detects html from .html extension [0.10ms]
+(pass) detectLanguage > detects htm as html [0.02ms]
+(pass) detectLanguage > detects CSS, JavaScript, TypeScript [0.03ms]
+(pass) detectLanguage > detects JSX, TSX [0.01ms]
+(pass) detectLanguage > detects Python
+(pass) detectLanguage > detects JSON, Markdown, YAML, TOML [0.02ms]
+(pass) detectLanguage > detects Bash from .sh and .bash [0.01ms]
+(pass) detectLanguage > detects XML and SVG [0.01ms]
+(pass) detectLanguage > handles query strings and fragments [0.01ms]
+(pass) detectLanguage > returns text for unknown extensions
+(pass) detectLanguage > returns text for paths with no extension
+(pass) detectLanguage > returns text for empty path [0.01ms]
+(pass) detectLanguage > returns text for paths ending with a dot
+(pass) detectLanguage > is case-insensitive [0.01ms]
+(pass) detectOutputType > returns code for empty array [0.09ms]
+(pass) detectOutputType > detects html-app for single HTML file [0.07ms]
+(pass) detectOutputType > detects html-multi for HTML + CSS [0.03ms]
+(pass) detectOutputType > detects html-multi for HTML + JS [0.01ms]
+(pass) detectOutputType > detects react for TSX files [0.01ms]
+(pass) detectOutputType > detects react for JSX files
+(pass) detectOutputType > detects react when package.json mentions react [0.02ms]
+(pass) detectOutputType > detects python for .py files
+(pass) detectOutputType > detects node for .js files without HTML [0.01ms]
+(pass) detectOutputType > detects node for package.json without react [0.02ms]
+(pass) detectOutputType > detects code for single non-HTML file [0.01ms]
+(pass) detectOutputType > react takes priority over html when both present [0.02ms]
+(pass) isPreviewable > returns true for html-app [0.03ms]
+(pass) isPreviewable > returns true for html-multi
+(pass) isPreviewable > returns false for react [0.01ms]
+(pass) isPreviewable > returns false for python
+(pass) isPreviewable > returns false for node
+(pass) isPreviewable > returns false for code
+(pass) findPrimaryFile > returns the only file when there is one [0.08ms]
+(pass) findPrimaryFile > prefers index.html for html-app [0.08ms]
+(pass) findPrimaryFile > falls back to any .html file [0.01ms]
+(pass) findPrimaryFile > prefers App.tsx for react [0.02ms]
+(pass) findPrimaryFile > prefers main.py for python [0.01ms]
+(pass) findPrimaryFile > returns empty string for empty array
+(pass) inlineForPreview > returns empty string for empty array [0.11ms]
+(pass) inlineForPreview > returns empty string when no HTML file [0.03ms]
+(pass) inlineForPreview > inlines <link rel=stylesheet> from sibling CSS [0.14ms]
+(pass) inlineForPreview > inlines <script src=...> from sibling JS [0.05ms]
+(pass) inlineForPreview > preserves type=module on inlined scripts [0.04ms]
+(pass) inlineForPreview > leaves broken references alone [0.02ms]
+(pass) inlineForPreview > handles reversed attribute order (href before rel) [0.02ms]
+(pass) parseOutput > parses raw HTML as html-app [0.19ms]
+(pass) parseOutput > parses <html> without doctype as html-app [0.03ms]
+(pass) parseOutput > parses JSON envelope with files array [0.13ms]
+(pass) parseOutput > parses JSON envelope with single "file" key (array form) [0.06ms]
+(pass) parseOutput > auto-detects language from path when missing [0.04ms]
+(pass) parseOutput > handles JSON wrapped in markdown code fence [0.05ms]
+(pass) parseOutput > handles HTML wrapped in markdown code fence [0.02ms]
+(pass) parseOutput > returns empty result for empty input [0.02ms]
+(pass) parseOutput > returns empty result for whitespace-only input
+(pass) parseOutput > falls back to single code file for non-HTML text [0.12ms]
+(pass) parseOutput > extracts balanced JSON from surrounding prose [0.05ms]
+(pass) parseOutput > handles JSON with name field instead of path [0.04ms]
+(pass) parseOutput > skips file entries missing path [0.02ms]
+(pass) parseOutput > skips non-object file entries [0.02ms]
+
+tests/code-route-sse.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'dashscopeStream' not found in module '/home/z/my-project/src/lib/dashscope.ts'.
+-------------------------------
+
+
+tests/build-comparison.test.ts:
+(pass) compareBuilds > detects quality improvement [0.23ms]
+(pass) compareBuilds > detects quality drop [0.07ms]
+(pass) compareBuilds > detects added lines [0.03ms]
+(pass) compareBuilds > detects removed lines [0.02ms]
+(pass) compareBuilds > calculates size change [0.02ms]
+(pass) compareBuilds > calculates size decrease [0.03ms]
+(pass) compareBuilds > detects time change [0.02ms]
+(pass) compareBuilds > handles identical builds [0.03ms]
+(pass) compareBuilds > handles missing quality (defaults to 0) [0.04ms]
+(pass) compareBuilds > is improvement when quality same but size grew [0.02ms]
+(pass) compareBuilds > summary includes all changes [0.03ms]
+
+29 tests skipped:
+(skip) POST /api/run — code execution sandbox > executes Python print
+(skip) POST /api/run — code execution sandbox > executes Python math
+(skip) POST /api/run — code execution sandbox > captures Python errors
+(skip) POST /api/run — code execution sandbox > executes JavaScript console.log
+(skip) POST /api/run — code execution sandbox > executes Bash echo
+(skip) POST /api/run — code execution sandbox > rejects missing language
+(skip) POST /api/run — code execution sandbox > rejects missing code
+(skip) POST /api/run — code execution sandbox > rejects unsupported language
+(skip) E2E Proof 1: Counter app > should have increment button with defined handler and no blocked APIs
+(skip) E2E Proof 2: Todo app > should have add button + input + list with defined handlers
+(skip) E2E Proof 3: HTML structure > should generate valid complete HTML
+(skip) GET /api/backup — list backups > returns list of backup files
+(skip) GET /api/backup — list backups > each file has required fields
+(skip) POST /api/backup — create backup > creates a new backup ZIP
+(skip) Security > rejects path traversal in download
+(skip) Security > rejects non-existent file download
+(skip) Security > rejects path traversal in delete
+(skip) POST /api/run — multi-file execution > executes multi-file Python with imports
+(skip) POST /api/run — multi-file execution > detects primary file from multiple files
+(skip) POST /api/run — multi-file execution > handles 3-file Python project
+(skip) POST /api/run — multi-file execution > handles subdirectory imports
+(skip) POST /api/run — multi-file execution > rejects empty files array
+(skip) POST /api/run — stdin support > Python reads from stdin
+(skip) POST /api/run — stdin support > Python input() reads single line
+(skip) POST /api/run — stdin support > Python reads multiple inputs
+(skip) POST /api/run — stdin support > Bash reads from stdin
+(skip) POST /api/run — stdin support > Node.js reads from stdin
+(skip) POST /api/run — stdin support > works without stdin (backward compatibility)
+(skip) POST /api/run — stdin support > empty stdin is ignored
+
+
+2 tests failed:
+
+ 868 pass
+ 29 skip
+ 2 fail
+ 2 errors
+ 1499 expect() calls
+Ran 899 tests across 50 files. [2.49s]
