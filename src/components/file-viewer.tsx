@@ -755,6 +755,8 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
   } | null>(null)
   const [running, setRunning] = useState(false)
   const [showRunPanel, setShowRunPanel] = useState(false)
+  const [stdin, setStdin] = useState('')
+  const [showStdin, setShowStdin] = useState(false)
 
   const tree = useMemo(() => buildTree(files), [files])
 
@@ -836,6 +838,9 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
       const payload: Record<string, unknown> = {
         language: lang === 'javascript' || lang === 'js' || lang === 'node' ? 'javascript' : lang,
       }
+      if (stdin.trim()) {
+        payload.stdin = stdin
+      }
       if (files.length > 1) {
         payload.files = files.map(f => ({ path: f.path, content: f.content }))
         payload.primaryFile = selectedFile.path
@@ -868,7 +873,7 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
     } finally {
       setRunning(false)
     }
-  }, [selectedFile, running, files])
+  }, [selectedFile, running, files, stdin])
 
   if (!files || files.length === 0) {
     return (
@@ -941,6 +946,11 @@ export function FileViewer({ files, title = 'Files', className = '' }: FileViewe
                   result={runResult}
                   running={running}
                   onClose={() => { setShowRunPanel(false); setRunResult(null) }}
+                  stdin={stdin}
+                  setStdin={setStdin}
+                  showStdin={showStdin}
+                  setShowStdin={setShowStdin}
+                  onRun={handleRun}
                 />
               )}
             </div>
@@ -963,9 +973,14 @@ interface RunPanelProps {
   } | null
   running: boolean
   onClose: () => void
+  stdin?: string
+  setStdin?: (v: string) => void
+  showStdin?: boolean
+  setShowStdin?: (v: boolean) => void
+  onRun?: () => void
 }
 
-function RunPanel({ result, running, onClose }: RunPanelProps) {
+function RunPanel({ result, running, onClose, stdin = '', setStdin, showStdin = false, setShowStdin, onRun }: RunPanelProps) {
   const hasOutput = result && (result.stdout || result.stderr)
   const success = result && result.exitCode === 0
   const [copied, setCopied] = useState(false)
@@ -1011,6 +1026,17 @@ function RunPanel({ result, running, onClose }: RunPanelProps) {
               {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
             </button>
           )}
+          {setShowStdin && (
+            <button
+              type="button"
+              onClick={() => setShowStdin(!showStdin)}
+              className={`rounded p-1 transition-colors ${showStdin ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'}`}
+              title="Toggle stdin input"
+              aria-label="Toggle stdin input"
+            >
+              <Terminal className="h-3 w-3" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -1022,6 +1048,31 @@ function RunPanel({ result, running, onClose }: RunPanelProps) {
           </button>
         </div>
       </div>
+      {showStdin && setStdin && (
+        <div className="shrink-0 border-b border-border/30 bg-neutral-950 p-2">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">stdin</span>
+            {onRun && (
+              <button
+                type="button"
+                onClick={onRun}
+                disabled={running}
+                className="flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 text-[9px] font-medium text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-50"
+              >
+                {running ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Play className="h-2.5 w-2.5" />}
+                Run
+              </button>
+            )}
+          </div>
+          <textarea
+            value={stdin}
+            onChange={(e) => setStdin(e.target.value)}
+            className="h-16 w-full resize-none bg-neutral-900 p-2 font-mono text-[10px] text-neutral-300 focus:outline-none"
+            placeholder="Enter stdin input..."
+            spellCheck={false}
+          />
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-[11px] leading-relaxed">
         {running ? (
           <div className="flex items-center gap-2 text-muted-foreground">
