@@ -5240,3 +5240,63 @@ Files Created:
 - /agent-ctx/1004-test-author.md                     (this work record)
 
 Total: 651 tests, 1133 expect() calls, 0 failures (in parallel mode), 0 lint errors, 4431 lines of test code.
+
+---
+Task ID: 1005
+Agent: test-author (Z.ai Code)
+Task: Add MORE comprehensive tests for NOVA. 8 test files targeting error-recovery, build-comparison, build-health, build-stats, prompt-templates, static-analysis, diff, and page.tsx characterization. Focus on areas not yet covered.
+
+Work Log:
+- Read worklog.md (Tasks 1–4 + 1001 + 1003 + 1004) to understand the project architecture, existing test patterns, and the convention of using `import { describe, expect, test } from 'bun:test'` with relative imports.
+- Read all 8 target source modules + existing test files to understand APIs, edge cases, and avoid duplication.
+- Created 8 test files using `import { describe, expect, test } from 'bun:test'` and relative imports.
+
+KEY DESIGN DECISIONS:
+1. Documented source quirks as explicit tests with comments:
+   - error-recovery: ETIMEDOUT matches network (not timeout) because "etimedout" doesn't contain "timeout" substring.
+   - build-comparison: Set-based diff doesn't catch reordering.
+   - build-health: `score` variable is computed but NEVER used — grade determined solely by if/else ladder.
+   - build-stats: avgQuality uses Math.round (rounds .5 up); best uses strict >, worst uses strict <.
+   - diff: splitLines only strips ONE trailing empty string; 'a\n\n' → ['a', ''] NOT identical to 'a'.
+   - static-analysis: `:` check for object property values only matches when NO space between `:` and function name.
+2. Boundary tests for every module: 11 vs 12 chars (vagueness), 500 vs 501 chars (timeout), 600 vs 601 chars (complexity), 85/70/50 quality boundaries, 180000/180001ms (3min), 300000/300001ms (5min), 480000/480001ms (8min), 999/1000/999999/1000000 token boundaries, MAX_LINES exactly (1000) vs MAX_LINES+1 (1001).
+3. Mocked localStorage for build-stats and prompt-templates tests.
+4. Page characterization tests read src/app/page.tsx as text and verify structure invariants: useState declarations, useRef mirrors, useEffect deps, keyboard shortcuts, STARTER_CATEGORIES/SLASH_COMMANDS/REFINE_THINKING_STEPS/SUGGESTION_GROUPS counts, iframe sandbox security. Used line-by-line block extraction (find first line starting with `]` at column 0) instead of greedy regex.
+
+CHALLENGES & FIXES:
+- STARTER_CATEGORIES block extraction: greedy regex `[\s\S]*?\]` stopped at first nested `]`. Fixed by splitting on newlines and finding first line starting with `]` at column 0.
+- textarea aria-label: Mission input uses shadcn `<Textarea` (capital T). Changed test to check `id="mission-input"`.
+- createObjectURL false positive: Source uses it for ZIP downloads, not iframe. Changed to `not.toMatch(/createObjectURL[^;]*iframe/)`.
+- Async test race condition: Initial markTemplateUsed test used `void wait.then(...)` which ran after beforeEach cleared localStorage. Fixed by making the test fully synchronous.
+- Priority ordering test: ETIMEDOUT doesn't match timeout (substring mismatch). Changed to "fetch timed out" which matches both timeout and network.
+- Mission state regex: `useState\(''\)[\s\S]{0,50}mission` was wrong (variable name is BEFORE useState). Fixed to `const \[mission, setMission\] = useState\(''\)`.
+
+TEST COUNTS (all pass):
+- tests/error-recovery-comprehensive.test.ts — 124 tests, 230 expect() calls
+- tests/build-comparison-comprehensive.test.ts — 54 tests, 90 expect() calls
+- tests/build-health-comprehensive.test.ts — 74 tests, 106 expect() calls
+- tests/build-stats-comprehensive.test.ts — 71 tests, 104 expect() calls
+- tests/prompt-templates-comprehensive.test.ts — 53 tests, 85 expect() calls
+- tests/static-analysis-comprehensive.test.ts — 86 tests, 137 expect() calls
+- tests/diff-comprehensive.test.ts — 50 tests, 80 expect() calls
+- tests/page-characterization-comprehensive.test.ts — 138 tests, 188 expect() calls
+
+VERIFICATION:
+- bun run lint: 0 errors, 5 warnings (all pre-existing — none from my new files).
+- bun test (8 new files together): 650 pass, 0 fail, 1020 expect() calls, 125ms.
+- Each file passes individually.
+- bun test (full suite): 2838 pass, 257 skip, 3 fail (all pre-existing in api-refine.test.ts, refine-route-sse.test.ts, code-route-sse.test.ts — depend on llmChatStream/dashscopeStream exports that no longer exist). Verified by running those 3 files + my 8 files together: only 2 pre-existing fails, 0 new fails.
+- Dev server log: clean.
+
+Files Created:
+- tests/error-recovery-comprehensive.test.ts            (124 tests, 519 lines)
+- tests/build-comparison-comprehensive.test.ts          (54 tests, 270 lines)
+- tests/build-health-comprehensive.test.ts              (74 tests, 339 lines)
+- tests/build-stats-comprehensive.test.ts               (71 tests, 432 lines)
+- tests/prompt-templates-comprehensive.test.ts          (53 tests, 358 lines)
+- tests/static-analysis-comprehensive.test.ts           (86 tests, 446 lines)
+- tests/diff-comprehensive.test.ts                      (50 tests, 265 lines)
+- tests/page-characterization-comprehensive.test.ts     (138 tests, 580 lines)
+- /agent-ctx/1005-test-author.md                        (this work record)
+
+Total: 650 tests, 1020 expect() calls, 0 failures, 0 lint errors, 3209 lines of test code.
