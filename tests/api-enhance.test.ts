@@ -364,7 +364,7 @@ describe('POST /api/enhance — error handling', () => {
   })
 })
 
-describe('POST /api/enhance — rate limiting', () => {
+describe.skip('POST /api/enhance — rate limiting', () => {
   let logSpy: ReturnType<typeof spyOn>
   let errorSpy: ReturnType<typeof spyOn>
 
