@@ -160,14 +160,15 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   try {
     const result = await new Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }>((resolve) => {
-      const cleanEnv: Record<string, string> = {
+      const cleanEnv = {
         PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
         HOME: execDir,
         LANG: 'en_US.UTF-8',
         TMPDIR: execDir,
         PYTHONUNBUFFERED: '1',
         PYTHONDONTWRITEBYTECODE: '1',
-      }
+        NODE_ENV: 'production',
+      } as NodeJS.ProcessEnv
 
       const child = spawn(runConfig.cmd, [...runConfig.args, scriptPath], {
         cwd: execDir,

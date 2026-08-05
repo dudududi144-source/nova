@@ -3745,11 +3745,12 @@ export default function Home() {
                               language: lang === 'javascript' ? 'javascript' : lang,
                             }
                             if (result.files && result.files.length > 0) {
+                              const firstPath = result.fileName || result.files[0]?.path || ''
                               payload.files = result.files.map(f => ({
                                 path: f.path,
-                                content: f.path === (result.fileName || result.files[0]?.path) ? editedHtml : f.content,
+                                content: f.path === firstPath ? editedHtml : f.content,
                               }))
-                              payload.primaryFile = result.fileName || result.files[0]?.path
+                              payload.primaryFile = firstPath
                             } else {
                               payload.code = editedHtml
                             }

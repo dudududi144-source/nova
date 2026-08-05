@@ -60,7 +60,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     const stream = Readable.from(createReadStream(filePath))
 
-    return new Response(stream as ReadableStream, {
+    return new Response(stream as unknown as ReadableStream, {
       headers: {
         'Content-Type': isZip ? 'application/zip' : isBundle ? 'application/octet-stream' : 'application/octet-stream',
         'Content-Length': stat.size.toString(),
