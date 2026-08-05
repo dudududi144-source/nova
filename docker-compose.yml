@@ -1,0 +1,30 @@
+# NOVA — Docker Compose for production deployment
+version: '3.8'
+
+services:
+  nova:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Z.AI SDK is pre-configured in Z.ai sandbox
+      # For external deployment, add your API keys:
+      # - ZAI_API_KEY=your-key
+      # - DASHSCOPE_API_KEY=your-key
+      # - TOKENROUTER_API_KEY=your-key
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - nova-downloads:/app/download
+      - nova-data:/app/db
+
+volumes:
+  nova-downloads:
+  nova-data:
