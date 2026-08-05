@@ -209,7 +209,7 @@ export async function* llmChatStream(
       thinking: { type: 'disabled' },
       stream: true,
       signal: controller.signal,
-    } as any)
+    })
 
     // streamBody is a ReadableStream — read it chunk by chunk
     const reader = (streamBody as unknown as ReadableStream<Uint8Array>).getReader()

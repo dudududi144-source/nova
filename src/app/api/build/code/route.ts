@@ -591,9 +591,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         // v14 ROAST FIX: Skip retry if the build already took too long (>120s) —
         // retry adds 25s+ and rarely improves quality. Better to ship what we have.
         // v15: Also skip retry in Quick mode — Quick mode prioritizes speed over perfection.
-        // v29.23: Skip retry entirely in production — it doubles memory usage and causes crashes
+        // v29.40: Retry only if score is very low (<50) and build was fast (<60s)
+        // v29.23: Was disabled entirely — but some builds genuinely need retry
         const elapsedSoFar = Date.now() - startTime
-        const shouldRetry = false
+        const shouldRetry = (!staticAnalysis.passed || validation.score < 50) && combinedHint && elapsedSoFar < 60_000 && !isQuickMode
         if (shouldRetry) {
           logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, elapsedMs: elapsedSoFar, retrying: true })
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor(elapsedSoFar / 1000) })}\n\n`)

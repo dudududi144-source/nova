@@ -314,9 +314,9 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
             setTimeout(() => {
               // Also check the iframe's own error capture
               try {
-                const iframeErrors = (iframe.contentWindow as any)?.__novaGetErrors?.()
+                const iframeErrors = (iframe.contentWindow as Window & { __novaGetErrors?: () => ProbeError[] })?.__novaGetErrors?.()
                 if (Array.isArray(iframeErrors)) {
-                  iframeErrors.forEach((err: ProbeError) => {
+                  iframeErrors.forEach((err) => {
                     if (!errors.find(e => e.msg === err.msg)) {
                       errors.push(err)
                     }

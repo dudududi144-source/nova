@@ -138,7 +138,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       const fullPath = join(execDir, safePath)
       const dir = fullPath.slice(0, fullPath.lastIndexOf('/'))
       if (dir && dir !== execDir) {
-        try { mkdirSync(dir, { recursive: true }) } catch {}
+        try { mkdirSync(dir, { recursive: true }) } catch {} // mkdir failure is non-critical
       }
       writeFileSync(fullPath, file.content, { encoding: 'utf-8' })
     }
