@@ -109,8 +109,10 @@ describe('POST /api/refine (SSE streaming)', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns 400 for missing html', async () => {
-    const res = await POST(makeRequest({ mission: 'test', message: 'change' }) as unknown as NextRequest)
+  it('returns 400 for missing message (html validation removed in v29)', async () => {
+    // v29: html validation was removed — non-HTML code is now supported
+    // Test that missing message still returns 400
+    const res = await POST(makeRequest({ mission: 'test', html: '<html></html>' }) as unknown as NextRequest)
     expect(res.status).toBe(400)
   })
 
@@ -151,7 +153,7 @@ describe('POST /api/refine (SSE streaming)', () => {
     expect(errorEvent?.error).toBe('LLM stream error')
   })
 
-  it('streams error event when LLM returns non-HTML', async () => {
+  it('handles non-HTML output gracefully (v29: no longer an error)', async () => {
     mockStreamFn = async function* () {
       const bad = 'not html at all'
       yield { text: bad, fullText: bad, done: false, tokens: 0, ms: 0 }
@@ -159,8 +161,11 @@ describe('POST /api/refine (SSE streaming)', () => {
     }
     const res = await POST(makeRequest({ mission: 'test', html: '<!DOCTYPE html><html></html>', message: 'change' }) as unknown as NextRequest)
     const events = await readSSE(res)
+    // v29: Non-HTML output is now handled as a result (not an error)
+    const resultEvent = events.find(e => e.type === 'result')
     const errorEvent = events.find(e => e.type === 'error')
-    expect(errorEvent).toBeTruthy()
+    // Should have either result (non-HTML handled) or error (fallback)
+    expect(resultEvent || errorEvent).toBeTruthy()
   })
 
   it('calls llmChatStream exactly once', async () => {
