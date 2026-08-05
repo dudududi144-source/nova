@@ -1,0 +1,44 @@
+# NOVA CI/CD Pipeline
+name: NOVA CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run lint
+      - run: bun test tests/ --timeout 30000
+        env:
+          NODE_ENV: test
+      - run: bun run build
+        env:
+          NODE_ENV: production
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t nova .
+      - name: Test Docker image
+        run: |
+          docker run -d -p 3000:3000 --name nova-test nova
+          sleep 5
+          curl -f http://localhost:3000/ || exit 1
+          curl -f -X POST http://localhost:3000/api/run \
+            -H "Content-Type: application/json" \
+            -d '{"language":"python","code":"print(42)"}' || exit 1
+          docker stop nova-test
+          docker rm nova-test
