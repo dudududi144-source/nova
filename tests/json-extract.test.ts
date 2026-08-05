@@ -14,16 +14,16 @@ describe('extractBalancedJson — function shape', () => {
 })
 
 describe('extractBalancedJson — error cases', () => {
-  it('throws on empty string', () => {
-    expect(() => extractBalancedJson('')).toThrow(/opening brace/)
+  it('returns null on empty string', () => {
+    expect(extractBalancedJson('')).toBeNull()
   })
 
-  it('throws on whitespace-only input', () => {
-    expect(() => extractBalancedJson('   \n\t  ')).toThrow(/opening brace/)
+  it('returns null on whitespace-only input', () => {
+    expect(extractBalancedJson('   \n\t  ')).toBeNull()
   })
 
-  it('throws when no opening brace is present', () => {
-    expect(() => extractBalancedJson('Hello, world!')).toThrow(/opening brace/)
+  it('returns null when no opening brace is present', () => {
+    expect(extractBalancedJson('Hello, world!')).toBeNull()
   })
 
   it('throws when opening brace has no matching close', () => {
@@ -31,15 +31,15 @@ describe('extractBalancedJson — error cases', () => {
   })
 
   it('throws on malformed JSON inside braces', () => {
-    expect(() => extractBalancedJson('{ a: 1 }')).toThrow() // unquoted key
+    expect(() => extractBalancedJson('{ a: 1 }')).toThrow()
   })
 
   it('throws when JSON has trailing comma (invalid JSON)', () => {
     expect(() => extractBalancedJson('{"a":1,}')).toThrow()
   })
 
-  it('throws when string contains only a closing brace', () => {
-    expect(() => extractBalancedJson('}')).toThrow(/opening brace/)
+  it('returns null when string contains only a closing brace', () => {
+    expect(extractBalancedJson('}')).toBeNull()
   })
 })
 
@@ -104,7 +104,7 @@ describe('extractBalancedJson — string literal edge cases', () => {
 
   it('does not treat backslash outside strings as escape', () => {
     // Backslash outside a string is just a regular char; should not affect brace counting.
-    expect(() => extractBalancedJson('{\\}')).toThrow() // invalid JSON anyway
+    expect(() => extractBalancedJson('{\\}')).toThrow() // v29: changed to return null // invalid JSON anyway
   })
 
   it('handles strings with newlines escaped as \\n', () => {

@@ -22,7 +22,7 @@ export function extractBalancedJson(text: string): unknown {
 
   // Find the first '{'
   const start = cleaned.indexOf('{')
-  if (start < 0) throw new Error('No opening brace found')
+  if (start < 0) return null // v29.38: Return null instead of throwing
 
   // Walk from start, counting brace depth. Respect string literals and escapes.
   let depth = 0
