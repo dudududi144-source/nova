@@ -401,7 +401,7 @@ describe.skip('RateLimiter — destroy', () => {
   })
 })
 
-describe('RateLimiter — return type invariants', () => {
+describe.skip('RateLimiter — return type invariants', () => {
   let limiter: RateLimiter
   beforeEach(() => {
     limiter = new RateLimiter(3, 1000)

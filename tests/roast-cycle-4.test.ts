@@ -60,8 +60,8 @@ describe('extractBalancedJson — robust JSON extraction (roast #4 fix)', () => 
     expect(extractBalancedJson(text)).toEqual({ a: 'he said "hello"' })
   })
 
-  it('throws when no JSON found', () => {
-    expect(() => extractBalancedJson('no json here')).toThrow()
+  it('returns null when no JSON found (v29.38: changed from throw to null)', () => {
+    expect(extractBalancedJson('no json here')).toBeNull()
   })
 
   it('does not grab trailing prose with a }', () => {
