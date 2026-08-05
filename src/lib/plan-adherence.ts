@@ -39,11 +39,20 @@ export function checkPlanAdherence(html: string, plan: unknown): PlanAdherenceRe
   const lower = html.toLowerCase()
 
   // Check features array (v26: handle both 'features' and 'key_features')
+  // v29.36: Features can be strings OR objects with 'name' property
   const featuresList = Array.isArray(p.features) ? p.features : (Array.isArray(p.key_features) ? p.key_features : [])
   if (featuresList.length > 0) {
     for (const feature of featuresList) {
-      if (typeof feature !== 'string') continue
-      const featureLower = feature.toLowerCase()
+      // v29.36: Handle both string and object features
+      let featureName: string
+      if (typeof feature === 'string') {
+        featureName = feature
+      } else if (feature && typeof feature === 'object' && typeof (feature as Record<string, unknown>).name === 'string') {
+        featureName = (feature as Record<string, unknown>).name as string
+      } else {
+        continue
+      }
+      const featureLower = featureName.toLowerCase()
 
       // Strategy: check if key words from the feature description appear in the HTML
       // Extract significant words (skip common words)
@@ -57,7 +66,7 @@ export function checkPlanAdherence(html: string, plan: unknown): PlanAdherenceRe
       const found = ratio >= 0.5
 
       features.push({
-        name: feature,
+        name: featureName,
         found,
         detail: found
           ? `Found (${foundWords.length}/${words.length} keywords)`
@@ -66,18 +75,26 @@ export function checkPlanAdherence(html: string, plan: unknown): PlanAdherenceRe
     }
   }
 
-  // Check keyFunctions
-  if (Array.isArray(p.keyFunctions)) {
-    for (const fn of p.keyFunctions) {
-      if (typeof fn !== 'string') continue
-      const fnLower = fn.toLowerCase()
+  // Check keyFunctions (v29.36: handle objects too)
+  if (Array.isArray(p.keyFunctions) || Array.isArray(p.key_functions)) {
+    const fnList = Array.isArray(p.keyFunctions) ? p.keyFunctions : p.key_functions
+    for (const fn of fnList!) {
+      let fnName: string
+      if (typeof fn === 'string') {
+        fnName = fn
+      } else if (fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).name === 'string') {
+        fnName = (fn as Record<string, unknown>).name as string
+      } else {
+        continue
+      }
+      const fnLower = fnName.toLowerCase()
       const words = fnLower.split(/[\s,.-]+/).filter(w => w.length > 3 && !COMMON_WORDS.has(w))
       const foundWords = words.filter(w => lower.includes(w))
       const ratio = words.length > 0 ? foundWords.length / words.length : 1
       const found = ratio >= 0.4 // Lower threshold for functions (names may differ)
 
       features.push({
-        name: `Function: ${fn}`,
+        name: `Function: ${fnName}`,
         found,
         detail: found
           ? `Found (${foundWords.length}/${words.length} keywords)`

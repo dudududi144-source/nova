@@ -49,10 +49,31 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   const js = scriptContents.join('\n')
 
   if (!js.trim()) {
+    // v29.36: Even without <script>, check onclick handlers — they might reference
+    // undefined functions that the LLM forgot to define
+    const issues: AnalyzeIssue[] = []
+    const eventAttrMatches = html.matchAll(/\son(?:click|change|input|submit|load|keydown|keyup|keypress|mouseover|mouseout|focus|blur)\s*=\s*["']([^"']+)["']/gi)
+    for (const m of eventAttrMatches) {
+      const handlerCode = m[1]
+      const fnCallsInAttr = handlerCode.matchAll(/(?<!\.)\b(\w+)\s*\(/g)
+      for (const fc of fnCallsInAttr) {
+        const fnName = fc[1]
+        if (BUILTIN_FUNCTIONS.has(fnName) || CONTROL_FLOW.has(fnName)) continue
+        issues.push({
+          type: 'undefined-function',
+          severity: 'error',
+          message: `onclick handler calls '${fnName}()' — function is not defined`,
+          detail: `An HTML event handler calls function '${fnName}()', but there is no <script> section defining it.`,
+          fixHint: `Add a <script> section with function '${fnName}()'.`,
+        })
+      }
+    }
     return {
-      issues: [],
-      passed: true,
-      summary: 'No JavaScript found (static analysis skipped)',
+      issues,
+      passed: issues.length === 0,
+      summary: issues.length > 0
+        ? `${issues.length} issue(s) in event handlers (no script section)`
+        : 'No JavaScript found (static analysis skipped)',
     }
   }
 
@@ -130,6 +151,31 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
         message: `addEventListener('${m[1]}', ${fnName}) — function '${fnName}' is not defined`,
         detail: `An event listener references function '${fnName}', but no function with that name is defined in the script.`,
         fixHint: `Define function '${fnName}()' or fix the function name.`,
+      })
+    }
+  }
+
+  // v29.36: Check onclick/onchange/oninput/onsubmit event handlers in HTML attributes
+  // The LLM writes onclick="foo()" — if foo() is not defined, the button is dead
+  const eventAttrMatches = html.matchAll(/\son(?:click|change|input|submit|load|keydown|keyup|keypress|mouseover|mouseout|focus|blur)\s*=\s*["']([^"']+)["']/gi)
+  for (const m of eventAttrMatches) {
+    // Extract function names from the attribute value
+    const handlerCode = m[1]
+    const fnCallsInAttr = handlerCode.matchAll(/(?<!\.)\b(\w+)\s*\(/g)
+    for (const fc of fnCallsInAttr) {
+      const fnName = fc[1]
+      // Skip control flow and builtins
+      if (BUILTIN_FUNCTIONS.has(fnName) || CONTROL_FLOW.has(fnName)) continue
+      // Skip if defined
+      if (definedFunctions.has(fnName) || declaredVars.has(fnName)) continue
+      // Skip known methods
+      if (knownMethodNames.has(fnName)) continue
+      issues.push({
+        type: 'undefined-function',
+        severity: 'error',
+        message: `onclick handler calls '${fnName}()' — function is not defined`,
+        detail: `An HTML event handler (onclick/onchange/etc.) calls function '${fnName}()', but no function with that name is defined in the script.`,
+        fixHint: `Define function '${fnName}()' in the <script> section.`,
       })
     }
   }
