@@ -5186,3 +5186,57 @@ Files Created:
 - /agent-ctx/1003-test-author.md               (this work record)
 
 Total: 323 tests, 490 expect() calls, 0 failures, 0 lint errors, 3049 lines of test code.
+
+---
+Task ID: 1004
+Agent: test-author (Z.ai Code)
+Task: Create 8 comprehensive test suites to increase NOVA's test coverage beyond the existing 1797 tests. Target modules: build-intelligence, mission-analysis, build-steps, golden-templates, mission, rate-limit, zip, format.
+
+Work Log:
+- Read worklog.md (Tasks 1–4 + 1001 + 1003) and all 8 target source modules to understand APIs, edge cases, and quirks.
+- Created 8 `-comprehensive` test files using `import { describe, expect, test } from 'bun:test'` and relative imports.
+
+KEY DESIGN DECISIONS:
+1. Helper functions for HTML construction (makeHtml, padTo) to test validateOutput size boundaries (2000/2001 bytes).
+2. Documented source quirks as explicit tests with comments: enrichMission "player" contains "play" → matches game branch; mission-analysis 'paint' contains 'ai' substring; build-steps key_functions (snake_case) NOT supported for key functions; validateOutput 'hi' alone fails DOCTYPE+Closing+Interactivity (all weight 15).
+3. Boundary tests for every module: 3-char vs 2-char mission length, 2000 vs 2001 char, 999ms vs 1000ms, max=0/max=1 rate limit, maxKeys=1, calculator buttons 9 vs 10.
+4. Pure function verification + return-type invariants in each file.
+5. CRC-32 standard test vectors (0x3610a686 for "hello", 0xCBF43926 for "123456789").
+6. RateLimiter tests use short windows (100-200ms) and beforeEach/afterEach for isolation.
+
+CHALLENGES & FIXES:
+- estimateTokenBudget math: 2*1500 + 2*800 + 1000 = 5600 (not 5400). Arrays are objects in JS → fall through to defaults → 7100 (not 6000).
+- mission-analysis feature counting: short names (length <= 2) are filtered out; "a, b, c" → 1 feature, not 3.
+- mission-analysis 'paint' contains 'ai' → triggers complex keyword. Used "build, draw, sketch" instead.
+- build-steps empty features fallback loop starts at index 2 (skips "Analyzing" + "Planning game mechanics...").
+- rate-limit: calling check() twice after reset() decrements remaining twice. Captured first check's result in a variable.
+- lint: replaced `as any` with `as unknown as string[]` to avoid @typescript-eslint/no-explicit-any warnings.
+
+TEST COUNTS (all pass in parallel mode):
+- tests/build-intelligence-comprehensive.test.ts — 158 tests, 224 expect() calls
+- tests/mission-analysis-comprehensive.test.ts — 112 tests, 173 expect() calls
+- tests/build-steps-comprehensive.test.ts — 63 tests, 139 expect() calls
+- tests/golden-templates-comprehensive.test.ts — 57 tests, 122 expect() calls
+- tests/mission-comprehensive.test.ts — 74 tests, 122 expect() calls
+- tests/rate-limit-comprehensive.test.ts — 48 tests, 111 expect() calls
+- tests/zip-comprehensive.test.ts — 57 tests, 82 expect() calls
+- tests/format-comprehensive.test.ts — 82 tests, 160 expect() calls
+
+VERIFICATION:
+- bun run lint: 0 errors, 5 warnings (all pre-existing — none from new files).
+- bun test (8 new files together): 651 pass, 0 fail, 1133 expect() calls, 825ms.
+- bun test --parallel (full suite): 2280 pass, 213 skip, 2 fail (pre-existing in refine-route-sse.test.ts, documented in Task 1003), 4263 expect() calls, 3.31s.
+- My tests added 651 passing tests (1633 → 2280 in parallel mode).
+
+Files Created:
+- tests/build-intelligence-comprehensive.test.ts     (158 tests, 1053 lines)
+- tests/mission-analysis-comprehensive.test.ts       (112 tests, 661 lines)
+- tests/build-steps-comprehensive.test.ts            (63 tests, 464 lines)
+- tests/golden-templates-comprehensive.test.ts       (57 tests, 370 lines)
+- tests/mission-comprehensive.test.ts                (74 tests, 426 lines)
+- tests/rate-limit-comprehensive.test.ts             (48 tests, 484 lines)
+- tests/zip-comprehensive.test.ts                    (57 tests, 490 lines)
+- tests/format-comprehensive.test.ts                 (82 tests, 483 lines)
+- /agent-ctx/1004-test-author.md                     (this work record)
+
+Total: 651 tests, 1133 expect() calls, 0 failures (in parallel mode), 0 lint errors, 4431 lines of test code.
