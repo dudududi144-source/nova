@@ -6322,3 +6322,51 @@ Stage Summary:
 - Dev server stable (v29.51 memory fix)
 - 234 skips are a known bun mock.module limitation (pass individually)
 - GitHub auth still expired, 6 commits saved locally (v29.48-v29.52)
+
+---
+Task ID: 1022
+Agent: main (Z.ai Code)
+Task: Real E2E testing reveals critical bugs — fix unclosed script tags
+
+Work Log:
+- Generated a snake game (quality 97/100) and counter app for testing
+- Found that quick mode builds had quality 46/100 due to 5 static errors
+- Investigated: static analysis reported "onclick calls undefined function"
+  for functions that WERE defined
+- Root cause: LLM truncation left an unclosed <script> tag
+  - The HTML had 3 <script> opens but only 2 </script> closes
+  - Static analysis regex couldn't extract the 3rd script's content
+  - All functions in that script appeared "undefined"
+  
+- Also found: polyfill stripping regex was leaving an orphaned <script> tag
+  - The regex matched from the COMMENT inside the tag, not the tag itself
+  - This caused the next <script> to capture <style> content
+  - CSS functions (rgba, var, brightness, scale, translateY) were
+    false-positive flagged as undefined JavaScript functions
+
+Fixes (v29.54):
+1. Unclosed <script> detection:
+   - Count <script> vs </script> tags
+   - If unbalanced, inject </script> before </body>
+   - Makes HTML valid, lets static analysis extract all content
+   
+2. Polyfill regex fix:
+   - Changed pattern to include <script[^>]*> opening tag
+   - Prevents orphaned <script> from capturing <style> content
+
+Results:
+- Quality: 46 → 96 (+50 points!)
+- Static issues: 5 false positives → 0
+- Script tags: 3/2 (unbalanced) → 3/3 (balanced)
+- All functions now correctly extractable
+
+Verification:
+- 3029 tests, 0 failures, 0 lint errors
+- Dev server stable
+- Generated apps now have correct quality scores
+
+Stage Summary:
+- Found and fixed 2 critical bugs through real E2E testing
+- Quality scores improved dramatically (46→96 on truncated builds)
+- No more false positives from polyfill or CSS functions
+- 7 commits saved locally (v29.48-v29.54), GitHub auth still expired
