@@ -172,8 +172,11 @@ export function fixForms(html: string): string {
     // Add type="button" to buttons that don't have a type attribute
     // but ONLY if they're not inside a form context that expects submit
     // This is tricky — only fix buttons with onclick handlers
+    const beforeBtnFix = result
     result = result.replace(/<button(?![^>]*type=)([^>]*onclick=[^>]*)>/gi, '<button type="button"$1>')
-    if (result !== html) {
+    // v29.43: Compare to beforeBtnFix (not original `html`) — earlier fixers
+    // may have already mutated `result`, which would falsely trigger this counter.
+    if (result !== beforeBtnFix) {
       fixesApplied++
       logger.info('postfix.form', { fix: 'Added type="button" to buttons with onclick' })
     }

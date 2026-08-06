@@ -5300,3 +5300,83 @@ Files Created:
 - /agent-ctx/1005-test-author.md                        (this work record)
 
 Total: 650 tests, 1020 expect() calls, 0 failures, 0 lint errors, 3209 lines of test code.
+
+---
+Task ID: 1006
+Agent: api-integration-tester
+Task: Write comprehensive integration tests for /api/settings, /api/backup, /api/run
+
+Work Log:
+- Read /home/z/my-project/worklog.md (Tasks 1–4 + 1001 + 1003 + 1004 + 1005) to understand the project architecture, existing test patterns, and the convention of importing route handlers directly (rather than HTTP fetch to the dev server used by older tests like run-api.test.ts).
+- Read the three target route handlers (src/app/api/settings/route.ts, src/app/api/backup/route.ts, src/app/api/run/route.ts) plus supporting libs (src/lib/rate-limit.ts, src/lib/logger.ts, src/lib/zip.ts) to understand the exact API contracts, exported symbols, and module-level singletons.
+- Discovered that maskKey, getEffectiveKey, getRunCommand, extractFiles, and formatBytes are NOT exported — only GET/POST/DELETE handlers and getEffectiveApiKey are. Tested the unexported helpers indirectly through the public API surface (POST a key → read masked value back; POST a language alias → verify it executes).
+- Created /home/z/my-project/tests/api-integration-comprehensive.test.ts with 61 tests across 3 API routes.
+
+KEY DESIGN DECISIONS:
+1. Mock NextRequest via `new NextRequest(url, init)` — first test file in the repo to import route handlers directly instead of using fetch() against the dev server. This makes tests hermetic, fast (no HTTP roundtrip), and runnable without the dev server running.
+2. Unique IPs per test (counter-based `198.51.X.Y`) to avoid cross-test rate-limiter interference. The settings route has a 30/min limiter and the run route has a 20/min limiter, both module-scoped singletons.
+3. globalThis.__novaSettings is cleared in beforeEach (the settings route stores keys there). Env vars ZAI_API_KEY / DASHSCOPE_API_KEY / TOKENROUTER_API_KEY are saved/restored around each test.
+4. Backup tests create files in download/ and track them in a createdFiles[] array, cleaned up in afterEach. File names include Date.now() to avoid collisions.
+5. The timeout test uses time.sleep(15) — the route kills at 10s, so the test takes ~10s. Test timeout set to 25000ms.
+6. Helper functions (maskKey, getRunCommand, extractFiles, formatBytes) tested indirectly: e.g., for maskKey I POST keys of lengths 3/7/8/20 and verify the masked response; for formatBytes I write files of 500 B / 1024 B / 1 MB to download/ and read the sizeFormatted field from the list endpoint.
+
+CHALLENGES & FIXES:
+- Initially the `makeJsonRequest` helper used `init.body = ...` directly which caused a TypeScript error on the RequestInit type. Fixed by constructing the init object as a plain RequestInit and casting headers.
+- The "POST updates only provided keys" test needed to make TWO POSTs in sequence within the same test (first sets zai, second sets dashscope) — the globalThis state persists across calls within a single test but is reset between tests by beforeEach. Verified the second POST's response shows both keys configured.
+- For the rate-limit test, the 30 requests needed to use a single shared IP while every other test uses unique IPs — otherwise the limiter would have blocked subsequent tests on that IP. Used a dedicated IP `uniqueIp()` called once, then reused for all 31 requests.
+- Backup POST creates a real ZIP of all src/ and tests/ files (timestamped filename). Tracked created filenames in `createdFiles[]` for cleanup, and pushed the filename BEFORE running assertions so a failure wouldn't leak files.
+
+TEST COUNTS (all pass):
+- tests/api-integration-comprehensive.test.ts — 61 tests, 180 expect() calls, 0 failures, 10.51s
+
+Breakdown:
+- Settings API: 22 tests (GET: 4, POST: 6, maskKey: 4, getEffectiveApiKey: 7, rate limiting: 1)
+- Backup API: 13 tests (GET list: 2, POST: 2, GET download: 3, DELETE: 3, formatBytes: 3)
+- Run API: 26 tests (execution: 3, stdin: 1, validation: 4, multi-file: 2, exit codes: 2, timeout: 1, getRunCommand: 10, extractFiles: 3)
+
+VERIFICATION:
+- bun test tests/api-integration-comprehensive.test.ts: 61 pass, 0 fail, 180 expect() calls, 10.51s.
+- bun run lint: 0 errors, 3 warnings (all pre-existing in run-api-multifile.test.ts, run-api-stdin.test.ts, run-api.test.ts — none from the new file).
+
+Stage Summary:
+- Shipped a single test file (tests/api-integration-comprehensive.test.ts, ~730 LOC) covering all 3 API routes with 61 passing tests and 180 assertions.
+- Tests are hermetic (no dev server required), fast (~10s total — the timeout test alone is 10s), and exercise both the happy paths and edge cases (path traversal, invalid JSON, empty strings, rate limiting, multi-file imports, exit codes, timeouts, language alias mapping, file/code precedence).
+- 0 lint errors, 0 new warnings.
+- Pioneered the "import route handlers directly + mock NextRequest" pattern for this repo — previous API tests used HTTP fetch to localhost:3000 which required the dev server to be running.
+
+Files Created:
+- tests/api-integration-comprehensive.test.ts (61 tests, ~730 lines)
+
+---
+Task ID: 1007
+Agent: bug-auditor
+Task: Manual bug audit of 11 source modules
+
+Work Log:
+- Read /home/z/my-project/worklog.md (Tasks 1–4 + 1001 + 1003 + 1004 + 1005 + 1006) to understand the project architecture and conventions.
+- Read all 11 target source modules in full:
+  - src/app/api/build/code/route.ts (723 lines)
+  - src/app/api/build/architect/route.ts (89 lines)
+  - src/app/api/refine/route.ts (388 lines)
+  - src/app/api/enhance/route.ts (135 lines)
+  - src/lib/llm-fallback.ts (213 lines)
+  - src/lib/model-circuit-breaker.ts (68 lines)
+  - src/lib/build-store.ts (84 lines)
+  - src/lib/runtime-errors.ts (86 lines)
+  - src/lib/form-fixer.ts (187 lines)
+  - src/lib/css-fixer.ts (146 lines)
+  - src/lib/design-tokens.ts (310 lines)
+- Read supporting modules to understand contracts: src/lib/llm.ts (llmChat/llmChatStream), src/lib/multi-file.ts (parseOutput, defaultFileNameForLanguage).
+- For each file, checked for: null/undefined access without checks, off-by-one errors, race conditions in async code, missing error handling, incorrect conditional logic, security issues, resource leaks, incorrect type assumptions, dead code, state management bugs.
+- Cross-referenced the refine route's post-processing pipeline against the code route's pipeline to spot inconsistencies.
+- Verified each suspected bug by re-reading the relevant code paths and tracing the data flow.
+
+Stage Summary:
+- 6 bugs found across 4 files. 1 high, 2 medium, 3 low.
+- HIGH: refine/route.ts line 226 — truncation retry fires for non-HTML outputs (Python/SQL/Bash), appending HTML to non-HTML code and corrupting it.
+- MEDIUM: code/route.ts lines 671/706 — recordSuccess/recordFailure hardcoded to 'z-ai' regardless of which model actually served the request; stream errors never call recordFailure at all (only the catch block does). Breaks the circuit breaker for Qwen/Kimi.
+- MEDIUM: refine/route.ts lines 337-338 — retry post-processing missing stripBlockedAPIs, fixConversionMath, fixForms, fixCss (inconsistent with main path at lines 287-296).
+- LOW: llm-fallback.ts line 148 — returns secondaryResult.error instead of the primary's error when both fail (comment says "return the primary's error").
+- LOW: form-fixer.ts line 176 — `if (result !== html)` compares to original input, not previous result; inflates fixesApplied counter when earlier fixes were applied.
+- LOW: css-fixer.ts line 76 — hasInputListener computed but never used (dead code).
+- Files with no bugs: architect/route.ts, enhance/route.ts, model-circuit-breaker.ts, build-store.ts, runtime-errors.ts, design-tokens.ts.

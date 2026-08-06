@@ -77,6 +77,7 @@ export async function executeWithFallback(opts: FallbackOptions): Promise<LlmRes
 
   // ── Try primary ──
   const primaryAvailable = isModelAvailable(primary)
+  let primaryError: string | null = null
   if (primaryAvailable) {
     const result = await callModel(primary, opts)
     if (result.ok) {
@@ -85,7 +86,8 @@ export async function executeWithFallback(opts: FallbackOptions): Promise<LlmRes
       return result
     }
     // Primary failed — record and try fallback
-    recordFailure(primary, result.error ?? 'unknown error')
+    primaryError = result.error ?? 'unknown error'
+    recordFailure(primary, primaryError)
     logger.warn('fallback.primary_failed', { model: primary, error: result.error, ms: result.ms })
 
     if (!allowFallback) {
@@ -137,15 +139,13 @@ export async function executeWithFallback(opts: FallbackOptions): Promise<LlmRes
     return secondaryResult
   }
 
-  // Return the primary's error (we tried it first)
-  // Re-call to get the error? No — we already have it. But we discarded it above.
-  // Reconstruct from the secondary result + a note that primary failed.
+  // Return the primary's error (we tried it first — its error is more actionable)
   return {
     ok: false,
     text: '',
     tokens: 0,
     ms: Date.now() - t0,
-    error: secondaryResult.error ?? `Both ${primary} and ${secondary} failed.`,
+    error: primaryError ?? secondaryResult.error ?? `Both ${primary} and ${secondary} failed.`,
   }
 }
 

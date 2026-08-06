@@ -71,9 +71,7 @@ button[style*="position:fixed"] {
   // The LLM often uses 'change' event instead of 'input' event for search
   // We can't fix the JS directly, but we can add an input listener
   const hasSearch = /type="search"|placeholder="[^"]*search/i.test(result)
-  const scriptText = (result.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [])
-    .map(s => s.replace(/<\/?script[^>]*>/gi, '')).join('\n')
-  const hasInputListener = /addEventListener\s*\(\s*['"]input['"]/.test(scriptText)
+  // v29.43: Removed unused hasInputListener variable (was computed but never used).
 
   // v27: Always inject search handler — even if LLM created one, it may not work.
   // Our handler is a catch-all that filters any list-like elements.

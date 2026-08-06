@@ -5,10 +5,19 @@ import { describe, expect, test } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
 
+// page.tsx — UI structure, keyboard shortcuts, state management
 const source = fs.readFileSync(
   path.join(process.cwd(), 'src/app/page.tsx'),
   'utf-8'
 )
+// page-constants.ts — STARTER_CATEGORIES, SLASH_COMMANDS, SUGGESTION_GROUPS, etc.
+// (extracted from page.tsx for maintainability)
+const constSource = fs.readFileSync(
+  path.join(process.cwd(), 'src/lib/page-constants.ts'),
+  'utf-8'
+)
+// Combined source — for tests that check constants exist somewhere in the codebase
+const allSource = source + '\n' + constSource
 
 describe('page.tsx — UI structure', () => {
   test('renders a <main> semantic element', () => {
@@ -52,11 +61,11 @@ describe('page.tsx — UI structure', () => {
   })
 })
 
-describe('page.tsx — STARTER_CATEGORIES structure', () => {
+describe('page-constants.ts — STARTER_CATEGORIES structure', () => {
   test('has 4 starter categories', () => {
     // Find STARTER_CATEGORIES block — match from declaration up to first line starting with `]`
-    const startIdx = source.indexOf('const STARTER_CATEGORIES')
-    const linesFromStart = source.slice(startIdx).split('\n')
+    const startIdx = constSource.indexOf('const STARTER_CATEGORIES')
+    const linesFromStart = constSource.slice(startIdx).split('\n')
     let endLineIdx = -1
     for (let i = 1; i < linesFromStart.length; i++) {
       if (linesFromStart[i].startsWith(']')) { endLineIdx = i; break }
@@ -66,8 +75,8 @@ describe('page.tsx — STARTER_CATEGORIES structure', () => {
     expect(labels).toHaveLength(4)
   })
   test('each category has 3 prompts', () => {
-    const startIdx = source.indexOf('const STARTER_CATEGORIES')
-    const linesFromStart = source.slice(startIdx).split('\n')
+    const startIdx = constSource.indexOf('const STARTER_CATEGORIES')
+    const linesFromStart = constSource.slice(startIdx).split('\n')
     let endLineIdx = -1
     for (let i = 1; i < linesFromStart.length; i++) {
       if (linesFromStart[i].startsWith(']')) { endLineIdx = i; break }
@@ -77,27 +86,27 @@ describe('page.tsx — STARTER_CATEGORIES structure', () => {
     expect(prompts).toHaveLength(12) // 4 categories × 3 prompts
   })
   test('categories: Dashboards, Games, Creative, Tools', () => {
-    expect(source).toContain("label: 'Dashboards'")
-    expect(source).toContain("label: 'Games'")
-    expect(source).toContain("label: 'Creative'")
-    expect(source).toContain("label: 'Tools'")
+    expect(constSource).toContain("label: 'Dashboards'")
+    expect(constSource).toContain("label: 'Games'")
+    expect(constSource).toContain("label: 'Creative'")
+    expect(constSource).toContain("label: 'Tools'")
   })
   test('EXAMPLES is derived from STARTER_CATEGORIES', () => {
-    expect(source).toContain("EXAMPLES: readonly string[] = STARTER_CATEGORIES.flatMap")
+    expect(constSource).toContain("EXAMPLES: readonly string[] = STARTER_CATEGORIES.flatMap")
   })
   test('examples are ambitious (not basic)', () => {
-    expect(source).toContain('crypto trading dashboard')
-    expect(source).toContain('banking dashboard')
-    expect(source).toContain('snake game')
-    expect(source).toContain('music production studio')
-    expect(source).toContain('mobile OS simulator')
+    expect(constSource).toContain('crypto trading dashboard')
+    expect(constSource).toContain('banking dashboard')
+    expect(constSource).toContain('snake game')
+    expect(constSource).toContain('music production studio')
+    expect(constSource).toContain('mobile OS simulator')
   })
 })
 
-describe('page.tsx — SLASH_COMMANDS structure', () => {
+describe('page-constants.ts — SLASH_COMMANDS structure', () => {
   test('has 5 slash commands', () => {
-    const startIdx = source.indexOf('const SLASH_COMMANDS')
-    const linesFromStart = source.slice(startIdx).split('\n')
+    const startIdx = constSource.indexOf('const SLASH_COMMANDS')
+    const linesFromStart = constSource.slice(startIdx).split('\n')
     let endLineIdx = -1
     for (let i = 1; i < linesFromStart.length; i++) {
       if (linesFromStart[i].startsWith(']')) { endLineIdx = i; break }
@@ -107,22 +116,22 @@ describe('page.tsx — SLASH_COMMANDS structure', () => {
     expect(cmds).toHaveLength(5)
   })
   test('slash commands include /dashboard, /game, /creative, /tool, /enhance', () => {
-    expect(source).toContain("cmd: '/dashboard'")
-    expect(source).toContain("cmd: '/game'")
-    expect(source).toContain("cmd: '/creative'")
-    expect(source).toContain("cmd: '/tool'")
-    expect(source).toContain("cmd: '/enhance'")
+    expect(constSource).toContain("cmd: '/dashboard'")
+    expect(constSource).toContain("cmd: '/game'")
+    expect(constSource).toContain("cmd: '/creative'")
+    expect(constSource).toContain("cmd: '/tool'")
+    expect(constSource).toContain("cmd: '/enhance'")
   })
   test('slash commands have action: filter or insert', () => {
-    expect(source).toMatch(/action: 'filter'/)
-    expect(source).toMatch(/action: 'insert'/)
+    expect(constSource).toMatch(/action: 'filter'/)
+    expect(constSource).toMatch(/action: 'insert'/)
   })
 })
 
-describe('page.tsx — REFINE_THINKING_STEPS', () => {
+describe('page-constants.ts — REFINE_THINKING_STEPS', () => {
   test('has 3 refine thinking steps', () => {
-    const startIdx = source.indexOf('const REFINE_THINKING_STEPS')
-    const linesFromStart = source.slice(startIdx).split('\n')
+    const startIdx = constSource.indexOf('const REFINE_THINKING_STEPS')
+    const linesFromStart = constSource.slice(startIdx).split('\n')
     let endLineIdx = -1
     for (let i = 1; i < linesFromStart.length; i++) {
       if (linesFromStart[i].startsWith(']')) { endLineIdx = i; break }
@@ -133,44 +142,44 @@ describe('page.tsx — REFINE_THINKING_STEPS', () => {
     expect(steps).toHaveLength(3)
   })
   test('includes "Processing your request"', () => {
-    expect(source).toContain('Processing your request')
+    expect(constSource).toContain('Processing your request')
   })
   test('includes "Making changes"', () => {
-    expect(source).toContain('Making changes')
+    expect(constSource).toContain('Making changes')
   })
   test('includes "Finalizing"', () => {
-    expect(source).toContain('Finalizing')
+    expect(constSource).toContain('Finalizing')
   })
 })
 
-describe('page.tsx — SUGGESTION_GROUPS structure', () => {
+describe('page-constants.ts — SUGGESTION_GROUPS structure', () => {
   test('has multiple suggestion groups', () => {
-    const startIdx = source.indexOf('const SUGGESTION_GROUPS')
-    const linesFromStart = source.slice(startIdx).split('\n')
+    const startIdx = constSource.indexOf('const SUGGESTION_GROUPS')
+    const linesFromStart = constSource.slice(startIdx).split('\n')
     let endLineIdx = -1
     for (let i = 1; i < linesFromStart.length; i++) {
       if (linesFromStart[i].startsWith(']')) { endLineIdx = i; break }
     }
     const block = linesFromStart.slice(0, endLineIdx + 1).join('\n')
-    // Count "match:" occurrences — should be at least 6 groups
+    // Count "match:" occurrences — should be 6 groups (duplicate removed)
     const matches = block.match(/match: \[/g)
-    expect(matches!.length).toBeGreaterThanOrEqual(6)
+    expect(matches!.length).toBe(6)
   })
   test('includes a group matching "game" keyword', () => {
-    expect(source).toMatch(/match: \[[^\]]*'game'/)
+    expect(constSource).toMatch(/match: \[[^\]]*'game'/)
   })
   test('includes a group matching "dashboard" keyword', () => {
-    expect(source).toMatch(/match: \[[^\]]*'dashboard'/)
+    expect(constSource).toMatch(/match: \[[^\]]*'dashboard'/)
   })
   test('includes a group matching "todo" keyword', () => {
-    expect(source).toMatch(/match: \[[^\]]*'todo'/)
+    expect(constSource).toMatch(/match: \[[^\]]*'todo'/)
   })
   test('includes a group matching "timer" keyword', () => {
-    expect(source).toMatch(/match: \[[^\]]*'timer'/)
+    expect(constSource).toMatch(/match: \[[^\]]*'timer'/)
   })
   test('DEFAULT_SUGGESTIONS has 4 entries', () => {
-    const startIdx = source.indexOf('const DEFAULT_SUGGESTIONS')
-    const linesFromStart = source.slice(startIdx).split('\n')
+    const startIdx = constSource.indexOf('const DEFAULT_SUGGESTIONS')
+    const linesFromStart = constSource.slice(startIdx).split('\n')
     let endLineIdx = -1
     for (let i = 1; i < linesFromStart.length; i++) {
       if (linesFromStart[i].startsWith(']')) { endLineIdx = i; break }
@@ -178,6 +187,12 @@ describe('page.tsx — SUGGESTION_GROUPS structure', () => {
     const block = linesFromStart.slice(0, endLineIdx + 1).join('\n')
     const sugs = block.match(/^\s+'[^']+'/gm)
     expect(sugs).toHaveLength(4)
+  })
+  test('no duplicate suggestion groups (art/draw/paint deduped)', () => {
+    // The duplicate "art/draw/paint" group was removed — count 'paint' keyword occurrences
+    // in match arrays. Should be 1 (was 2 before dedup).
+    const paintMatches = constSource.match(/'paint'/g)
+    expect(paintMatches).toHaveLength(1)
   })
 })
 

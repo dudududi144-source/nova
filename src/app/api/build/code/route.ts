@@ -301,6 +301,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
       }, 3000)
 
+      // v29.43: Declare model flags before try block so they're accessible in catch
+      // for correct circuit-breaker recording.
+      const useKimi = body?.model === 'kimi' && isTokenRouterConfigured()
+      const useQwen = body?.model === 'qwen' && isDashScopeConfigured()
+
       try {
         // Adaptive token budget
         // v15: Quick mode — 65% of normal budget for faster builds (~2-3min vs ~5min)
@@ -318,10 +323,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         let totalTokens = 0
         let llmMs = 0
         let streamError: string | null = null
-
-        // v10.3: Multi-model support — Z.AI (default), Kimi K3, or Qwen
-        const useKimi = body?.model === 'kimi' && isTokenRouterConfigured()
-        const useQwen = body?.model === 'qwen' && isDashScopeConfigured()
 
         logger.info('code.model', { ip, model: useQwen ? 'qwen' : useKimi ? 'kimi' : 'z-ai', tokenBudget })
 
@@ -668,7 +669,13 @@ export async function POST(request: NextRequest): Promise<Response> {
         const staticDeduction = Math.min(50, staticErrors * 10 + staticWarnings * 3)
         const adjustedScore = Math.max(0, validation.score - staticDeduction)
         logger.info('code.completed', { ip, ms: totalMs, tokens: totalTokens, htmlBytes: html.length, score: adjustedScore, rawScore: validation.score, staticErrors, staticWarnings, staticDeduction, metrics: metrics.summary })
-        recordSuccess('z-ai')
+        // v29.43: Record success for the model that actually served the request.
+        // Qwen (DashScope) has no circuit breaker entry, so skip it.
+        if (useKimi) {
+          recordSuccess('tokenrouter')
+        } else if (!useQwen) {
+          recordSuccess('z-ai')
+        }
 
         // v10: Multi-file support — parse output for files array
         const multiFileResult = parseOutput(html)
@@ -703,7 +710,13 @@ export async function POST(request: NextRequest): Promise<Response> {
         } else {
           logger.error('code.exception', { ip, error: errorMsg })
           storeError(buildId, errorMsg)
-          recordFailure('z-ai', errorMsg)
+          // v29.43: Record failure for the model that was being used.
+          // Qwen (DashScope) has no circuit breaker entry, so skip it.
+          if (useKimi) {
+            recordFailure('tokenrouter', errorMsg)
+          } else if (!useQwen) {
+            recordFailure('z-ai', errorMsg)
+          }
           // Only send error to client if it wasn't an abort (client may already be gone)
           safeEnqueue(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`)
         }

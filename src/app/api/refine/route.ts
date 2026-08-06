@@ -222,24 +222,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         let rawHtml = stripCodeFences(fullText)
 
-        // Truncation detection + continuation retry
-        if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
-          logger.warn('refine.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
-          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
-
-          const lastChars = rawHtml.slice(-1000)
-          const retryResult = await llmChat(
-            'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
-            `The previous output was truncated. Last 1000 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
-            { maxTokens: 16000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
-          )
-          if (retryResult.ok) {
-            rawHtml = rawHtml + stripCodeFences(retryResult.text)
-            logger.info('refine.retry_completed', { ip, ms: retryResult.ms, tokens: retryResult.tokens, totalLen: rawHtml.length })
-          }
-        }
-
-        // v29.9: Handle non-HTML output (Python, SQL, Bash, etc.) — don't reject
+        // v29.9: Handle non-HTML output (Python, SQL, Bash, etc.) — check FIRST,
+        // before the truncation-retry, so we don't append HTML to non-HTML code.
         if (!looksLikeHtml(rawHtml)) {
           // Non-HTML output — return it as-is with language detection
           logger.info('refine.non_html_output', { ip, ms: llmMs, tokens: totalTokens, outputLen: rawHtml.length })
@@ -272,6 +256,23 @@ export async function POST(request: NextRequest): Promise<Response> {
           await new Promise(r => setTimeout(r, 200))
           safeClose()
           return
+        }
+
+        // Truncation detection + continuation retry (only for HTML output)
+        if (rawHtml.length > 100 && !rawHtml.toLowerCase().includes('</html>')) {
+          logger.warn('refine.truncated', { ip, ms: llmMs, tokens: totalTokens, previewLen: rawHtml.length })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Completing truncated output...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+
+          const lastChars = rawHtml.slice(-1000)
+          const retryResult = await llmChat(
+            'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
+            `The previous output was truncated. Last 1000 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
+            { maxTokens: 16000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
+          )
+          if (retryResult.ok) {
+            rawHtml = rawHtml + stripCodeFences(retryResult.text)
+            logger.info('refine.retry_completed', { ip, ms: retryResult.ms, tokens: retryResult.tokens, totalLen: rawHtml.length })
+          }
         }
 
         // ═══ POST-PROCESSING: Inject design tokens, CSP, and runtime error capture (same as code route) ═══
@@ -328,13 +329,18 @@ export async function POST(request: NextRequest): Promise<Response> {
           if (retryResult.ok) {
             const retryHtml = stripCodeFences(retryResult.text)
             if (looksLikeHtml(retryHtml)) {
-              // Apply same post-processing to retry HTML
+              // Apply same post-processing to retry HTML (must match the main path)
               let processedRetryHtml = retryHtml
               const retryHeadMatch = processedRetryHtml.match(/<head[^>]*>/i)
               if (retryHeadMatch) {
                 processedRetryHtml = processedRetryHtml.replace(/<head[^>]*>/i, `${retryHeadMatch[0]}\n${designTokens}`)
               }
               processedRetryHtml = injectCsp(processedRetryHtml)
+              // v29.43: Apply ALL post-processing fixers to retry HTML (was missing 4 fixers)
+              processedRetryHtml = stripBlockedAPIs(processedRetryHtml)
+              processedRetryHtml = fixConversionMath(processedRetryHtml)
+              processedRetryHtml = fixForms(processedRetryHtml)
+              processedRetryHtml = fixCss(processedRetryHtml)
               processedRetryHtml = injectRuntimeErrorCapture(processedRetryHtml)
 
               const retryValidation = validateOutput(processedRetryHtml, mission)
