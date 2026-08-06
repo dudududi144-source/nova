@@ -418,7 +418,31 @@ export function parseOutput(text: string): MultiFileResult {
   }
 
   // Strip code fences (handles ```json\n{...}\n``` and ```html\n...```)
+  // v29.42: Extract file path from ```file:path fences before stripping
+  const fencePathMatch = text.match(/```file:([^\n]+)\n/i)
+  const fencePath = fencePathMatch?.[1]?.trim() || null
   const stripped = stripCodeFences(text)
+
+  // v29.42: If we have a file fence path, use it
+  if (fencePath) {
+    const detectedLanguage = detectLanguageFromContent(stripped)
+    const file: OutputFile = {
+      path: fencePath,
+      content: stripped,
+      language: detectLanguage(fencePath) || detectedLanguage,
+    }
+    const langToType: Record<string, OutputType> = {
+      python: 'python', javascript: 'node', typescript: 'node',
+      bash: 'code', sql: 'code', json: 'code', yaml: 'code',
+    }
+    const fileType = langToType[file.language] ?? 'code'
+    return {
+      type: fileType,
+      files: [file],
+      primaryFile: fencePath,
+      previewable: false,
+    }
+  }
 
   // Case 1: Raw HTML
   if (looksLikeHtml(stripped)) {

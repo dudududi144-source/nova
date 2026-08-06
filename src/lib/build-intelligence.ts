@@ -111,7 +111,7 @@ interface WeightedCheck {
 export function validateOutput(html: string, mission: string): ValidationResult {
   const checks: WeightedCheck[] = []
   const lower = html.toLowerCase()
-  const lowerMission = mission.toLowerCase()
+  const lowerMission = (mission ?? '').toLowerCase() // v29.42: null-safe
 
   // ═══ STRUCTURE CHECKS (weight: 35) ═══
   checks.push({
