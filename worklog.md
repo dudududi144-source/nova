@@ -6253,3 +6253,46 @@ Stage Summary:
 - All 12 quality checks pass
 - 0 lint errors
 - GitHub push still blocked (auth expired), commits saved locally (v29.49-v29.51)
+
+---
+Task ID: 1020
+Agent: main (Z.ai Code)
+Task: Fix all remaining test failures — achieve 0 failures in full suite
+
+Work Log:
+- Analyzed remaining 31 test failures (all 429s and SyntaxErrors from mock leakage)
+- Used binary search to find the conflicting files:
+  - enhance-route.test.ts: mocked @/lib/llm but NOT llmChatStream → SyntaxError
+  - api-build-result.test.ts: mocked @/lib/rate-limit with controllable mock → 429s
+
+Fixes:
+1. enhance-route.test.ts: Added llmChatStream to the @/lib/llm mock
+   - Was: only llmChat exported
+   - Now: llmChat + llmChatStream both exported
+   - Eliminates "SyntaxError: Export named 'llmChatStream' not found"
+
+2. code-route-sse.test.ts: Added mock.module for @/lib/rate-limit
+   - The mock always returns { ok: true, remaining: 999 }
+   - Prevents api-build-result's controllable mock from leaking and causing 429s
+   - code-route-sse now tests its own route logic without rate-limit interference
+
+Verification:
+- 3029 tests, 2795 pass, 234 skip, 0 FAIL (was 31 fail)
+- 0 lint errors
+- All tests pass in both isolation and full suite
+- No more SyntaxErrors
+- No more 429 errors from mock leakage
+
+E2E verification:
+- Dev server: HTTP 200, stable with 2GB heap limit
+- UI: mission-input, NOVA branding, sticky footer all present
+- Settings API: Z.AI configured=True (sdk-config)
+- Code Execution: Python 2^10=1024
+- Backup API: 2 files listed
+
+Stage Summary:
+- 3029 tests, 0 failures — first time since v29.41
+- All mock leakage issues resolved
+- Dev server stable (v29.51 memory fix)
+- Generated apps: quality 97/100, all 12 checks pass
+- GitHub push still blocked (auth expired), 4 commits saved locally
