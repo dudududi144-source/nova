@@ -6100,3 +6100,33 @@ Stage Summary:
 
 Files Created:
 - tests/page-fixes-v2946.test.ts (38 tests, ~380 lines)
+
+---
+Task ID: 1016
+Agent: main (Z.ai Code)
+Task: Continue NOVA — fix 6 more page.tsx bugs, remove dead code, add 38 tests
+
+Work Log:
+- Read worklog.md and dev.log (v29.45, 3331 tests, 0 failures)
+- Started dev server (port 3000, Turbopack)
+- Fixed 6 remaining bugs from page.tsx audit:
+  1. (MEDIUM) build() stale buildStats → functional state update
+  2. (MEDIUM) sendChat() stale buildStats → functional state update
+  3. (MEDIUM) autoFixLoop stale runtimeErrors → runtimeErrorsRef mirror
+  4. (MEDIUM) autoFixLoop 2s wait not cancellable → AbortSignal listener
+  5. (MEDIUM) Delete history didn't sync historyRef → synchronous ref update
+  6. (LOW) Dead autoFix function (169 lines) → removed entirely
+  7. (LOW) Model-selector buttons didn't sync selectedModelRef → sync in onClick
+- Updated page-fixes-comprehensive test for SSE loop count (4→3)
+- Delegated v29.46 tests to subagent (Task 1015) → 38 tests created
+- Verified end-to-end: page loads (200), title correct, mission input, sticky footer,
+  Run API (Python print(1+2) → stdout "3\n")
+
+Stage Summary:
+- 3369 tests, 3091 pass, 278 skip, 0 fail
+- 0 lint errors
+- 7 real bugs fixed in page.tsx (5 MEDIUM, 2 LOW)
+- 169 lines of dead code removed (page.tsx: 4342→4235)
+- 38 new characterization tests
+- All changes committed and pushed to GitHub (v29.46)
+- Total bugs fixed across v29.43-v29.46: 24 (2 HIGH security, 3 HIGH data, 10 MEDIUM, 9 LOW)
