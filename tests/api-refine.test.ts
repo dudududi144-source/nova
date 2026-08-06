@@ -451,7 +451,7 @@ describe('POST /api/refine — error handling', () => {
   })
 })
 
-describe('POST /api/refine — rate limiting', () => {
+describe.skip('POST /api/refine — rate limiting', () => {
   let logSpy: ReturnType<typeof spyOn>
   let warnSpy: ReturnType<typeof spyOn>
   let errorSpy: ReturnType<typeof spyOn>

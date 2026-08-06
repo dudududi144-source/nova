@@ -181,8 +181,11 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   }
 
   // 7. Check function calls to undefined functions
+  // v29.55: Strip strings first to prevent CSS functions in strings
+  // ('var(--color)', 'rgba(0,0,0,0.3)') from being mistaken for JS calls
+  const jsNoStrings = stripStrings(js)
   // Extract all function calls: foo() — but skip builtins, control flow, method calls, and declarations
-  const fnCalls = js.matchAll(/(?<!\.)\b(\w+)\s*\(/g)
+  const fnCalls = jsNoStrings.matchAll(/(?<!\.)\b(\w+)\s*\(/g)
   const checkedCalls = new Set<string>()
   for (const m of fnCalls) {
     const fnName = m[1]
@@ -229,8 +232,10 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   }
 
   // 8. Check for undeclared variable assignments
+  // v29.55: Use jsNoStrings to prevent HTML attributes in template literals
+  // (onclick="foo()") from being mistaken for variable assignments
   // Match: identifier = value (but not ==, ===, !=, !==, <=, >=)
-  const assignmentMatches = js.matchAll(/^\s*(\w+)\s*=[^=]/gm)
+  const assignmentMatches = jsNoStrings.matchAll(/^\s*(\w+)\s*=[^=]/gm)
   for (const m of assignmentMatches) {
     const varName = m[1]
     // Skip builtins, declared vars, function params, and common globals
@@ -272,6 +277,26 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
     passed,
     summary,
   }
+}
+
+/**
+ * Strip string literals and template literals from JavaScript code.
+ * Replaces them with empty strings to prevent false positives in
+ * function-call and variable-assignment checks.
+ *
+ * v29.55: Without this, CSS functions in strings ('var(--color)',
+ * 'rgba(0,0,0,0.3)') and HTML attributes in template literals
+ * (onclick="foo()") are mistaken for JS function calls and assignments.
+ */
+function stripStrings(js: string): string {
+  // Remove template literals (backtick strings) — these often contain
+  // HTML with onclick= attributes that look like variable assignments
+  let result = js.replace(/`[^`]*`/g, '""')
+  // Remove single-quoted strings
+  result = result.replace(/'[^']*'/g, '""')
+  // Remove double-quoted strings
+  result = result.replace(/"[^"]*"/g, '""')
+  return result
 }
 
 /**
