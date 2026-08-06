@@ -5532,3 +5532,34 @@ Stage Summary:
 
 Files Created:
 - tests/bugfix-comprehensive.test.ts (54 tests, ~580 lines)
+
+---
+Task ID: 1011
+Agent: main (Z.ai Code)
+Task: Continue NOVA development — extract RunCodeButton, audit 14 modules, fix 4 bugs, add 54 tests
+
+Work Log:
+- Read worklog.md and dev.log to understand current state (v29.43, 3208 tests, 0 failures)
+- Extracted RunCodeButton component from page.tsx to src/components/run-code-button.tsx (4504→4342 lines)
+- Updated page-characterization tests for RunCodeButton extraction
+- Delegated bug audit of 14 remaining modules to subagent (Task 1009) → 4 bugs found
+- Fixed all 4 bugs:
+  1. (HIGH, security) interaction-probe.ts: iframe allow-same-origin allowed LLM HTML
+     to access parent.fetch/localStorage. Injected security script that overrides
+     parent/top/opener before app scripts run.
+  2. (HIGH, data loss) multi-file.ts parseOutput: only extracted FIRST ```file:path
+     fence, dropping subsequent files. Now uses global regex to extract ALL fences.
+  3. (LOW, dead code) build-health.ts: 'score' variable computed but never used.
+     Now clamped to 0-100 and used in grade-A condition.
+  4. (LOW, dead code) multi-file.ts: redundant second <link> regex removed.
+- Delegated bugfix tests to subagent (Task 1010) → 54 tests created
+- Verified end-to-end: page loads (200), title correct, mission input, NOVA branding,
+  sticky footer, Run API (Python print(42) → stdout "42\n"), Settings API (masked keys)
+
+Stage Summary:
+- 3263 tests, 2985 pass, 278 skip, 0 fail
+- 0 lint errors
+- 4 real bugs fixed (2 HIGH, 2 LOW)
+- page.tsx reduced from 4504 to 4342 lines (RunCodeButton extracted)
+- 54 new tests covering bug fixes (multi-file, page-constants, build-health, probe security)
+- All changes committed and pushed to GitHub (v29.44)
