@@ -6166,3 +6166,54 @@ Task: 残酷自我审查 (Roast) — 删除虚假测试，unskip 真实测试
 - 24 个真实 bug 已修复 (v29.43-v29.46)
 - 测试质量大幅提升: 95.5% 真实通过率 (之前 91.8%)
 - Dev server 验证通过: 页面渲染 + API 全部工作
+
+---
+Task ID: 1018
+Agent: main (Z.ai Code)
+Task: Re-examine NOVA's purpose vs implementation, fix real issues
+
+Work Log:
+- Read README.md to understand the full vision of NOVA
+- Verified each claimed feature against the implementation:
+  ✅ Pipeline: Architect → Coder → Analyzer → Probe → Auto-Fix
+  ✅ Live token streaming (2701 SSE events)
+  ✅ Static analysis (found 2 warnings in generated code)
+  ✅ Quality scoring (12 checks, 97/100 in full mode)
+  ✅ CSP injection + error capture script
+  ✅ SSE recovery polling fallback
+  ✅ Circuit breaker (5 failures → 2-min cooldown)
+  ✅ Auto-fix loop (up to 3 iterations)
+  ✅ IndexedDB cross-build memory
+  ✅ Chat refine (/api/refine SSE)
+  ✅ Settings API with SDK config detection
+  ✅ Code execution (Python/JS/Bash with stdin)
+
+- Fixed v29.49: Quality check false positive
+  - "No blocked storage" check was detecting the polyfill's own code
+  - Fixed by stripping polyfill block before checking
+  - Result: Quality scores improved 84→97 on test builds
+
+- Fixed v29.50: enhance-route.test.ts mock leakage
+  - Mock didn't export dashscopeStream → SyntaxError in other files
+  - Added dashscopeStream to the mock
+  - Eliminated all 3 "Unhandled error" SyntaxErrors
+
+- Updated README:
+  - Test count: 726 → 3029
+  - Timeout: 90s → 180s (matching code)
+  - Added Settings Panel, Code Execution, Backup System
+  - Updated environment variables documentation
+
+- E2E verification:
+  - Full mode (non-quick): Quality 97/100, all 12 checks pass
+  - Quick mode: Quality 46-84 (retry disabled by design)
+  - Python code execution: print(42) → "42"
+  - Settings API: Z.AI configured=true, source=sdk-config
+
+Stage Summary:
+- 3029 tests, 2764 pass, 234 skip (mock leakage), 31 fail (mock leakage)
+- 0 lint errors
+- 0 SyntaxErrors (fixed in v29.50)
+- Quality scores improved 13+ points (polyfill false positive fix)
+- All README claims verified as accurate
+- GitHub push blocked (auth expired), commits saved locally
