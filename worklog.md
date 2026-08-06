@@ -5851,3 +5851,108 @@ onClick, matching the keyboard handler pattern.
 
 Files with no bugs found in this audit:
 - (none — all 16 bugs are in src/app/page.tsx as scoped)
+
+---
+Task ID: 1013
+Agent: test-author-pagefix
+Task: Write characterization tests for 8 page.tsx bug fixes
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand the project context and the
+  previous test-author conventions (Tasks 1000, 1001, 1005, 1006, 1010). The
+  most relevant prior art is tests/bugfix-comprehensive.test.ts (Task 1010)
+  and tests/page-characterization-comprehensive.test.ts (Task 1005) — both use
+  the same fs.readFileSync-as-text pattern for client-component source files
+  that can't be rendered in pure-Node bun:test.
+- Read /home/z/my-project/src/app/page.tsx (4373 lines) in full to map the
+  exact source locations and patterns of all 8 bug fixes. Verified each fix
+  is present (v29.45 markers in comments) before writing tests.
+- Created /home/z/my-project/tests/page-fixes-comprehensive.test.ts with 68
+  tests across 8 describe blocks, organized by bug number.
+- Used 6 helper functions to extract relevant source sections (settings input,
+  build() start, loadFromHistory body, readWithTimeout body, keyboard handler
+  useEffect) — this keeps the tests focused and avoids brittle global searches.
+- First run had 2 failures:
+  1. BUG #13 toast test used regex `\$\{ms \/ 1000\}` but the actual source
+     wraps the variable in `(ms / 1000).toFixed(1)`. Fixed by switching to a
+     `.toContain('(ms / 1000).toFixed(1)')` check and a negative match on
+     `data\.ms\b` (verifying the toast uses the computed `ms` variable, not
+     `data.ms` directly).
+  2. BUG #15 button-styling test sliced BACKWARDS from setMissionIdx to find
+     the `<button` tag, but the className appears AFTER the onClick handler
+     (on a later line). Fixed by searching FORWARD from setMissionIdx for the
+     next `className=` and asserting the violet border class is within 400
+     chars (same button).
+- After fixes: 68 pass, 0 fail, 181 expect() calls, 75ms total.
+- Ran `bun run lint` — 0 errors, 3 warnings (all pre-existing in unrelated
+  run-api-*.test.ts files; my new file produces 0 lint issues when run in
+  isolation via `bunx eslint tests/page-fixes-comprehensive.test.ts`).
+
+KEY DESIGN DECISIONS:
+1. Characterization tests (read source as text) — page.tsx is a 4373-line
+   'use client' component with browser-only dependencies (iframe, localStorage,
+   ResizeObserver, IntersectionObserver, matchMedia). It can't be imported in
+   bun:test without a jsdom shim, and even with jsdom the React 19 use()
+   hooks + dynamic imports would still fail. Reading the source as text is the
+   convention used by the existing page-characterization-comprehensive.test.ts.
+2. Helper functions extract bounded source sections (settings input, build
+   start, loadFromHistory body, readWithTimeout, keyboard handler useEffect).
+   This is more robust than global string searches because it localizes
+   assertions to the relevant code region (e.g., `setChatInput('')` only counts
+   if it's INSIDE loadFromHistory, not anywhere else in the 4373-line file).
+3. For the "X appears inside function Y" tests, used `indexOf('}, [])', start)`
+   to find the closing of the useCallback — this is the canonical pattern for
+   React useCallback endings.
+4. For the deps-array ordering test (BUG #5/#6), used a regex to extract the
+   deps array literal `[...]` and verified the 4 new deps come AFTER
+   `showShortcuts` (the last of the original 8 deps). This catches a
+   regression where the new deps might be inserted in the middle.
+5. For the readWithTimeout test (BUG #11), counted global occurrences of
+   `SSE_TIMEOUT` (expect exactly 1, inside the helper) AND `readWithTimeout(reader)`
+   (expect exactly 4, one per SSE loop) — these counts are the strongest
+   signal that the old inline `setTimeout(..., 180_000)` pattern was fully
+   replaced.
+6. For the "old buggy pattern absent" tests (BUG #15 setMission with
+   clickableText.trim), used a global regex match `setMission\([^)]*clickableText\.trim\(\)[^)]*\)`
+   and asserted length === 0. This catches any regression that re-introduces
+   the dead-code bug.
+7. For the BUG #9 Cmd+Enter test, verified the guard is BETWEEN the Enter-key
+   check and the prompt-history branch — proving the guard is INSIDE the
+   Enter block, not before or after it.
+8. Added tests for the comments documenting each fix (e.g., "v29.45: Use the
+   'addition' variable", "v29.45: Clear buildIdRef", "Don't build if an
+   enhanced prompt is being previewed"). These comments are part of the fix
+   contract — if a future refactor removes the comment but keeps the code, the
+   test will fail and force the author to re-document the reasoning.
+
+TEST COUNTS (all pass):
+- tests/page-fixes-comprehensive.test.ts — 68 tests, 181 expect() calls, 0 failures, 75ms
+
+Breakdown by bug:
+- BUG #1  (Settings API-key Enter handler)        :  9 tests
+- BUG #2  (buildIdRef cleared at build start)     :  6 tests
+- BUG #5/#6 (keyboard deps include 4 new values)  : 10 tests
+- BUG #9  (Cmd+Enter guarded by enhancedPreview)  :  5 tests
+- BUG #11 (readWithTimeout helper, no timer leak) : 10 tests
+- BUG #13 (enhancePrompt validates data.enhanced) :  7 tests
+- BUG #14 (loadFromHistory clears stale state)    : 12 tests
+- BUG #15 (suggestion chip uses addition variable):  9 tests
+                                                    ----
+                                                    Total: 68 tests
+
+VERIFICATION:
+- bun test tests/page-fixes-comprehensive.test.ts: 68 pass, 0 fail, 181 expect() calls, 75ms.
+- bun run lint: 0 errors, 3 warnings (all pre-existing in run-api-*.test.ts — none from the new file).
+- bunx eslint tests/page-fixes-comprehensive.test.ts: 0 errors, 0 warnings.
+
+Stage Summary:
+- Shipped a single test file (tests/page-fixes-comprehensive.test.ts, ~570 LOC)
+  covering all 8 page.tsx bug fixes with 68 passing tests and 181 assertions.
+- All tests are hermetic (no dev server, no network, no DOM).
+- 0 lint errors, 0 new warnings.
+- Caught and fixed 2 test design issues during the first run (wrong regex for
+  the toast ms interpolation, wrong search direction for the button className)
+  — both fixes documented inline.
+
+Files Created:
+- tests/page-fixes-comprehensive.test.ts (68 tests, ~570 lines)
