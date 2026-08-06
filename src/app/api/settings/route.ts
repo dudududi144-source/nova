@@ -10,6 +10,8 @@
 import type { NextRequest } from 'next/server'
 import { logger } from '@/lib/logger'
 import { RateLimiter } from '@/lib/rate-limit'
+import { readFileSync, existsSync } from 'fs'
+import { homedir } from 'os'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -39,7 +41,40 @@ function getEffectiveKey(envVar: string, settingsKey: string | undefined): strin
   if (settingsKey && settingsKey.trim()) return settingsKey.trim()
   // Fall back to env var
   const envValue = process.env[envVar]
-  return envValue && envValue.trim() ? envValue.trim() : undefined
+  if (envValue && envValue.trim()) return envValue.trim()
+  // v29.48: Z.AI SDK loads from /etc/.z-ai-config automatically.
+  // If no env var but SDK config exists, report it as configured.
+  if (envVar === 'ZAI_API_KEY') {
+    try {
+      const configPaths = ['/etc/.z-ai-config', homedir() + '/.z-ai-config', process.cwd() + '/.z-ai-config']
+      for (const p of configPaths) {
+        try {
+          const cfg = JSON.parse(readFileSync(p, 'utf-8'))
+          if (cfg.apiKey) return cfg.apiKey
+        } catch {}
+      }
+    } catch {}
+  }
+  return undefined
+}
+
+function getKeySource(envVar: string, settingsKey: string | undefined): string {
+  if (settingsKey && settingsKey.trim()) return 'settings'
+  const envValue = process.env[envVar]
+  if (envValue && envValue.trim()) return 'env'
+  // v29.48: Check SDK config file
+  if (envVar === 'ZAI_API_KEY') {
+    try {
+      const configPaths = ['/etc/.z-ai-config', homedir() + '/.z-ai-config', process.cwd() + '/.z-ai-config']
+      for (const p of configPaths) {
+        try {
+          const cfg = JSON.parse(readFileSync(p, 'utf-8'))
+          if (cfg.apiKey) return 'sdk-config'
+        } catch {}
+      }
+    } catch {}
+  }
+  return 'none'
 }
 
 export async function GET(): Promise<Response> {
@@ -56,17 +91,17 @@ export async function GET(): Promise<Response> {
       zai: {
         configured: !!zaiKey,
         masked: zaiKey ? maskKey(zaiKey) : '',
-        source: settings.zaiApiKey ? 'settings' : (process.env.ZAI_API_KEY ? 'env' : 'none'),
+        source: getKeySource('ZAI_API_KEY', settings.zaiApiKey),
       },
       dashscope: {
         configured: !!dashscopeKey,
         masked: dashscopeKey ? maskKey(dashscopeKey) : '',
-        source: settings.dashscopeApiKey ? 'settings' : (process.env.DASHSCOPE_API_KEY ? 'env' : 'none'),
+        source: getKeySource('DASHSCOPE_API_KEY', settings.dashscopeApiKey),
       },
       tokenrouter: {
         configured: !!tokenrouterKey,
         masked: tokenrouterKey ? maskKey(tokenrouterKey) : '',
-        source: settings.tokenrouterApiKey ? 'settings' : (process.env.TOKENROUTER_API_KEY ? 'env' : 'none'),
+        source: getKeySource('TOKENROUTER_API_KEY', settings.tokenrouterApiKey),
       },
     },
     // Which models are available
@@ -125,17 +160,17 @@ export async function POST(request: NextRequest): Promise<Response> {
       zai: {
         configured: !!zaiKey,
         masked: zaiKey ? maskKey(zaiKey) : '',
-        source: settings.zaiApiKey ? 'settings' : (process.env.ZAI_API_KEY ? 'env' : 'none'),
+        source: getKeySource('ZAI_API_KEY', settings.zaiApiKey),
       },
       dashscope: {
         configured: !!dashscopeKey,
         masked: dashscopeKey ? maskKey(dashscopeKey) : '',
-        source: settings.dashscopeApiKey ? 'settings' : (process.env.DASHSCOPE_API_KEY ? 'env' : 'none'),
+        source: getKeySource('DASHSCOPE_API_KEY', settings.dashscopeApiKey),
       },
       tokenrouter: {
         configured: !!tokenrouterKey,
         masked: tokenrouterKey ? maskKey(tokenrouterKey) : '',
-        source: settings.tokenrouterApiKey ? 'settings' : (process.env.TOKENROUTER_API_KEY ? 'env' : 'none'),
+        source: getKeySource('TOKENROUTER_API_KEY', settings.tokenrouterApiKey),
       },
     },
     models: {
