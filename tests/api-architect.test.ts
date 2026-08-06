@@ -390,7 +390,7 @@ describe('POST /api/build/architect — error handling', () => {
   })
 })
 
-describe.skip('POST /api/build/architect — rate limiting', () => {
+describe('POST /api/build/architect — rate limiting', () => {
   let logSpy: ReturnType<typeof spyOn>
   let warnSpy: ReturnType<typeof spyOn>
   let errorSpy: ReturnType<typeof spyOn>

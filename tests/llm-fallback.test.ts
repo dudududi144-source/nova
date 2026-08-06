@@ -198,9 +198,9 @@ describe.skip('executeWithFallback — both fail', () => {
     }))
     const result = await executeWithFallback(baseOpts())
     expect(result.ok).toBe(false)
-    // When both fail and primary was tried, the error message comes from the
-    // secondary (per the source code's reconstruction logic).
-    expect(result.error).toBe('kimi-error')
+    // v29.43 BUG #4 fix: When both fail and primary was tried, the error message
+    // comes from the PRIMARY (more actionable), not the secondary.
+    expect(result.error).toBe('z-ai-error')
   })
 
   it('returns a coherent error string when both fail', async () => {
