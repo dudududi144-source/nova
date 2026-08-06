@@ -357,6 +357,25 @@ const BUILTIN_FUNCTIONS = new Set([
   'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',
   'eval', 'Function', 'Symbol', 'Proxy', 'Reflect',
   'structuredClone', 'crypto', 'performance', 'localStorage', 'sessionStorage',
+  // v29.56: Add more browser APIs that LLMs commonly use
+  'getComputedStyle', 'getSelection', 'getBoundingClientRect',
+  'scrollTo', 'scrollIntoView', 'scrollBy', 'focus', 'blur', 'click', 'select',
+  'getContext', 'drawImage', 'fillRect', 'strokeRect', 'clearRect',
+  'beginPath', 'moveTo', 'lineTo', 'arc', 'fill', 'stroke', 'closePath',
+  'save', 'restore', 'scale', 'rotate', 'translate', 'transform',
+  'fillText', 'strokeText', 'measureText',
+  'createLinearGradient', 'createRadialGradient', 'addColorStop',
+  'drawCanvas', 'putImageData', 'getImageData', 'createImageData',
+  'toDataURL', 'toBlob', 'transferControlToOffscreen',
+  'requestPointerLock', 'exitPointerLock',
+  'postMessage', 'setTimeout', 'setInterval',
+  'open', 'close', 'stop', 'print', 'scroll', 'atob', 'btoa',
+  'URL', 'URLSearchParams', 'FormData', 'Headers', 'Request', 'Response',
+  'WebSocket', 'EventSource', 'XMLHttpRequest', 'AbortController',
+  'IntersectionObserver', 'MutationObserver', 'ResizeObserver',
+  'CustomEvent', 'Event', 'MouseEvent', 'KeyboardEvent', 'TouchEvent',
+  'localStorage', 'sessionStorage', 'indexedDB', 'caches',
+  'history', 'location', 'navigator', 'screen', 'visualViewport',
 ])
 
 // Control flow keywords that look like function calls
