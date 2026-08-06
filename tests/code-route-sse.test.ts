@@ -30,6 +30,20 @@ mock.module('@/lib/dashscope', () => ({
   dashscopeChat: async () => ({ ok: false, text: '', tokens: 0, ms: 0 }),
 }))
 
+// v29.52: Mock rate-limit to prevent mock leakage from api-build-result.test.ts
+// api-build-result mocks @/lib/rate-limit with a controllable mock that can
+// return { ok: false }. When this mock leaks to our file, our routes get 429.
+// By mocking rate-limit here to always allow, we're immune to that leakage.
+mock.module('@/lib/rate-limit', () => ({
+  RateLimiter: class {
+    check() { return { ok: true, remaining: 999, resetInMs: 60000 } }
+    reset() {}
+    resetAll() {}
+    cleanup() {}
+    destroy() {}
+  },
+}))
+
 interface TestRequest {
   headers: Map<string, string>
   json: () => Promise<unknown>

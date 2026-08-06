@@ -11,6 +11,7 @@ const mockLlmChat = mock((_sys: string, _user: string, _opts?: unknown) => Promi
 
 mock.module('@/lib/llm', () => ({
   llmChat: (sys: string, user: string, opts?: unknown) => mockLlmChat(sys, user, opts),
+  llmChatStream: async function* () { yield { text: '', fullText: '', done: true, tokens: 0, ms: 0 } },
 }))
 
 mock.module('@/lib/dashscope', () => ({
