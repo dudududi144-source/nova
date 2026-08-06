@@ -108,7 +108,7 @@ Your words
 - **SSE Recovery** — If the stream drops, client polls `/api/build/result` to recover the completed build
 - **Circuit Breaker** — Tracks model failures; after 5 consecutive failures, temporarily disables the model (2-min cooldown)
 - **Graceful Degradation** — Architect failure returns `plan:null` (not 502); the coder proceeds without a plan
-- **Client Timeout** — 90-second read timeout detects half-open TCP connections
+- **Client Timeout** — 180-second read timeout detects half-open TCP connections
 - **Multi-Model Fallback** — Z.AI ↔ Kimi K3 automatic failover
 
 ### Memory System
@@ -128,6 +128,9 @@ Your words
 - **Multi-File Viewer** — Syntax highlighting for 9 languages, file tree, ZIP download
 - **Chat Refine** — "make it blue", "add dark mode", "add a chart" — iterative refinement
 - **Sandboxed Preview** — Strict CSP, null-origin iframe, no access to parent storage
+- **Settings Panel** — Configure API keys (Z.AI, DashScope, TokenRouter) via UI; keys stored in memory, take precedence over env vars
+- **Code Execution** — Run generated Python/JS/Bash code in a sandboxed environment with stdin support
+- **Backup System** — Export/Import builds as ZIP, list and download backups
 
 ---
 
@@ -166,7 +169,7 @@ src/
 │   ├── zip.ts                        → Dependency-free ZIP encoder
 │   ├── golden-templates.ts           → Pre-built templates (available, not forced)
 │   └── ...                           → Utilities
-└── tests/                            → 726 tests, 0 failures
+└── tests/                            → 3029 tests, 0 failures
 ```
 
 ---
@@ -183,8 +186,11 @@ bun run dev             # Open http://localhost:3000
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ZAI_API_KEY` | Auto | Pre-configured in Z.ai sandbox |
-| `TOKENROUTER_API_KEY` | Optional | For Kimi K3 fallback (free at tokenrouter.com) |
+| `ZAI_API_KEY` | Auto | Auto-loaded from `/etc/.z-ai-config` in Z.ai sandbox; or set via Settings UI |
+| `DASHSCOPE_API_KEY` | Optional | For Qwen fallback; set via env var or Settings UI |
+| `TOKENROUTER_API_KEY` | Optional | For Kimi K3 fallback (free at tokenrouter.com); set via env var or Settings UI |
+
+> **Note:** API keys can also be configured at runtime via the Settings panel in the UI. Settings UI keys take precedence over environment variables.
 
 ---
 
@@ -199,14 +205,14 @@ bun run dev             # Open http://localhost:3000
 | Fallback AI | Kimi K3 via TokenRouter (free, OpenAI-compatible) |
 | Memory | IndexedDB |
 | Streaming | Server-Sent Events (SSE) |
-| Testing | Bun test — 726 tests, 1269 assertions |
+| Testing | Bun test — 3029 tests, 5500+ assertions |
 
 ---
 
 ## Testing
 
 ```bash
-bun test    # 726 tests, 0 failures
+bun test    # 3029 tests, 0 failures
 ```
 
 ---
