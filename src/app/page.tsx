@@ -495,6 +495,25 @@ export default function Home() {
   }, [loading, refining])
 
   // Centralized build function. Aborts any in-flight build first.
+  // v29.45: Helper for SSE read with timeout — clears the timeout when read
+  // wins the race, preventing pending 180s timers from leaking.
+  const readWithTimeout = async (
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    timeoutMs = 180_000,
+  ): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('SSE_TIMEOUT')), timeoutMs)
+        }),
+      ]) as ReadableStreamReadResult<Uint8Array>
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
   // Accepts an optional explicit mission to avoid stale-closure bugs (e.g., retry).
   // Uses resultRef instead of result state to avoid being re-created on every build.
   const build = useCallback(async (explicitMission?: string) => {
@@ -516,6 +535,9 @@ export default function Home() {
     refineAbortRef.current?.abort()
     refineAbortRef.current = null
     setRefining(false)
+    // v29.45: Clear buildIdRef so the polling fallback doesn't use the previous
+    // build's ID if the new build's SSE drops before emitting 'buildId'.
+    buildIdRef.current = null
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -695,12 +717,8 @@ export default function Home() {
         // v10.5: 180s timeout — if no data arrives, the connection is dead
         let readResult: ReadableStreamReadResult<Uint8Array>
         try {
-          readResult = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
-            )
-          ]) as ReadableStreamReadResult<Uint8Array>
+          // v29.45: Use readWithTimeout to prevent 180s timer leak
+          readResult = await readWithTimeout(reader)
         } catch {
           streamError = 'Connection timed out — no data for 180s'
           break
@@ -1003,6 +1021,16 @@ export default function Home() {
     setPipelineStage(null)
     setPipelineLiveText('')
     pipelineLiveTextRef.current = ''
+    // v29.45: Clear stale state that was left over from the previous build
+    setSuggestions([])
+    setShowSuggestions(false)
+    setShowCodeAnalysis(false)
+    setProbeResult(null)
+    setRuntimeErrors([])
+    setShowRuntimeErrors(false)
+    setChatInput('')
+    setQualityBreakdown(null)
+    setPlanFeatures([])
   }, [])
 
   const cancelBuild = useCallback(() => {
@@ -1104,12 +1132,8 @@ export default function Home() {
         // v10.5: 180s timeout — if no data arrives, the connection is dead
         let readResult: ReadableStreamReadResult<Uint8Array>
         try {
-          readResult = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
-            )
-          ]) as ReadableStreamReadResult<Uint8Array>
+          // v29.45: Use readWithTimeout to prevent 180s timer leak
+          readResult = await readWithTimeout(reader)
         } catch {
           streamError = 'Connection timed out — no data for 180s'
           break
@@ -1292,15 +1316,10 @@ export default function Home() {
         let finalMetrics = ''
 
         while (true) {
-          // v10.5: 180s timeout
+          // v10.5: 180s timeout (v29.45: uses readWithTimeout to prevent timer leak)
           let readResult: ReadableStreamReadResult<Uint8Array>
           try {
-            readResult = await Promise.race([
-              reader.read(),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
-              )
-            ]) as ReadableStreamReadResult<Uint8Array>
+            readResult = await readWithTimeout(reader)
           } catch {
             break
           }
@@ -1657,7 +1676,12 @@ export default function Home() {
         toast.error(data.error ?? 'Enhancement failed')
         return
       }
-      const enhanced: string = data.enhanced
+      const enhanced: unknown = data.enhanced
+      // v29.45: Validate enhanced is a non-empty string before using it
+      if (typeof enhanced !== 'string' || !enhanced.trim()) {
+        toast.error('Enhancement returned empty result')
+        return
+      }
       // Don't enhance if it's identical to the original
       if (enhanced.trim() === m) {
         toast.info('Prompt is already detailed')
@@ -1665,7 +1689,9 @@ export default function Home() {
       }
       setOriginalPromptBeforeEnhance(m)
       setEnhancedPreview(enhanced)
-      toast.success(`Enhanced · ${data.tokens ?? 0} tokens · ${(data.ms / 1000).toFixed(1)}s`)
+      // v29.45: Guard against missing/NaN ms value
+      const ms = typeof data.ms === 'number' ? data.ms : 0
+      toast.success(`Enhanced · ${data.tokens ?? 0} tokens · ${(ms / 1000).toFixed(1)}s`)
     } catch (err) {
       toast.error('Network error — could not enhance')
     } finally {
@@ -1828,12 +1854,8 @@ export default function Home() {
         // v10.5: 180s timeout — if no data arrives, the connection is dead
         let readResult: ReadableStreamReadResult<Uint8Array>
         try {
-          readResult = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('SSE_TIMEOUT')), 180_000)
-            )
-          ]) as ReadableStreamReadResult<Uint8Array>
+          // v29.45: Use readWithTimeout to prevent 180s timer leak
+          readResult = await readWithTimeout(reader)
         } catch {
           streamError = 'Connection timed out — no data for 180s'
           break
@@ -2087,7 +2109,9 @@ export default function Home() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts])
+    // v29.45: Added fullscreen, previousBuild, buildStats, qualityScore to deps
+    // — without them, 'F'/'D'/'S'/'I' shortcuts use stale values after toggling.
+  }, [loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts, fullscreen, previousBuild, buildStats, qualityScore])
 
   // Helper: get current thinking step text (DYNAMIC — from mission or plan)
   const getThinkingText = useCallback(() => {
@@ -2351,7 +2375,9 @@ export default function Home() {
               }
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault()
-                build()
+                // v29.45: Don't build if an enhanced prompt is being previewed —
+                // user must accept or reject the enhancement first.
+                if (!enhancedPreview) build()
               }
               // v15: Prompt history navigation — ↑/↓ to cycle previous prompts
               // Only when slash menu is closed and cursor is at start (↑) or end (↓) of text
@@ -2473,10 +2499,13 @@ export default function Home() {
                             type="button"
                             onClick={() => {
                               const current = mission.trim()
+                              // v29.45: Use the 'addition' variable (was computed but unused).
+                              // If the suggestion already starts with "with"/"add", just append it.
+                              // Otherwise, prefix with " with " for natural phrasing.
                               const addition = clickableText.startsWith('with') || clickableText.startsWith('add')
-                                ? ` ${clickableText}`
-                                : ` with ${clickableText}`
-                              setMission(current + (current.endsWith(addition[0] ?? ' ') ? '' : ' ') + clickableText.trim())
+                                ? clickableText.trim()
+                                : `with ${clickableText.trim()}`
+                              setMission(current + (current ? ' ' : '') + addition)
                               toast.info('Added to prompt')
                             }}
                             className="rounded-full border border-violet-500/30 bg-violet-500/5 px-2 py-0.5 text-[10px] text-violet-400/80 transition-colors hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-300"
@@ -4133,22 +4162,23 @@ export default function Home() {
                       )}
                       <input
                         type="password"
-                        placeholder="Enter API key..."
+                        placeholder="Enter API key and press Enter..."
                         className="w-full rounded border border-border/40 bg-background px-2 py-1.5 text-[11px] focus:outline-none focus:border-primary"
-                        onChange={async (e) => {
-                          const value = e.target.value
-                          if (!value) return
+                        onKeyDown={async (e) => {
+                          if (e.key !== 'Enter') return
+                          const value = (e.target as HTMLInputElement).value
+                          if (!value.trim()) return
                           try {
                             const res = await fetch('/api/settings', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ [key]: value }),
+                              body: JSON.stringify({ [key]: value.trim() }),
                             })
                             const data = await res.json()
                             if (data.ok) {
                               setApiSettings({ keys: data.keys, models: data.models })
                               toast.success(`${label} key updated`)
-                              e.target.value = ''
+                              ;(e.target as HTMLInputElement).value = ''
                             }
                           } catch {
                             toast.error('Failed to update key')

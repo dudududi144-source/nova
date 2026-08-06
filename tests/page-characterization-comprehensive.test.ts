@@ -347,7 +347,8 @@ describe('page.tsx — useEffect hooks', () => {
     expect(source).toContain("window.removeEventListener('keydown', onKey)")
   })
   test('keydown effect deps include loading, refining, result', () => {
-    const match = source.match(/\}, \[loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts\]\)/)
+    // v29.45: Added fullscreen, previousBuild, buildStats, qualityScore to deps
+    const match = source.match(/\}, \[loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts, fullscreen, previousBuild, buildStats, qualityScore\]\)/)
     expect(match).not.toBeNull()
   })
   test('has elapsed time counter using setInterval', () => {

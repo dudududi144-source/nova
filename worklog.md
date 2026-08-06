@@ -5563,3 +5563,291 @@ Stage Summary:
 - page.tsx reduced from 4504 to 4342 lines (RunCodeButton extracted)
 - 54 new tests covering bug fixes (multi-file, page-constants, build-health, probe security)
 - All changes committed and pushed to GitHub (v29.44)
+
+---
+Task ID: 1012
+Agent: page-tsx-auditor
+Task: Deep audit of page.tsx (4342 lines) for logic bugs
+
+Work Log:
+- Read /home/z/my-project/worklog.md (Tasks 1–4 + 1001 + 1003–1011) to understand
+  the project architecture, the page.tsx refactor history (4600 → 4504 → 4342 lines),
+  and the 4 bugs already fixed in Task 1011 (probe iframe security, multi-file parseOutput,
+  build-health score, redundant link regex).
+- Read /home/z/my-project/src/app/page.tsx in full (4342 lines, 6 chunks) — the main
+  UI component for NOVA. Read every useEffect, useCallback, event handler, and the
+  entire JSX tree.
+- Read /home/z/my-project/src/app/page.tsx lines 1-200 (state, refs, mirror effects),
+  200-499 (live-preview accumulator, runtime-error listener, probe effect, history
+  sync, elapsed-time counter), 500-849 (build useCallback — the main async pipeline),
+  850-1199 (polling fallback, build result assembly, retryWithModel, loadFromHistory,
+  cancelBuild, cancelRefine, autoFix), 1200-1549 (autoFixLoop, reset, retryFailed,
+  download, downloadHtml, exportBuilds, importBuilds), 1550-1899 (templates, copyHtml,
+  applySlashCommand, compareWithCurrent, enhancePrompt, acceptEnhanced, rejectEnhanced,
+  shareUrl, openInNewTab, sendChat), 1900-2249 (sendChat completion, chat autoscroll,
+  keyboard handler, getThinkingText, header), 2250-2599 (mission textarea, slash menu,
+  smart analysis, enhanced preview, Build/Enhance/Templates buttons), 2600-2949
+  (templates panel, loading state, error panel, examples, starters, similar builds,
+  version history), 2950-3299 (history groups, export/import, preview toolbar,
+  runtime-errors badge, re-test, auto-fix, diff, copy, share, open, run, download,
+  rebuild, fork, suggestions, code editor), 3300-3649 (suggestions panel, code editor,
+  chat panel, runtime errors panel), 3650-3999 (code analysis panel, preview iframe,
+  fullscreen overlay, backups panel), 4000-4342 (backups panel cont., settings panel,
+  stats panel, shortcuts panel, footer).
+- Grepped for `autoFix\b`, `autoFix(|autoFixLoop(`, `buildIdRef`,
+  `buildStatsRef|buildStats.current`, `fullscreen|previousBuild|qualityScore|buildStats`,
+  `setHistory(|historyRef.current` to verify hypotheses (dead code, ref syncing,
+  closure captures, keyboard handler deps).
+- For each suspected bug, traced the closure captures vs. useCallback deps arrays,
+  the timing of state vs. ref updates, and the race windows between async operations.
+- Verified the keyboard handler deps issue by checking each `if (e.key === ...)` block
+  against the deps array `[loading, refining, result, download, cancelBuild,
+  cancelRefine, reset, showShortcuts]` — confirmed `fullscreen` and `previousBuild`
+  are read but not in deps, causing stale closures.
+- Verified the settings dialog `onChange` bug by reading the input element — confirmed
+  no `value`/`defaultValue` prop (uncontrolled) and `onChange` fires on every keystroke,
+  each triggering a `fetch('/api/settings', { method: 'POST', ... })`.
+- Verified the buildIdRef bug by tracing the lifecycle: `buildIdRef.current` is set
+  on 'buildId' SSE event (line 739) but never cleared at the start of `build()` —
+  polling fallback at line 838 uses whatever value is in the ref.
+
+Stage Summary:
+- 16 real bugs found. 1 CRITICAL, 4 HIGH, 6 MEDIUM, 5 LOW.
+
+BUG #1: [src/app/page.tsx:4138-4156] [severity: critical]
+Description: The API-key input in the Settings dialog uses `onChange` to fire a
+`POST /api/settings` fetch on EVERY keystroke. Typing "sk-abc123" triggers 8 fetches
+with values "s", "sk", "sk-a", ..., "sk-abc123". The fetches are async and race
+against each other — the last fetch to RESOLVE wins, not the last one started.
+Description: There is no debounce, no `value`/`defaultValue` binding (input is
+uncontrolled), and no submit button.
+Impact: (1) The server is spammed with N requests per key entry. (2) If an early
+fetch is slow to resolve (e.g., due to network jitter), it can overwrite the
+correct full key with a partial key like "s" or "sk". The user's API key is
+silently corrupted. (3) Each fetch also re-fetches the full settings response,
+causing the dialog to flicker as `setApiSettings` fires N times.
+Suggested fix: Replace `onChange` with `onBlur` (save when the input loses focus)
+or add a Save button with `onClick`. Alternatively, debounce the onChange by
+300-500ms and cancel the in-flight fetch before starting a new one.
+
+BUG #2: [src/app/page.tsx:176, 838-844] [severity: high]
+Description: `buildIdRef` is set when the SSE stream emits a 'buildId' event
+(line 739) but is NEVER cleared at the start of `build()`. If a new build's SSE
+connection drops before emitting 'buildId' (e.g., proxy timeout, network glitch),
+`buildIdRef.current` still holds the PREVIOUS build's ID. The polling fallback at
+line 838 (`if (!finalHtml && buildIdRef.current)`) then fetches
+`/api/build/result?id=<OLD_ID>`, which returns the OLD build's completed result.
+Impact: The user sees the previous build's HTML displayed as if it were the new
+build. The mission, quality score, and history entry would all reflect the new
+build, but the actual HTML is from the old build. Silent data corruption — the
+user has no indication that the wrong build was loaded.
+Suggested fix: Add `buildIdRef.current = null` at the start of `build()` (after
+`abortRef.current = controller`).
+
+BUG #3: [src/app/page.tsx:500, 930, 951] [severity: high]
+Description: The `build` useCallback has deps `[mission]` but reads `buildStats`
+(state) at line 930 inside `recordBuildInStats(buildStats, ...)`. When the user
+rebuilds the SAME mission (e.g., clicks Rebuild, or clicks a starter that's
+already the current mission), `build` is NOT recreated, so the closure captures
+the STALE `buildStats` from when `build` was last created.
+Impact: After a build completes, `setBuildStats(newStats)` updates state. But the
+next `build()` call (same mission) uses the OLD `buildStats` in
+`recordBuildInStats`, so `totalBuilds` doesn't increment correctly. Rebuilding
+the same mission multiple times leaves `totalBuilds` stuck at 1. Also affects
+`bestMission`/`worstMission` tracking and the average-quality calculation in the
+stats panel.
+Suggested fix: Either add `buildStats` to the deps array, or (better) use a
+`buildStatsRef` mirror like the other refs, or use the functional setState form:
+`setBuildStats(prev => recordBuildInStats(prev, {...}))`.
+
+BUG #4: [src/app/page.tsx:1758, 1935, 1953] [severity: high]
+Description: The `sendChat` useCallback has deps `[chatInput, refining]` but
+reads `buildStats` (state) at line 1935 inside `recordRefineInStats(buildStats)`.
+When the user refines the same chat input multiple times (or the chat input
+doesn't change between refines), `sendChat` is NOT recreated, so the closure
+captures stale `buildStats`.
+Impact: Same as BUG #3 but for refine counts. Multiple refines leave
+`totalRefines` stuck at the value captured when `sendChat` was last recreated.
+Suggested fix: Same as BUG #3 — use a ref mirror or functional setState.
+
+BUG #5: [src/app/page.tsx:2090] [severity: medium]
+Description: The keyboard handler useEffect deps array
+`[loading, refining, result, download, cancelBuild, cancelRefine, reset, showShortcuts]`
+is missing `fullscreen`. The handler reads `fullscreen` at line 2079
+(`if (e.key === 'Escape' && fullscreen)`) to exit fullscreen on Esc. When the
+user enters fullscreen (via the 'F' shortcut or the fullscreen button),
+`setFullscreen(true)` triggers a re-render, but the effect doesn't re-run because
+`fullscreen` is not in deps. The attached handler still has `fullscreen = false`
+from the last time the effect ran.
+Impact: Pressing Esc does NOT exit fullscreen. The user must click the Exit
+button in the fullscreen overlay, or press 'F' again to toggle. The keyboard
+shortcuts help panel advertises "Esc = Cancel build/refine" but doesn't mention
+fullscreen exit, so users are stuck.
+Suggested fix: Add `fullscreen` to the deps array.
+
+BUG #6: [src/app/page.tsx:2090] [severity: medium]
+Description: Same useEffect deps array as BUG #5, missing `previousBuild`. The
+'D' shortcut at line 2047 checks `previousBuild && result && !loading && !refining`.
+When the user clicks "Compare with current" on a history item (line 2969),
+`setPreviousBuild(h)` is called WITHOUT changing `result`. The effect doesn't
+re-run, so the handler keeps the stale `previousBuild = null` (or whatever it was
+before). The 'D' shortcut then fails to toggle the diff view.
+Impact: After using "Compare with current" from the history panel, pressing 'D'
+does nothing. The user must click the Diff button in the toolbar instead.
+Inconsistent UX between mouse and keyboard.
+Suggested fix: Add `previousBuild` to the deps array.
+
+BUG #7: [src/app/page.tsx:1215, 1238, 1349, 1376] [severity: medium]
+Description: `autoFixLoop` has deps `[runtimeErrors, autoFixLoopRunning]`. Inside
+the loop, line 1238 reads `runtimeErrors` from the closure:
+`const allErrors = [...runtimeErrors, ...probe.errors].slice(0, 10)`. After each
+fix iteration, line 1349 calls `setRuntimeErrors([])` to clear the state. But
+the closure's `runtimeErrors` is NOT updated (the function was created once, and
+the `setRuntimeErrors` doesn't trigger re-creation mid-loop). On iteration 2,
+`runtimeErrors` is still the original value from when `autoFixLoop` was called.
+Impact: The LLM is told to fix the SAME runtime errors on every iteration, even
+after they've been fixed. This wastes tokens, confuses the LLM (it sees
+"already-fixed" errors in the prompt), and can cause it to introduce new bugs
+while trying to fix non-existent issues. The loop's effectiveness is degraded.
+Suggested fix: Use a `runtimeErrorsRef` mirror that's kept in sync via
+`useEffect([runtimeErrors])`, and read from the ref inside the loop. Or
+re-read `runtimeErrors` via a state getter pattern.
+
+BUG #8: [src/app/page.tsx:1022-1027, 1352, 1378-1417] [severity: medium]
+Description: `autoFixLoop` has a 2-second `await new Promise(resolve =>
+setTimeout(resolve, 2000))` between iterations (line 1352). During this wait,
+`refineAbortRef.current` still points to the PREVIOUS iteration's controller
+(which is already completed). If the user clicks "New" (reset) or Cancel during
+this window, `reset()`/`cancelRefine()` aborts the OLD controller (no-op) and
+sets `refining = false`, but `autoFixLoopRunning` stays `true` and the loop
+continues to the next iteration. The loop's next `setResult(fixedResult)`
+(line 1343) overwrites the reset state, bringing the old result back.
+Impact: The user clicks "New" to start over, but the autoFix loop is still
+running and clobbers their reset. The "Fixing (2/3)..." indicator stays visible
+even after reset. The user has no way to cancel the loop during the 2-second
+gaps between iterations.
+Suggested fix: Check `autoFixLoopRunning` inside the loop (via a ref) and break
+if it's been set to false. Or use a single AbortController for the entire loop
+(not per-iteration) and check `controller.signal.aborted` between iterations.
+
+BUG #9: [src/app/page.tsx:2352-2355] [severity: medium]
+Description: The mission textarea's `onKeyDown` handler triggers `build()` on
+⌘+Enter / Ctrl+Enter WITHOUT checking `enhancedPreview !== null`. The Build
+button (line 2552) is disabled when `enhancedPreview !== null` to prevent
+building the original prompt while an enhanced preview is shown. But the
+keyboard shortcut bypasses this guard.
+Impact: If the user clicks Enhance, sees the enhanced preview, then presses
+⌘+Enter without clicking "Use this", `build()` runs with the ORIGINAL mission
+(not the enhanced one). The user expects the enhanced prompt to be built, but
+gets the original. Confusing and wasteful (LLM call).
+Suggested fix: Add `if (enhancedPreview !== null) return` to the ⌘+Enter
+handler, or auto-accept the enhanced preview before building.
+
+BUG #10: [src/app/page.tsx:2980-2987] [severity: medium]
+Description: The "Delete this version" button calls `setHistory(newHistory)` but
+does NOT update `historyRef.current` synchronously. `historyRef.current` is only
+updated by the `useEffect([history])` at line 389, which runs AFTER the render
+commit. There's a window between the click and the next paint where
+`historyRef.current` is stale.
+Impact: If `addBuildToHistory` is called during this window (e.g., an in-flight
+build completes its SSE stream), it reads the stale `historyRef.current` (with
+the deleted item still in it), computes `newHistory = [newBuild, ...staleHistory]`,
+and re-adds the deleted item. The user sees the deleted build reappear in
+history. Window is small (~1 frame) but the race is real for in-flight builds.
+Suggested fix: Add `historyRef.current = newHistory` before `setHistory(newHistory)`
+in the delete handler, mirroring the pattern in `addBuildToHistory` (line 403)
+and `importBuilds` (line 1538).
+
+BUG #11: [src/app/page.tsx:698-707, 1107-1112, 1297-1303, 1831-1836] [severity: low]
+Description: The SSE-read loop uses `Promise.race([reader.read(), new Promise((_,
+reject) => setTimeout(() => reject('SSE_TIMEOUT'), 180_000))])`. When
+`reader.read()` resolves first, the 180s `setTimeout` is NEVER cleared. It keeps
+running in the background, holding a reference to the reject function until it
+fires (180s later). On the next loop iteration, another setTimeout is created.
+For a 2000-token build, this means up to 2000 pending 180s timeouts at peak.
+Impact: Memory pressure during long builds (~200KB of pending timer state).
+Not a permanent leak (timeouts fire after 180s and become garbage), but
+real resource waste. The reject calls are no-ops (Promise.race ignores late
+rejects), so no functional impact.
+Suggested fix: Capture the timeout ID and clear it after `reader.read()`
+resolves: `const tid = setTimeout(...); try { ... } finally { clearTimeout(tid) }`.
+Or use `AbortSignal.timeout(180_000)` with `reader.read({ signal })`.
+
+BUG #12: [src/app/page.tsx:1033-1206] [severity: low]
+Description: The `autoFix` useCallback (174 lines) is dead code. It is never
+called from the UI or from any other function. Grepping for `autoFix(` (with
+paren, excluding `autoFixLoop(`) returns zero call sites. Only `autoFixLoop`
+(line 1215) is called — from the toolbar Auto-fix button (line 3293) and the
+runtime-errors panel button (line 3635).
+Impact: Dead code — 174 lines of unused logic. Misleading to maintainers who
+might think it's wired up. Also has its own deps `[runtimeErrors, probeResult,
+autoFixing]` which would cause re-renders if it were referenced.
+Suggested fix: Remove the `autoFix` function entirely. Its functionality is
+subsumed by `autoFixLoop` (which is the version actually used).
+
+BUG #13: [src/app/page.tsx:1660-1668] [severity: low]
+Description: `enhancePrompt` calls `const data = await res.json()` then checks
+`if (!res.ok || !data.ok)` (line 1656). But if the server returns `{ok: true}`
+WITHOUT an `enhanced` field (e.g., a backend bug or proxy stripping fields),
+line 1660 `const enhanced: string = data.enhanced` assigns `undefined` to
+`enhanced`. Line 1662 `enhanced.trim()` throws "Cannot read properties of
+undefined (reading 'trim')". The catch block (line 1669) catches it but shows
+the misleading message "Network error — could not enhance".
+Additionally, line 1668 `toast.success(`Enhanced · ${data.tokens ?? 0} tokens
+· ${(data.ms / 1000).toFixed(1)}s`)` — if `data.ms` is undefined, `(undefined /
+1000).toFixed(1)` returns "NaN", so the toast says "Enhanced · 0 tokens · NaNs".
+Impact: Misleading error messages; cosmetic "NaNs" in success toast. No crash
+(the catch handles it), but the user can't tell what actually went wrong.
+Suggested fix: Add `if (!data.enhanced || typeof data.enhanced !== 'string')`
+check after the `!data.ok` check. Use `data.ms ?? 0` in the toast.
+
+BUG #14: [src/app/page.tsx:975-1006] [severity: low]
+Description: `loadFromHistory` resets many state values (result, error,
+qualityScore, qualityMetrics, buildTimings, planSummary, livePreviewHtml,
+memoryHit, errorAnalysis, showDiff, previousBuild, pipelineStage,
+pipelineLiveText) but does NOT reset: `suggestions`, `showSuggestions`,
+`qualityBreakdown`, `showCodeAnalysis`, `showRuntimeErrors`, `probeResult`,
+`chatInput`. These all retain values from the previously-loaded build.
+Impact: After loading a history item, the user sees the previous build's
+smart suggestions, quality breakdown, and (if open) the runtime-errors panel
+and code-analysis panel — all of which are stale. The probe effect at line 253
+will re-run and update `probeResult` (because result changed), but the other
+stale state persists until the user manually closes the panels or starts a new
+build.
+Suggested fix: Add `setSuggestions([])`, `setShowSuggestions(false)`,
+`setQualityBreakdown(null)`, `setShowCodeAnalysis(false)`,
+`setShowRuntimeErrors(false)`, `setProbeResult(null)`, `setChatInput('')` to
+`loadFromHistory`.
+
+BUG #15: [src/app/page.tsx:2474-2481] [severity: low]
+Description: The clickable-suggestion chip's onClick handler computes an
+`addition` variable (line 2476-2478) that is supposed to prepend " " or " with "
+based on whether `clickableText` starts with "with"/"add". But `addition` is
+NEVER USED — line 2479's `setMission` uses `clickableText.trim()` directly
+instead of `addition`. The `addition` variable is dead code.
+Impact: When `clickableText` doesn't start with "with" or "add" (e.g.,
+"a dark mode toggle"), the user expects the mission to become "current with a
+dark mode toggle" but instead gets "current a dark mode toggle". Grammatically
+wrong prompt; the LLM may still understand it, but the UX is broken.
+Suggested fix: Use `addition` in the setMission call:
+`setMission(current + (current.endsWith(' ') ? '' : ' ') + addition.trim())`
+or simply `setMission(current + addition)`.
+
+BUG #16: [src/app/page.tsx:2154, 2163, 2172] [severity: low]
+Description: The model-selector buttons in the header use
+`onClick={() => { setSelectedModel('z-ai'); try { localStorage.setItem(...) } catch {} }}`.
+They update `setSelectedModel` (state) and `localStorage` but do NOT update
+`selectedModelRef.current` synchronously. The ref is only updated by the
+`useEffect([selectedModel])` at line 325, which runs AFTER the render commit.
+The keyboard 'M' handler (line 2019-2021) DOES update the ref synchronously.
+Impact: Inconsistent state between the buttons and the keyboard handler. If a
+build starts in the same React tick as a button click (theoretical — would
+require programmatic build trigger), `build()` would read the stale
+`selectedModelRef.current` and use the wrong model. In practice, React batches
+the state update and the next render runs the effect before any user action,
+so this is a latent inconsistency rather than an active bug.
+Suggested fix: Add `selectedModelRef.current = 'z-ai'` (etc.) to each button's
+onClick, matching the keyboard handler pattern.
+
+Files with no bugs found in this audit:
+- (none — all 16 bugs are in src/app/page.tsx as scoped)
