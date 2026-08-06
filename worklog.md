@@ -5956,3 +5956,33 @@ Stage Summary:
 
 Files Created:
 - tests/page-fixes-comprehensive.test.ts (68 tests, ~570 lines)
+
+---
+Task ID: 1014
+Agent: main (Z.ai Code)
+Task: Continue NOVA — audit page.tsx, fix 8 bugs, add 68 tests
+
+Work Log:
+- Read worklog.md and dev.log (v29.44, 3263 tests, 0 failures)
+- Started dev server (port 3000, Turbopack)
+- Delegated deep audit of page.tsx (4342 lines) to subagent (Task 1012) → 16 bugs found
+- Fixed 8 bugs:
+  1. (CRITICAL) Settings API-key input fired fetch on every keystroke → changed to onKeyDown (Enter)
+  2. (HIGH) buildIdRef not cleared between builds → cleared at build start
+  3. (MEDIUM) Keyboard handler missing fullscreen dep → added
+  4. (MEDIUM) Keyboard handler missing previousBuild dep → added
+  5. (MEDIUM) Cmd+Enter bypassed enhancedPreview guard → added guard
+  6. (LOW) SSE_TIMEOUT setTimeout never cleared → created readWithTimeout helper, replaced 4 inline patterns
+  7. (LOW) enhancePrompt didn't validate data.enhanced → added type check + NaN guard
+  8. (LOW) loadFromHistory didn't clear stale state → added 8 state clears
+  9. (LOW) Suggestion chip computed 'addition' but never used it → now uses it
+- Updated page-characterization test for new keyboard deps
+- Delegated bugfix tests to subagent (Task 1013) → 68 tests created
+- Verified end-to-end: page loads (200), title correct, settings uses Enter, Run API works, Settings API works
+
+Stage Summary:
+- 3331 tests, 3053 pass, 278 skip, 0 fail
+- 0 lint errors
+- 8 real bugs fixed in page.tsx (1 CRITICAL, 1 HIGH, 2 MEDIUM, 4 LOW)
+- 68 new characterization tests covering all 8 bug fixes
+- All changes committed and pushed to GitHub (v29.45)
