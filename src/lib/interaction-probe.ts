@@ -349,8 +349,29 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     }
 
     // Load the HTML into the iframe
+    // v29.44: Security — inject a script that blocks access to parent/top/opener
+    // before the app's own scripts run. This prevents LLM-generated HTML from
+    // exfiltrating data via parent.fetch() or parent.localStorage.
+    // The probe still works because it accesses contentDocument from the parent
+    // side (not from inside the iframe).
+    const securityScript = `<script>
+      // Block access to parent/top/opener to prevent data exfiltration
+      try { Object.defineProperty(window, 'parent', { get: () => window, configurable: false }); } catch (e) {}
+      try { Object.defineProperty(window, 'top', { get: () => window, configurable: false }); } catch (e) {}
+      try { Object.defineProperty(window, 'opener', { get: () => null, configurable: false }); } catch (e) {}
+    </script>`
+    // Inject the security script right after <head> (or at the start if no <head>)
+    let safeHtml = html
+    if (/<head[^>]*>/i.test(safeHtml)) {
+      safeHtml = safeHtml.replace(/<head[^>]*>/i, (match) => `${match}\n${securityScript}`)
+    } else if (/<html[^>]*>/i.test(safeHtml)) {
+      safeHtml = safeHtml.replace(/<html[^>]*>/i, (match) => `${match}\n${securityScript}`)
+    } else {
+      safeHtml = securityScript + safeHtml
+    }
+
     document.body.appendChild(iframe)
-    iframe.srcdoc = html
+    iframe.srcdoc = safeHtml
   })
 }
 

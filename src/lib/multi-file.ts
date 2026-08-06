@@ -369,17 +369,12 @@ export function inlineForPreview(files: OutputFile[]): string {
   let html = htmlFile.content
 
   // Inline <link rel="stylesheet" href="...">
-  // Match link tags with rel="stylesheet" (or rel='stylesheet') and href
+  // v29.44: Removed redundant second regex — the first regex's [^>]*? already
+  // matches both attribute orders (rel-then-href AND href-then-rel).
   html = html.replace(/<link\s+[^>]*?rel=["']stylesheet["'][^>]*?>/gi, (tag) => {
     const hrefMatch = tag.match(/href=["']([^"']+)["']/i)
     if (!hrefMatch?.[1]) return tag
     const content = lookup(hrefMatch[1])
-    if (content === undefined) return tag
-    return `<style>\n${content}\n</style>`
-  })
-  // Also handle <link href="..." rel="stylesheet"> (reversed attribute order)
-  html = html.replace(/<link\s+[^>]*?href=["']([^"']+)["'][^>]*?rel=["']stylesheet["'][^>]*?>/gi, (tag, href) => {
-    const content = lookup(href)
     if (content === undefined) return tag
     return `<style>\n${content}\n</style>`
   })
@@ -418,31 +413,46 @@ export function parseOutput(text: string): MultiFileResult {
   }
 
   // Strip code fences (handles ```json\n{...}\n``` and ```html\n...```)
-  // v29.42: Extract file path from ```file:path fences before stripping
-  const fencePathMatch = text.match(/```file:([^\n]+)\n/i)
-  const fencePath = fencePathMatch?.[1]?.trim() || null
-  const stripped = stripCodeFences(text)
-
-  // v29.42: If we have a file fence path, use it
-  if (fencePath) {
-    const detectedLanguage = detectLanguageFromContent(stripped)
-    const file: OutputFile = {
-      path: fencePath,
-      content: stripped,
-      language: detectLanguage(fencePath) || detectedLanguage,
+  // v29.44: Extract ALL ```file:path fences — LLM may emit multiple files.
+  // Previous code only extracted the FIRST fence, silently dropping the rest.
+  const fileFenceRegex = /```file:([^\n]+)\n([\s\S]*?)```/gi
+  const fileFences: { path: string; content: string }[] = []
+  let fenceMatch: RegExpExecArray | null
+  while ((fenceMatch = fileFenceRegex.exec(text)) !== null) {
+    const fp = fenceMatch[1]?.trim()
+    const fc = fenceMatch[2] ?? ''
+    if (fp && fc.trim()) {
+      fileFences.push({ path: fp, content: fc })
     }
+  }
+
+  // v29.44: If we have file fences, build a multi-file result from all of them
+  if (fileFences.length > 0) {
     const langToType: Record<string, OutputType> = {
       python: 'python', javascript: 'node', typescript: 'node',
       bash: 'code', sql: 'code', json: 'code', yaml: 'code',
+      rust: 'code', go: 'code', markdown: 'code', css: 'code',
     }
-    const fileType = langToType[file.language] ?? 'code'
+    const files: OutputFile[] = fileFences.map(f => {
+      const detectedLanguage = detectLanguageFromContent(f.content)
+      return {
+        path: f.path,
+        content: f.content,
+        language: detectLanguage(f.path) || detectedLanguage,
+      }
+    })
+    const fileType = langToType[files[0]!.language] ?? 'code'
+    // Find primary file (main.py, app.js, index.js, etc.)
+    const primaryFile = findPrimaryFile(files, fileType) || files[0]!.path
     return {
       type: fileType,
-      files: [file],
-      primaryFile: fencePath,
+      files,
+      primaryFile,
       previewable: false,
     }
   }
+
+  const stripped = stripCodeFences(text)
 
   // Case 1: Raw HTML
   if (looksLikeHtml(stripped)) {

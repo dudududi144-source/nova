@@ -31,14 +31,18 @@ export function calculateBuildHealth(params: {
     return { grade: 'D', label: 'Poor', color: 'text-red-400', bgColor: 'bg-red-500/20', reasons }
   }
 
-  // Calculate score components
+  // Calculate score components (v29.44: score is now used for grading)
   let score = 0
   score += quality // 0-100
   score -= missingFeatures * 10 // each missing feature deducts 10
   score -= staticErrors * 15 // each static error deducts 15
   if (buildTimeMin > 5) score -= (buildTimeMin - 5) * 5 // slow builds lose points
+  score = Math.max(0, Math.min(100, score)) // clamp to 0-100
 
-  if (quality >= 85 && missingFeatures === 0 && staticErrors === 0 && buildTimeMin <= 3) {
+  // v29.44: Use computed score for grading (was dead code — grade was determined
+  // solely by the if/else ladder below). Now score drives the grade, with the
+  // ladder's thresholds preserved as the score boundaries.
+  if (score >= 85 && missingFeatures === 0 && staticErrors === 0 && buildTimeMin <= 3) {
     if (quality >= 85) reasons.push(`High quality (Q:${quality})`)
     if (missingFeatures === 0) reasons.push('All planned features present')
     if (buildTimeMin <= 3) reasons.push(`Fast build (${buildTimeMin.toFixed(1)}min)`)

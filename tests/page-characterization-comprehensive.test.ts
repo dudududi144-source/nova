@@ -569,19 +569,24 @@ describe('page.tsx — footer', () => {
   })
 })
 
-describe('page.tsx — RunCodeButton component', () => {
+describe('RunCodeButton component (extracted to src/components/run-code-button.tsx)', () => {
+  // v29.43: RunCodeButton was extracted from page.tsx to its own file.
+  const rcbSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/run-code-button.tsx'),
+    'utf-8'
+  )
   test('RunCodeButton is defined as a function component', () => {
-    expect(source).toMatch(/function RunCodeButton\(/)
+    expect(rcbSource).toMatch(/export function RunCodeButton\(/)
   })
   test('RunCodeButton accepts a result prop', () => {
-    expect(source).toMatch(/RunCodeButton\(\{ result \}/)
+    expect(rcbSource).toMatch(/RunCodeButton\(\{ result \}/)
   })
   test('RunCodeButton has its own running/output state', () => {
-    const fnStart = source.indexOf('function RunCodeButton')
-    const fnEnd = source.indexOf('export default function Home')
-    const fnBody = source.slice(fnStart, fnEnd)
-    expect(fnBody).toContain('const [running, setRunning] = useState(false)')
-    expect(fnBody).toContain('const [output, setOutput] = useState')
+    expect(rcbSource).toContain('const [running, setRunning] = useState(false)')
+    expect(rcbSource).toContain('const [output, setOutput] = useState')
+  })
+  test('page.tsx imports RunCodeButton from the component file', () => {
+    expect(source).toContain("import { RunCodeButton } from '@/components/run-code-button'")
   })
 })
 

