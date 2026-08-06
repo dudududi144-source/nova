@@ -5986,3 +5986,117 @@ Stage Summary:
 - 8 real bugs fixed in page.tsx (1 CRITICAL, 1 HIGH, 2 MEDIUM, 4 LOW)
 - 68 new characterization tests covering all 8 bug fixes
 - All changes committed and pushed to GitHub (v29.45)
+
+---
+Task ID: 1015
+Agent: test-author-v2946
+Task: Write characterization tests for 7 v29.46 bug fixes
+
+Work Log:
+- Read /home/z/my-project/worklog.md (5988 lines) to understand prior context:
+  v29.45 shipped 8 bug fixes + 68 tests (Task 1014). v29.46 fixes a NEW set of
+  7 bugs (BUG #3, #4, #7, #8, #10, #12, #16) in src/app/page.tsx. The file
+  shrank from 4342 → 4235 lines (169-line dead autoFix function removed).
+- Confirmed page.tsx is 4235 lines (`wc -l`) — matches the expected post-cleanup
+  size. This is a 'use client' component with browser-only deps, so characterization
+  tests (read source as text) are the correct strategy, matching the convention
+  from tests/page-fixes-comprehensive.test.ts.
+- Inspected each of the 7 bug-fix sites in src/app/page.tsx via Grep + Read:
+    • BUG #3  (build stale buildStats)         : line 952, setBuildStats(prevStats => ...)
+    • BUG #4  (sendChat stale buildStats)      : line 1814, recordRefineInStats(prevStats)
+    • BUG #7  (autoFixLoop stale runtimeErrors): line 111 ref decl, line 1104 ?? fallback
+    • BUG #8  (uncancellable 2s wait)          : lines 1216-1227, AbortSignal + clearTimeout
+    • BUG #10 (delete history ref sync)        : line 2876, historyRef.current = newHistory
+    • BUG #12 (dead autoFix removed)           : line 1063 DEAD CODE comment block
+    • BUG #16 (model-selector ref sync)        : lines 2037/2046/2055, 3 onClick handlers
+- Wrote /home/z/my-project/tests/page-fixes-v2946.test.ts (~380 LOC, 38 tests).
+- First `bun test` run: 31 pass, 7 fail. Root-caused all 7 failures:
+    1. `>Kimi K3<` not found — the button text is `>Kimi<` (not "Kimi K3"; that
+       string only appears in the title attribute). Fixed the helper to search
+       for `>Kimi<` after the Z.AI button.
+    2. `...runtimeErrorsRef.current` not found — the actual code is
+       `...(runtimeErrorsRef.current ?? runtimeErrors)`, so the standalone
+       spread pattern doesn't exist. Fixed the assertion to match the real
+       expression including the `??` fallback.
+    3. `not.toContain('useEffect')` false-positive — the v29.46 comment in the
+       delete-history onClick says "the useEffect that syncs it runs after
+       render", so the word "useEffect" appears in a COMMENT, not a call.
+       Fixed by matching `useEffect(` (with opening paren) to detect only
+       actual calls, not prose mentions. Same for `setTimeout(`.
+- Re-ran `bun test tests/page-fixes-v2946.test.ts`: 38 pass, 0 fail, 127
+  expect() calls, 77ms.
+- Ran `bun run lint`: 0 errors, 3 warnings (all pre-existing in run-api-*.test.ts,
+  none from the new file).
+- Ran `bunx eslint tests/page-fixes-v2946.test.ts`: 0 errors, 0 warnings.
+
+KEY DESIGN DECISIONS:
+1. Characterization tests (read source as text) — page.tsx is a 4235-line
+   'use client' component with browser-only deps (iframe, localStorage,
+   ResizeObserver, matchMedia). It cannot be imported in bun:test without a
+   jsdom shim. Reading the source as text is the convention used by the
+   existing page-fixes-comprehensive.test.ts.
+2. Helper `getUseCallbackBody(name)` extracts a useCallback body by walking
+   from `const NAME = useCallback` to the next `}, [` (deps array close).
+   This localizes assertions to the relevant function — e.g., the BUG #3
+   test asserts `recordBuildInStats(prevStats,` is INSIDE build(), not
+   anywhere in the 4235-line file.
+3. Helper `getDeleteHistoryOnClickSection()` extracts the trash-button onClick
+   by anchoring on the `Delete this build from history` confirm() string and
+   walking back/forward to the `onClick={` and `}}` boundaries.
+4. Helper `getModelSelectorButtonsSection()` extracts the 3 model-selector
+   buttons by anchoring on the `>Z.AI<` and `>Kimi<` button-text labels.
+   (Initially tried `>Kimi K3<` but that's only in the title attribute, not
+   the button text — caught and fixed in the first test run.)
+5. For the "old buggy pattern absent" tests (BUG #4 `recordRefineInStats(buildStats)`,
+   BUG #12 `const autoFix = useCallback(async () => {` and `setAutoFixing(true)`),
+   used `expect(source).not.toContain(...)` on the WHOLE source — these patterns
+   should not appear anywhere, so a global check is the strongest signal.
+6. For the BUG #16 "literals not in retryWithModel" test, extracted the
+   retryWithModel useCallback body and asserted the literals ('z-ai'/'qwen'/
+   'kimi') do NOT appear there (retryWithModel uses the `model` parameter
+   variable). This proves the literals are unique to the model-selector buttons.
+7. For the BUG #8 cancellable-wait tests, extracted the autoFixLoop body and
+   asserted 7 distinct properties of the fix: setTimeout(resolve, 2000),
+   clearTimeout(t), DOMException('Aborted', 'AbortError'),
+   addEventListener('abort', onAbort, { once: true }), refineAbortRef signal
+   wiring, and the catch+break on abort. Each property is a separate test so
+   a partial regression is pinpointed.
+8. For the BUG #12 dead-code test, added a check that the DEAD CODE comment
+   block explains the rationale ("169 lines" + "bundle size|maintenance|never
+   called"). This documents the WHY of the removal, not just the WHAT.
+9. For the line-count test, used `source.split('\n').length` and asserted
+   < 4300 (hard upper bound) AND within ±50 of 4235 (target range). The
+   ±50 band tolerates minor future edits while still catching a regression
+   that re-adds the dead function.
+
+TEST COUNTS (all pass):
+- tests/page-fixes-v2946.test.ts — 38 tests, 127 expect() calls, 0 failures, 77ms
+
+Breakdown by bug:
+- BUG #3  (build() functional update for buildStats)       : 5 tests
+- BUG #4  (sendChat() functional update for buildStats)    : 4 tests
+- BUG #7  (autoFixLoop uses runtimeErrorsRef)              : 5 tests
+- BUG #8  (autoFixLoop wait is cancellable)                : 7 tests
+- BUG #10 (delete history syncs historyRef)                : 4 tests
+- BUG #12 (dead autoFix function removed)                  : 5 tests
+- BUG #16 (model-selector buttons sync ref)                : 6 tests
+- Line count (page.tsx shrank to ~4235)                    : 2 tests
+                                                            ----
+                                                            Total: 38 tests
+
+VERIFICATION:
+- bun test tests/page-fixes-v2946.test.ts: 38 pass, 0 fail, 127 expect() calls, 77ms.
+- bun run lint: 0 errors, 3 warnings (all pre-existing in run-api-*.test.ts — none from the new file).
+- bunx eslint tests/page-fixes-v2946.test.ts: 0 errors, 0 warnings.
+
+Stage Summary:
+- Shipped a single test file (tests/page-fixes-v2946.test.ts, ~380 LOC)
+  covering all 7 v29.46 bug fixes with 38 passing tests and 127 assertions.
+- All tests are hermetic (no dev server, no network, no DOM).
+- 0 lint errors, 0 new warnings.
+- Caught and fixed 3 test design issues during the first run (wrong button-text
+  label for Kimi, wrong spread pattern for runtimeErrorsRef, false-positive on
+  "useEffect" appearing in a comment) — all fixes documented inline.
+
+Files Created:
+- tests/page-fixes-v2946.test.ts (38 tests, ~380 lines)
