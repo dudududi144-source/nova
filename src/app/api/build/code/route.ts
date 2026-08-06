@@ -523,6 +523,28 @@ export async function POST(request: NextRequest): Promise<Response> {
           logger.info('code.truncated_fixed', { ip, totalLen: rawHtml.length })
         }
 
+        // v29.54: Check for unclosed <script> tags — the LLM can truncate
+        // mid-function, leaving a <script> without a matching </script>.
+        // This causes the static analysis to fail extracting the script
+        // content, and the browser can't parse the HTML correctly.
+        {
+          const scriptOpens = (rawHtml.match(/<script/gi) || []).length
+          const scriptCloses = (rawHtml.match(/<\/script>/gi) || []).length
+          if (scriptOpens > scriptCloses) {
+            logger.warn('code.unclosed_script', { ip, opens: scriptOpens, closes: scriptCloses })
+            // Close the unclosed script tag before </body> or </html>
+            const closeTag = '</script>\n'
+            if (rawHtml.toLowerCase().includes('</body>')) {
+              rawHtml = rawHtml.replace(/<\/body>/i, `${closeTag}</body>`)
+            } else if (rawHtml.toLowerCase().includes('</html>')) {
+              rawHtml = rawHtml.replace(/<\/html>/i, `${closeTag}</html>`)
+            } else {
+              rawHtml = rawHtml + closeTag + '</body>\n</html>'
+            }
+            logger.info('code.unclosed_script_fixed', { ip })
+          }
+        }
+
         // v28: looksLikeHtml already checked above — if we're here, it's HTML
         // (non-HTML outputs were handled and returned earlier)
 
@@ -561,7 +583,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         // - addEventListener() referencing undefined functions
         // - Function calls to undefined functions
         // - Variable assignments without declaration
-        const staticAnalysis = analyzeHtml(html)
+        // v29.53: Strip the polyfill block before analysis — the polyfill's
+        // comment ("for localStorage (") and getter ("get length() {")
+        // trigger false positives in the undefined-function check.
+        // v29.54: Include the <script> opening tag in the pattern to prevent
+        // leaving an orphaned <script> that captures <style> content.
+        const polyfillPattern = /<script[^>]*>\s*\/\/\s*v\d+:?\s*In-memory polyfill for localStorage[\s\S]*?<\/script>/gi
+        const htmlForAnalysis = html.replace(polyfillPattern, '')
+        const staticAnalysis = analyzeHtml(htmlForAnalysis)
         if (staticAnalysis.issues.length > 0) {
           logger.warn('code.static_analysis', { ip, issues: staticAnalysis.issues.length, errors: staticAnalysis.issues.filter(i => i.severity === 'error').length })
         } else {

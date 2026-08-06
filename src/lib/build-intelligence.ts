@@ -179,7 +179,7 @@ export function validateOutput(html: string, mission: string): ValidationResult 
   // stripBlockedAPIs injects a polyfill that contains "localStorage" and
   // "sessionStorage" in its code, which would false-positive this check.
   // We strip the polyfill block before checking for real usage.
-  const polyfillPattern = /\/\/\s*v\d+:?\s*In-memory polyfill for localStorage[\s\S]*?<\/script>/gi
+  const polyfillPattern = /<script[^>]*>\s*\/\/\s*v\d+:?\s*In-memory polyfill for localStorage[\s\S]*?<\/script>/gi
   const htmlWithoutPolyfill = lower.replace(polyfillPattern, '')
   const hasBlockedApi = /localstorage|sessionstorage|document\.cookie/.test(htmlWithoutPolyfill)
   checks.push({

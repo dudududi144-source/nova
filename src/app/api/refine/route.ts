@@ -298,7 +298,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         const totalMs = Date.now() - startTime
 
         // ═══ STATIC ANALYSIS — same as code route, catch bugs before user sees them ═══
-        const staticAnalysis = analyzeHtml(finalHtml)
+        // v29.53-v29.54: Strip the polyfill block before analysis (same as code route)
+        const polyfillPattern = /<script[^>]*>\s*\/\/\s*v\d+:?\s*In-memory polyfill for localStorage[\s\S]*?<\/script>/gi
+        const htmlForAnalysis = finalHtml.replace(polyfillPattern, '')
+        const staticAnalysis = analyzeHtml(htmlForAnalysis)
         if (staticAnalysis.issues.length > 0) {
           logger.warn('refine.static_analysis', { ip, issues: staticAnalysis.issues.length, errors: staticAnalysis.issues.filter(i => i.severity === 'error').length })
         }
