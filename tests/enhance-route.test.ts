@@ -16,6 +16,7 @@ mock.module('@/lib/llm', () => ({
 mock.module('@/lib/dashscope', () => ({
   isDashScopeConfigured: () => false,
   dashscopeChat: async () => ({ ok: false, text: '', tokens: 0, ms: 0 }),
+  dashscopeStream: async function* () { yield { text: '', fullText: '', done: true, tokens: 0, ms: 0 } },
 }))
 
 interface TestRequest {
