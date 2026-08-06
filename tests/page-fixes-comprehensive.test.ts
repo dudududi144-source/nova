@@ -357,10 +357,11 @@ describe('BUG #11: readWithTimeout helper prevents timer leak', () => {
     expect(matches!.length).toBe(1)
   })
 
-  test('readWithTimeout is called from all 4 SSE read loops', () => {
+  test('readWithTimeout is called from all SSE read loops', () => {
+    // v29.46: Was 4 loops, now 3 after removing dead autoFix function
     const matches = source.match(/readWithTimeout\(reader\)/g)
     expect(matches).not.toBeNull()
-    expect(matches!.length).toBe(4)
+    expect(matches!.length).toBe(3)
   })
 
   test('readWithTimeout calls do NOT pass an explicit timeout (use the 180s default)', () => {

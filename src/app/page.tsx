@@ -107,6 +107,9 @@ export default function Home() {
   const [refining, setRefining] = useState(false)
   // v3: runtime errors, theme, probe results, plan adherence
   const [runtimeErrors, setRuntimeErrors] = useState<ProbeError[]>([])
+  // v29.46: Ref mirror of runtimeErrors for autoFixLoop (avoids stale closure)
+  const runtimeErrorsRef = useRef<ProbeError[]>([])
+  useEffect(() => { runtimeErrorsRef.current = runtimeErrors }, [runtimeErrors])
   const [showRuntimeErrors, setShowRuntimeErrors] = useState(false)
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null)
   // v10.11: Theme selector removed — always use 'slate' for generated apps
@@ -945,15 +948,18 @@ export default function Home() {
       setSuggestions(smartSugs)
       setShowSuggestions(smartSugs.length > 0)
       // v20: Record build in persistent stats
-      const newStats = recordBuildInStats(buildStats, {
-        quality: finalQuality,
-        ms: finalMs,
-        tokens: finalTokens,
-        mission: m,
-        model: selectedModelRef.current,
+      // v29.46: Use functional update to avoid stale buildStats closure
+      setBuildStats(prevStats => {
+        const newStats = recordBuildInStats(prevStats, {
+          quality: finalQuality,
+          ms: finalMs,
+          tokens: finalTokens,
+          mission: m,
+          model: selectedModelRef.current,
+        })
+        saveBuildStats(newStats)
+        return newStats
       })
-      setBuildStats(newStats)
-      saveBuildStats(newStats)
     } catch (err: unknown) {
       // AbortError = user started a new build, loaded history, or navigated away; silently ignore
       if (err instanceof DOMException && err.name === 'AbortError') return
@@ -1054,180 +1060,12 @@ export default function Home() {
     setLivePreviewHtml(null)
   }, [])
 
-  // ═══ v3: Auto-fix function — sends runtime errors to LLM for automatic repair ═══
-  // Collects runtime errors + probe errors, sends them to /api/refine with a fix prompt,
-  // and replaces the result with the fixed HTML. This is the "auto-debug loop" that
-  // competitors like Replit use — NOVA can now do it too.
-  const autoFix = useCallback(async () => {
-    const currentResult = resultRef.current
-    if (!currentResult || autoFixing) return
+  // ═══ v3: Auto-fix function (DEAD CODE — removed in v29.46) ═══
+  // The single-iteration autoFix function was 169 lines of dead code — it was
+  // never called anywhere in the app (only autoFixLoop below is used).
+  // Removed to reduce bundle size and maintenance burden.
+  // The original logic is preserved in git history if needed.
 
-    const allErrors = [
-      ...runtimeErrors,
-      ...(probeResult?.errors || []),
-    ].slice(0, 10) // Limit to 10 errors
-
-    if (allErrors.length === 0) {
-      toast.info('No runtime errors found — the app looks healthy!')
-      return
-    }
-
-    setAutoFixing(true)
-    toast.info(`Auto-fixing ${allErrors.length} runtime error(s)...`)
-
-    // Build error list with stack traces for better LLM context
-    const errorList = allErrors.map((e, i) => {
-      const stack = e.stack ? `\n  Stack: ${e.stack.slice(0, 300)}` : ''
-      return `${i + 1}. [${e.type}]: ${e.msg}${stack}`
-    }).join('\n')
-
-    const fixMessage = `Fix these runtime errors:\n${errorList}\n\nThe app must work without these errors. Fix the root cause, not just the symptom. Test each fix mentally before writing it.`
-
-    refineAbortRef.current?.abort()
-    const controller = new AbortController()
-    refineAbortRef.current = controller
-    setLivePreviewHtml(null)
-    livePreviewAccumulatorRef.current = ''
-    setRuntimeErrors([])
-
-    try {
-      const res = await fetch('/api/refine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-        body: JSON.stringify({
-          mission: currentResult.mission,
-          html: currentResult.html,
-          message: fixMessage,
-          theme: selectedTheme,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!res.ok) {
-        let errorMsg = `Server error (${res.status})`
-        try { const e = await res.json(); if (e?.error) errorMsg = e.error } catch {}
-        toast.error(errorMsg)
-        return
-      }
-
-      const refineCt = res.headers.get('content-type') ?? ''
-      if (!refineCt.includes('text/event-stream')) {
-        toast.error('Unexpected response from server')
-        return
-      }
-
-      // Read SSE stream (same pattern as sendChat)
-      const reader = res.body?.getReader()
-      if (!reader) { toast.error('No stream'); return }
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let finalHtml = ''
-      let finalTokens = 0
-      let finalMs = 0
-      let finalQuality = 0
-      let finalMetrics = ''
-      let streamError: string | null = null
-
-      while (true) {
-        // v10.5: 180s timeout — if no data arrives, the connection is dead
-        let readResult: ReadableStreamReadResult<Uint8Array>
-        try {
-          // v29.45: Use readWithTimeout to prevent 180s timer leak
-          readResult = await readWithTimeout(reader)
-        } catch {
-          streamError = 'Connection timed out — no data for 180s'
-          break
-        }
-        const { done, value } = readResult
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const normalized = buffer.replace(/\r\n/g, '\n')
-        const events = normalized.split('\n\n')
-        buffer = events.pop() ?? ''
-        for (const eventStr of events) {
-          const dataLine = eventStr.trim()
-          if (!dataLine.startsWith('data: ')) continue
-          try {
-            const evt = JSON.parse(dataLine.slice(6))
-            if (evt.type === 'token') {
-              livePreviewAccumulatorRef.current = (livePreviewAccumulatorRef.current || '') + (evt.text ?? '')
-            } else if (evt.type === 'result') {
-              finalHtml = evt.html ?? ''
-              finalTokens = evt.tokens ?? 0
-              finalMs = evt.ms ?? 0
-              finalQuality = evt.quality ?? 0
-              finalMetrics = evt.metrics ?? ''
-            } else if (evt.type === 'error') {
-              streamError = evt.error ?? 'Unknown error'
-            }
-          } catch {}
-        }
-      }
-
-      // Flush decoder
-      buffer += decoder.decode()
-      if (buffer.trim()) {
-        const normalized = buffer.replace(/\r\n/g, '\n')
-        const events = normalized.split('\n\n')
-        for (const eventStr of events) {
-          const dataLine = eventStr.trim()
-          if (!dataLine.startsWith('data: ')) continue
-          try {
-            const evt = JSON.parse(dataLine.slice(6))
-            if (evt.type === 'result') {
-              finalHtml = evt.html ?? ''
-              finalTokens = evt.tokens ?? 0
-              finalMs = evt.ms ?? 0
-              finalQuality = evt.quality ?? 0
-              finalMetrics = evt.metrics ?? ''
-            } else if (evt.type === 'error') {
-              streamError = evt.error ?? 'Unknown error'
-            }
-          } catch {}
-        }
-      }
-
-      if (streamError) {
-        toast.error(streamError)
-        return
-      }
-
-      if (!finalHtml) {
-        toast.error('Auto-fix returned empty response')
-        return
-      }
-
-      const fixedResult: BuildResult = {
-        ...currentResult,
-        id: newBuildId(),
-        html: finalHtml,
-        tokens: finalTokens,
-        ms: finalMs,
-        // v11: Update quality + timestamp so the fix shows as a new version
-        quality: finalQuality,
-        timestamp: Date.now(),
-        // v13: Store metrics string for the insights panel
-        metrics: finalMetrics,
-      }
-      setResult(fixedResult)
-      resultRef.current = fixedResult
-      addBuildToHistory(fixedResult)
-      setQualityScore(finalQuality)
-      setQualityMetrics(finalMetrics)
-      setProbeResult(null) // Force re-probe
-      toast.success(`Fixed! ${finalMs ? `${(finalMs / 1000).toFixed(1)}s` : ''} · quality: ${finalQuality}`)
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') return
-      const failMsg = err instanceof Error ? err.message : 'Network error'
-      toast.error(failMsg)
-    } finally {
-      if (refineAbortRef.current === controller) {
-        refineAbortRef.current = null
-        setAutoFixing(false)
-        setLivePreviewHtml(null)
-      }
-    }
-  }, [runtimeErrors, probeResult, autoFixing])
 
   // ═══ MULTI-ITERATION AUTO-FIX LOOP ═══
   // Runs autoFix up to 3 times, re-probing after each fix.
@@ -1258,8 +1096,12 @@ export default function Home() {
       }
 
       // Collect all errors
+      // v29.46: Use a ref to get the latest runtimeErrors instead of the stale
+      // closure value. The closure captures runtimeErrors at autoFixLoop creation
+      // time, but setRuntimeErrors([]) at line 1378 updates state — the closure
+      // still sees the old value, re-sending already-fixed errors to the LLM.
       const allErrors = [
-        ...runtimeErrors,
+        ...(runtimeErrorsRef.current ?? runtimeErrors),
         ...probe.errors,
       ].slice(0, 10)
 
@@ -1368,7 +1210,21 @@ export default function Home() {
         setRuntimeErrors([])
 
         // Wait for probe to run on new result
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        // v29.46: Make the wait cancellable — if the user cancels or resets during
+        // this 2s window, abort the loop instead of continuing to the next iteration.
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const t = setTimeout(resolve, 2000)
+            // If the abort signal fires, cancel the wait and break the loop
+            const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) }
+            refineAbortRef.current?.signal.addEventListener('abort', onAbort, { once: true })
+            // Clean up the listener when the timer fires naturally
+            const origResolve = resolve
+            resolve = (() => { refineAbortRef.current?.signal.removeEventListener('abort', onAbort); origResolve() }) as typeof resolve
+          })
+        } catch {
+          break // Aborted during wait — stop the loop
+        }
 
       } catch {
         break // Network error, stop the loop
@@ -1954,9 +1810,12 @@ export default function Home() {
       setQualityMetrics(finalMetrics)
       setChatInput('') // Clear input only after success
       // v20: Record refine in persistent stats
-      const refinedStats = recordRefineInStats(buildStats)
-      setBuildStats(refinedStats)
-      saveBuildStats(refinedStats)
+      // v29.46: Use functional update to avoid stale buildStats closure
+      setBuildStats(prevStats => {
+        const refinedStats = recordRefineInStats(prevStats)
+        saveBuildStats(refinedStats)
+        return refinedStats
+      })
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       const failMsg = err instanceof Error ? err.message : 'Network error'
@@ -2175,7 +2034,7 @@ export default function Home() {
           <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
             <button
               type="button"
-              onClick={() => { setSelectedModel('z-ai'); try { localStorage.setItem('nova_model', 'z-ai') } catch {} }}
+              onClick={() => { setSelectedModel('z-ai'); selectedModelRef.current = 'z-ai'; try { localStorage.setItem('nova_model', 'z-ai') } catch {} }}
               disabled={loading || refining}
               className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
                 selectedModel === 'z-ai' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
@@ -2184,7 +2043,7 @@ export default function Home() {
             >Z.AI</button>
             <button
               type="button"
-              onClick={() => { setSelectedModel('qwen'); try { localStorage.setItem('nova_model', 'qwen') } catch {} }}
+              onClick={() => { setSelectedModel('qwen'); selectedModelRef.current = 'qwen'; try { localStorage.setItem('nova_model', 'qwen') } catch {} }}
               disabled={loading || refining}
               className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
                 selectedModel === 'qwen' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
@@ -2193,7 +2052,7 @@ export default function Home() {
             >Qwen</button>
             <button
               type="button"
-              onClick={() => { setSelectedModel('kimi'); try { localStorage.setItem('nova_model', 'kimi') } catch {} }}
+              onClick={() => { setSelectedModel('kimi'); selectedModelRef.current = 'kimi'; try { localStorage.setItem('nova_model', 'kimi') } catch {} }}
               disabled={loading || refining}
               className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
                 selectedModel === 'kimi' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
@@ -3011,6 +2870,10 @@ export default function Home() {
                                   if (!confirm(`Delete this build from history?\n\n${h.mission.slice(0, 60)}`)) return
                                   const newHistory = history.filter(item => item.id !== h.id)
                                   setHistory(newHistory)
+                                  // v29.46: Sync historyRef synchronously — the useEffect that
+                                  // syncs it runs after render, so addBuildToHistory could re-add
+                                  // the deleted item if it fires in the same tick.
+                                  historyRef.current = newHistory
                                   saveHistoryToStorage(newHistory)
                                   toast.success('Build deleted from history')
                                 }}
