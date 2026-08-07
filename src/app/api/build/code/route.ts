@@ -144,7 +144,7 @@ OUTPUT FORMAT:
 CRITICAL — CODE MUST BE IMMEDIATELY RUNNABLE:
 - The user will click a "Run" button to execute your code in a sandbox.
 - The code MUST produce visible output when run (print to stdout).
-- The code MUST complete within 10 seconds — NO infinite loops, NO long sleeps, NO monitoring loops.
+- The code MUST complete within 30 seconds — NO infinite loops, NO long sleeps, NO monitoring loops.
 - For Python: include a \`if __name__ == "__main__":\` block that runs demo/test cases.
 - For Node.js: include demo calls at the end that console.log results.
 - For Bash: include echo statements showing what the script does. Run ONCE and exit.
