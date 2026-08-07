@@ -30,7 +30,7 @@ export interface TokenRouterOptions {
   model?: string
   /** Sampling temperature (0-2). Defaults to 0.4. */
   temperature?: number
-  /** Max output tokens. Defaults to 8000. */
+  /** Max output tokens. Defaults to 32000. */
   maxTokens?: number
   /** Hard timeout in ms. Defaults to 60_000. */
   timeoutMs?: number
@@ -443,8 +443,8 @@ export async function critiqueHtml(
 ): Promise<{ ok: boolean; suggestions: string[]; reasoning?: string; error?: string }> {
   // Truncate HTML to avoid token explosion — Kimi K3 has a context limit.
   // 8000 chars ≈ 2000 tokens, leaving plenty of room for the model's response.
-  const truncatedHtml = html.length > 8000
-    ? html.slice(0, 8000) + '\n<!-- ... truncated ... -->'
+  const truncatedHtml = html.length > 20000
+    ? html.slice(0, 20000) + '\n<!-- ... truncated ... -->'
     : html
 
   const systemPrompt = `You are a senior front-end engineer reviewing an HTML app. Output ONLY valid JSON.
@@ -468,7 +468,7 @@ Rules:
   const userPrompt = `Mission: ${mission}\n\nHTML to review:\n${truncatedHtml}`
 
   const result = await tokenRouterChat(systemPrompt, userPrompt, {
-    maxTokens: 4000,
+    maxTokens: 8000,
     temperature: 0.3,
     timeoutMs: 60_000,
   })

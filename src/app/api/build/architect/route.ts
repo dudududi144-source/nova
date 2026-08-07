@@ -56,7 +56,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const result = await llmChat(ARCHITECT_PROMPT, `Mission: ${mission}`, {
     maxTokens: 4000,
     temperature: 0.5,
-    timeoutMs: 30_000,
+    timeoutMs: 60_000,
     thinking: true, // v29.61: Enable deep reasoning for better plans
     signal: request.signal,
   })

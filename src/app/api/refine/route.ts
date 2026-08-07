@@ -203,7 +203,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Qwen AI...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
           fullText = ''; totalTokens = 0; llmMs = 0; streamError = null
           for await (const chunk of dashscopeStream(REFINE_PROMPT, userPrompt, {
-            maxTokens: tokenBudget, temperature: 0.3, timeoutMs: 150_000, signal: request.signal,
+            maxTokens: tokenBudget, temperature: 0.3, timeoutMs: 180_000, signal: request.signal,
           })) {
             if (chunk.error) { streamError = chunk.error; break }
             if (chunk.done) { totalTokens = chunk.tokens; llmMs = chunk.ms; break }
@@ -268,7 +268,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           const retryResult = await llmChat(
             'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
             `The previous output was truncated. Last 1000 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
-            { maxTokens: 16000, temperature: 0.2, timeoutMs: 40_000, signal: request.signal }
+            { maxTokens: tokenBudget, temperature: 0.2, timeoutMs: 60_000, signal: request.signal }
           )
           if (retryResult.ok) {
             rawHtml = rawHtml + stripCodeFences(retryResult.text)

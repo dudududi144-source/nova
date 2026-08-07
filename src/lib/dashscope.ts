@@ -99,7 +99,7 @@ export async function* dashscopeStream(
       stream_options: { include_usage: true },
     }, {
       signal: opts.signal,
-      timeout: opts.timeoutMs ?? 120_000,
+      timeout: opts.timeoutMs ?? 180_000,
     })
 
     let fullText = ''
@@ -147,7 +147,7 @@ export async function dashscopeChat(
   const model = opts.model ?? 'qwen-flash-character'
   const temperature = opts.temperature ?? 0.4
   const maxTokens = opts.maxTokens ?? 32000
-  const timeoutMs = opts.timeoutMs ?? 120_000
+  const timeoutMs = opts.timeoutMs ?? 180_000
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)

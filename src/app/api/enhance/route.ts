@@ -68,7 +68,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
 
-  // Validate — same rules as mission (3-2000 chars, no control chars)
+  // Validate — same rules as mission (3-5000 chars, no control chars)
   const check = validateMission(prompt)
   if (!check.ok) {
     return Response.json({ ok: false, error: check.error ?? 'Invalid prompt' }, { status: 400 })
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // Try Z.AI first
   let result = await llmChat(ENHANCE_SYSTEM_PROMPT, prompt, {
-    maxTokens: 500,
+    maxTokens: 1000,
     temperature: 0.5,
     timeoutMs: 30_000,
     thinking: true, // v29.61: Enable deep reasoning for better prompt enhancement
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!result.ok && isDashScopeConfigured()) {
     logger.warn('enhance.zai_failed_fallback_qwen', { ip, error: result.error })
     result = await dashscopeChat(ENHANCE_SYSTEM_PROMPT, prompt, {
-      maxTokens: 300,
+      maxTokens: 1000,
       temperature: 0.5,
       timeoutMs: 30_000,
     })
