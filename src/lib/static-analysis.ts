@@ -234,12 +234,34 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
   // 8. Check for undeclared variable assignments
   // v29.55: Use jsNoStrings to prevent HTML attributes in template literals
   // (onclick="foo()") from being mistaken for variable assignments
+  // v29.70: Also extract function parameters — assigning to a parameter
+  // is valid (e.g., function filterItems(query) { query = query.trim(); })
+  const functionParams = new Set<string>()
+  // Match function declarations: function name(params)
+  for (const pm of js.matchAll(/function\s+\w+\s*\(([^)]*)\)/g)) {
+    for (const p of pm[1].split(',')) {
+      const trimmed = p.trim().split('=')[0].trim()
+      if (trimmed && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(trimmed)) {
+        functionParams.add(trimmed)
+      }
+    }
+  }
+  // Match arrow functions: (params) => {  (must have => to distinguish from if/for/while)
+  for (const pm of js.matchAll(/\(([^)]*)\)\s*=>/g)) {
+    for (const p of pm[1].split(',')) {
+      const trimmed = p.trim().split('=')[0].trim()
+      if (trimmed && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(trimmed)) {
+        functionParams.add(trimmed)
+      }
+    }
+  }
   // Match: identifier = value (but not ==, ===, !=, !==, <=, >=)
   const assignmentMatches = jsNoStrings.matchAll(/^\s*(\w+)\s*=[^=]/gm)
   for (const m of assignmentMatches) {
     const varName = m[1]
     // Skip builtins, declared vars, function params, and common globals
     if (declaredVars.has(varName) || definedFunctions.has(varName)) continue
+    if (functionParams.has(varName)) continue // v29.70: function parameters are valid
     if (BUILTIN_GLOBALS.has(varName) || JS_KEYWORDS.has(varName)) continue
 
     // Check if it's declared elsewhere (let/const/var x)
