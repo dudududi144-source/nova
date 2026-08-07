@@ -152,9 +152,9 @@ CRITICAL — CODE MUST BE IMMEDIATELY RUNNABLE:
 - Include at least 3-5 test cases that demonstrate the code works correctly.
 - Example: if writing a prime checker, test with known primes (2, 3, 5, 7, 11) and composites (4, 6, 8, 9, 10).
 - The sandbox has NO network access — don't call external APIs or pip install.
-- The sandbox has NO stdin — don't use input(). Hardcode test values instead.
+- The sandbox supports stdin — you can use input() for interactive programs, but also include hardcoded test cases.
 - The sandbox has NO mail/cron/systemd — don't use system services.
-- Execution timeout is 10 seconds — keep algorithms efficient.
+- Execution timeout is 30 seconds — keep algorithms efficient.
 
 QUALITY RULES:
 - Write clean, idiomatic code following best practices for the language.
