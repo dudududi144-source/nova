@@ -19,8 +19,8 @@ describe('Architect route characterization', () => {
     expect(architectSource).toContain('JSON')
   })
 
-  it('has maxDuration of 30', () => {
-    expect(architectSource).toContain('maxDuration = 30')
+  it('has maxDuration of 60', () => {
+    expect(architectSource).toContain('maxDuration = 60')
   })
 
   it('has rate limiter', () => {

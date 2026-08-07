@@ -13,6 +13,8 @@ import { stripCodeFences, looksLikeHtml, injectCsp, stripBlockedAPIs } from '@/l
 import { fixConversionMath } from '@/lib/math-fixer'
 import { fixForms } from '@/lib/form-fixer'
 import { fixCss } from '@/lib/css-fixer'
+// v29.65: Add Kimi fallback for refine
+import { isTokenRouterConfigured, tokenRouterStream } from '@/lib/tokenrouter'
 import { validateMission } from '@/lib/mission'
 import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -203,6 +205,23 @@ export async function POST(request: NextRequest): Promise<Response> {
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Qwen AI...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
           fullText = ''; totalTokens = 0; llmMs = 0; streamError = null
           for await (const chunk of dashscopeStream(REFINE_PROMPT, userPrompt, {
+            maxTokens: tokenBudget, temperature: 0.3, timeoutMs: 180_000, signal: request.signal,
+          })) {
+            if (chunk.error) { streamError = chunk.error; break }
+            if (chunk.done) { totalTokens = chunk.tokens; llmMs = chunk.ms; break }
+            if (chunk.text) {
+              fullText = chunk.fullText
+              if (!safeEnqueue(`data: ${JSON.stringify({ type: 'token', text: chunk.text, length: fullText.length })}\n\n`)) break
+            }
+          }
+        }
+
+        // v29.65: Kimi (TokenRouter) fallback — if Qwen also failed
+        if (streamError && isTokenRouterConfigured()) {
+          logger.info('refine.fallback_kimi', { ip, reason: streamError })
+          safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Retrying with Kimi K3...', elapsed: Math.floor((Date.now() - startTime) / 1000) })}\n\n`)
+          fullText = ''; totalTokens = 0; llmMs = 0; streamError = null
+          for await (const chunk of tokenRouterStream(REFINE_PROMPT, userPrompt, {
             maxTokens: tokenBudget, temperature: 0.3, timeoutMs: 180_000, signal: request.signal,
           })) {
             if (chunk.error) { streamError = chunk.error; break }

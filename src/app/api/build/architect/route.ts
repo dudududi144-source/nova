@@ -9,10 +9,12 @@ import { RateLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 // v10.2: enrichMission removed — LLM decides everything freely
 import { extractBalancedJson } from '@/lib/json-extract'
+// v29.65: Add multi-model fallback for architect (was missing)
+import { isDashScopeConfigured, dashscopeChat } from '@/lib/dashscope'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 30
+export const maxDuration = 60
 
 const ARCHITECT_PROMPT = `You are a senior software architect. Analyze what the user wants and output a JSON plan.
 
@@ -53,13 +55,31 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // v10.2: No enrichment — send mission directly, LLM decides everything
 
-  const result = await llmChat(ARCHITECT_PROMPT, `Mission: ${mission}`, {
+  let result = await llmChat(ARCHITECT_PROMPT, `Mission: ${mission}`, {
     maxTokens: 4000,
     temperature: 0.5,
     timeoutMs: 60_000,
     thinking: true, // v29.61: Enable deep reasoning for better plans
     signal: request.signal,
   })
+
+  // v29.65: Multi-model fallback — if Z.AI fails, try Qwen
+  if (!result.ok && isDashScopeConfigured()) {
+    logger.warn('architect.fallback_qwen', { ip, error: result.error })
+    const fallbackResult = await dashscopeChat(ARCHITECT_PROMPT, `Mission: ${mission}`, {
+      maxTokens: 4000,
+      temperature: 0.5,
+      timeoutMs: 60_000,
+    })
+    if (fallbackResult.ok) {
+      // Use the fallback result
+      result.text = fallbackResult.text
+      result.ok = true
+      result.tokens = fallbackResult.tokens
+      result.ms = fallbackResult.ms
+      logger.info('architect.fallback_qwen_ok', { ip, ms: fallbackResult.ms, tokens: fallbackResult.tokens })
+    }
+  }
 
   if (!result.ok) {
     logger.error('architect.failed', { ip, error: result.error, ms: result.ms })
