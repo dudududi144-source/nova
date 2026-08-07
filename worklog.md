@@ -6681,3 +6681,37 @@ Complete feature verification:
 8. Multi-Model Fallback: ✓ (Z.AI→Qwen→Kimi on all routes)
 
 All NOVA features verified working end-to-end.
+
+---
+Task ID: 1031
+Agent: main (Z.ai Code)
+Task: Fix comment-induced false positives in static analysis
+
+Work Log:
+- Generated notes app: Quality 85/100 with 5 false positive warnings
+- Root cause: JavaScript comments contained function-like words:
+  - "// Auto-injected save/cancel button handlers" → "handlers()" flagged
+  - "// Auto-injected search handler" → "handler()" flagged
+  - "// divs/sections that contain headings" → "headings()" flagged
+- The stripStrings function removed strings but NOT comments
+- Fix: Added comment stripping (single-line // and multi-line /* */)
+  before running function-call checks
+
+Results:
+- Before: Quality 85/100, 5 false positive warnings
+- After:  Quality 97/100, 1 warning (remaining "query" false positive)
+- +12 quality points from this single fix!
+- All 12 quality checks pass
+
+E2E quality progression:
+- Snake Game:     100/100
+- Todo App:       100/100
+- Counter:         97/100
+- Notes App:       97/100 (was 85, +12 from comment fix)
+- Crypto Dashboard: 93/100
+Average: 97.4/100
+
+Stage Summary:
+- Comment stripping eliminates false positives from auto-injected code
+- 3029 tests, 0 failures, 0 lint errors
+- GitHub: v29.69 pushed
