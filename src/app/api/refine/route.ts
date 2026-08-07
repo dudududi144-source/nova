@@ -354,6 +354,23 @@ export async function POST(request: NextRequest): Promise<Response> {
             if (looksLikeHtml(retryHtml)) {
               // Apply same post-processing to retry HTML (must match the main path)
               let processedRetryHtml = retryHtml
+
+              // v29.67: Check for unclosed <script> tags (same as code route)
+              {
+                const ro = (processedRetryHtml.match(/<script/gi) || []).length
+                const rc = (processedRetryHtml.match(/<\/script>/gi) || []).length
+                if (ro > rc) {
+                  const ct = '</script>\n'
+                  if (processedRetryHtml.toLowerCase().includes('</body>')) {
+                    processedRetryHtml = processedRetryHtml.replace(/<\/body>/i, `${ct}</body>`)
+                  } else if (processedRetryHtml.toLowerCase().includes('</html>')) {
+                    processedRetryHtml = processedRetryHtml.replace(/<\/html>/i, `${ct}</html>`)
+                  } else {
+                    processedRetryHtml = processedRetryHtml + ct + '</body>\n</html>'
+                  }
+                }
+              }
+
               const retryHeadMatch = processedRetryHtml.match(/<head[^>]*>/i)
               if (retryHeadMatch) {
                 processedRetryHtml = processedRetryHtml.replace(/<head[^>]*>/i, `${retryHeadMatch[0]}\n${designTokens}`)
