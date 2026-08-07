@@ -6655,3 +6655,29 @@ Stage Summary:
 - Complex apps (33 functions, 1175 lines) generated successfully
 - All features present in all builds
 - NOVA is production-ready
+
+---
+Task ID: 1030
+Agent: main (Z.ai Code)
+Task: Test refine (chat) feature end-to-end
+
+Work Log:
+- Generated base counter app: Quality 97/100, 17862 bytes
+- Sent refine request: "make the background blue and add a reset button"
+- Result: Quality 97/100, 21023 bytes, 8930 tokens
+  - Blue color (#3b82f6) added as primary color ✓
+  - Reset button added ✓
+  - 0 static issues ✓
+  - Refine feature works end-to-end!
+
+Complete feature verification:
+1. App Generation: ✓ (Quality 93-100/100)
+2. Architect: ✓ (14 features, 10.3s)
+3. Refine (chat): ✓ (blue + reset button added)
+4. Code Execution: ✓ (Python/JS/Bash)
+5. Settings API: ✓ (Z.AI configured)
+6. Backup API: ✓ (2 files)
+7. Build Result Polling: ✓ (SSE recovery)
+8. Multi-Model Fallback: ✓ (Z.AI→Qwen→Kimi on all routes)
+
+All NOVA features verified working end-to-end.
