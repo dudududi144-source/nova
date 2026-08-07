@@ -72,11 +72,13 @@ Your words
 
 **Live token streaming.** You don't wait 60 seconds for a spinner. You watch the code appear character by character — HTML structure, CSS styling, JavaScript logic — all flowing in real-time. The preview updates as the code arrives.
 
+**Deep reasoning mode.** NOVA enables thinking mode on every LLM call — architect, code generation, refinement, and bug fixing. The model reasons deeply about architecture before generating, producing more complete and functional apps.
+
 **It actually verifies.** NOVA doesn't just generate and hope. After building, it loads the app in a sandbox, clicks every button, types in every input, and checks if the DOM actually changes. If something's broken, it sends the errors back to the AI and tries again. Up to 3 times.
 
 **Cross-build memory.** Build something, then rebuild it later? Instant. NOVA caches every build in IndexedDB. Rebuilding a previous request takes 0ms instead of 60s. It also suggests similar past builds as you type.
 
-**Survives anything.** SSE stream drops? NOVA polls the server and recovers the result. AI model fails? Circuit breaker disables it and falls back to the other model. Architect fails? The coder proceeds without a plan. Network timeout? Client-side detection kicks in at 90s.
+**Survives anything.** SSE stream drops? NOVA polls the server and recovers the result. AI model fails? Circuit breaker disables it and falls back to the other model. Architect fails? The coder proceeds without a plan. Network timeout? Client-side detection kicks in at 300s.
 
 ---
 
@@ -108,8 +110,8 @@ Your words
 - **SSE Recovery** — If the stream drops, client polls `/api/build/result` to recover the completed build
 - **Circuit Breaker** — Tracks model failures; after 5 consecutive failures, temporarily disables the model (2-min cooldown)
 - **Graceful Degradation** — Architect failure returns `plan:null` (not 502); the coder proceeds without a plan
-- **Client Timeout** — 180-second read timeout detects half-open TCP connections
-- **Multi-Model Fallback** — Z.AI ↔ Kimi K3 automatic failover
+- **Client Timeout** — 300-second read timeout detects half-open TCP connections
+- **Multi-Model Fallback** — Z.AI → Qwen → Kimi K3 automatic failover on all routes (architect, code, refine, enhance) with circuit breaker
 
 ### Memory System
 
@@ -205,7 +207,7 @@ bun run dev             # Open http://localhost:3000
 | Fallback AI | Kimi K3 via TokenRouter (free, OpenAI-compatible) |
 | Memory | IndexedDB |
 | Streaming | Server-Sent Events (SSE) |
-| Testing | Bun test — 3029 tests, 5500+ assertions |
+| Testing | Bun test — 3029 tests, 5342 assertions |
 
 ---
 
