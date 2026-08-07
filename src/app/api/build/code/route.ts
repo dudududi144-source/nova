@@ -665,7 +665,10 @@ export async function POST(request: NextRequest): Promise<Response> {
                 // Use the improved version
                 const metrics = analyzeQuality(retryHtml)
                 // v16: Include quality breakdown in retry result too
-                const retryStaticAnalysis = analyzeHtml(retryHtml)
+                // v29.67: Strip polyfill before analysis (same fix as main path)
+                const retryPolyfillPattern = /<script[^>]*>\s*\/\/\s*v\d+:?\s*In-memory polyfill for localStorage[\s\S]*?<\/script>/gi
+                const retryHtmlForAnalysis = retryHtml.replace(retryPolyfillPattern, '')
+                const retryStaticAnalysis = analyzeHtml(retryHtmlForAnalysis)
                 const retryPlanAdherence = checkPlanAdherence(retryHtml, plan)
                 // v26: Adjust score for static errors (same as main path)
                 const retryStaticErrors = retryStaticAnalysis.issues.filter(i => i.severity === 'error').length
