@@ -30,8 +30,8 @@ if (!globalStore.__novaBuildStore) {
   logger.info('buildstore.initialized', { storeSize: 0 })
 }
 
-const TTL_MS = 10 * 60 * 1000
-const MAX_ENTRIES = 50
+const TTL_MS = 30 * 60 * 1000
+const MAX_ENTRIES = 200
 
 let cleanupTimer: ReturnType<typeof setInterval> | null = null
 

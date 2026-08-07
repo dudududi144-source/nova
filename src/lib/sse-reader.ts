@@ -58,7 +58,7 @@ export interface SseReaderOptions {
 
 // ── Constants ──
 
-const DEFAULT_TIMEOUT_MS = 90_000
+const DEFAULT_TIMEOUT_MS = 300_000
 
 // ── Main reader ──
 

@@ -167,9 +167,9 @@ async function callModel(model: FallbackModelId, opts: FallbackOptions): Promise
     case 'tokenrouter': {
       // TokenRouter is a reasoning model — give it more tokens by default
       // since some may be consumed by chain-of-thought.
-      const maxTokens = opts.maxTokens ?? 8000
+      const maxTokens = opts.maxTokens ?? 16000
       const result = await tokenRouterChat(opts.systemPrompt, opts.userPrompt, {
-        maxTokens: Math.max(maxTokens, 8000),
+        maxTokens: Math.max(maxTokens, 16000),
         temperature: opts.temperature,
         timeoutMs: opts.timeoutMs,
         signal: opts.signal,

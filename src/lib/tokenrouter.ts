@@ -123,7 +123,7 @@ export async function* tokenRouterStream(
   const t0 = Date.now()
   const model = opts.model ?? DEFAULT_MODEL
   const temperature = opts.temperature ?? 0.4
-  const maxTokens = opts.maxTokens ?? 8000
+  const maxTokens = opts.maxTokens ?? 32000
   const timeoutMs = opts.timeoutMs ?? 60_000
 
   const apiKey = getApiKey() // v29.39: settings > env
@@ -336,7 +336,7 @@ export async function tokenRouterChat(
   const t0 = Date.now()
   const model = opts.model ?? DEFAULT_MODEL
   const temperature = opts.temperature ?? 0.4
-  const maxTokens = opts.maxTokens ?? 8000
+  const maxTokens = opts.maxTokens ?? 32000
   const timeoutMs = opts.timeoutMs ?? 60_000
 
   const apiKey = getApiKey() // v29.39: settings > env
@@ -468,9 +468,9 @@ Rules:
   const userPrompt = `Mission: ${mission}\n\nHTML to review:\n${truncatedHtml}`
 
   const result = await tokenRouterChat(systemPrompt, userPrompt, {
-    maxTokens: 1000,
+    maxTokens: 4000,
     temperature: 0.3,
-    timeoutMs: 30_000,
+    timeoutMs: 60_000,
   })
 
   if (!result.ok) {

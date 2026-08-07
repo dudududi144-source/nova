@@ -16,12 +16,12 @@ import { RateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 15
+export const maxDuration = 60
 
 const runLimiter = new RateLimiter(20, 60 * 1000, 5 * 60 * 1000, 1000)
-const MAX_BODY_BYTES = 200_000
-const EXEC_TIMEOUT_MS = 10_000
-const MAX_OUTPUT_BYTES = 50_000
+const MAX_BODY_BYTES = 500_000
+const EXEC_TIMEOUT_MS = 30_000
+const MAX_OUTPUT_BYTES = 200_000
 
 interface RunBody {
   language?: unknown

@@ -84,9 +84,9 @@ export async function llmChat(
   opts: LlmOptions = {}
 ): Promise<LlmResult> {
   const t0 = Date.now()
-  const maxTokens = opts.maxTokens ?? 4000
+  const maxTokens = opts.maxTokens ?? 8000
   const temperature = opts.temperature ?? 0.4
-  const timeoutMs = opts.timeoutMs ?? 60_000
+  const timeoutMs = opts.timeoutMs ?? 120_000
   // v29.61: Enable thinking mode for deep reasoning (was always disabled)
   const thinkingType = opts.thinking ? 'enabled' : 'disabled'
 
@@ -185,7 +185,7 @@ export async function* llmChatStream(
   const t0 = Date.now()
   const maxTokens = opts.maxTokens ?? 32000
   const temperature = opts.temperature ?? 0.4
-  const timeoutMs = opts.timeoutMs ?? 150_000
+  const timeoutMs = opts.timeoutMs ?? 300_000
   // v29.61: Enable thinking mode for deep reasoning (was always disabled)
   const thinkingType = opts.thinking ? 'enabled' : 'disabled'
 
