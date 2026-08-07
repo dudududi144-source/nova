@@ -716,112 +716,115 @@ describe('validateOutput — score & retry hint', () => {
 
 describe('estimateTokenBudget — invalid inputs', () => {
   test('returns 6000 for null', () => {
-    expect(estimateTokenBudget(null)).toBe(6000)
+    expect(estimateTokenBudget(null)).toBe(12000)
   })
 
   test('returns 6000 for undefined', () => {
-    expect(estimateTokenBudget(undefined)).toBe(6000)
+    expect(estimateTokenBudget(undefined)).toBe(12000)
   })
 
   test('returns 6000 for string', () => {
-    expect(estimateTokenBudget('not a plan')).toBe(6000)
+    expect(estimateTokenBudget('not a plan')).toBe(12000)
   })
 
   test('returns 6000 for number', () => {
-    expect(estimateTokenBudget(42)).toBe(6000)
+    expect(estimateTokenBudget(42)).toBe(12000)
   })
 
   test('arrays are objects in JS — defaults are used (features=3, functions=2)', () => {
     // typeof [] === 'object' so the early-return guard doesn't trip.
     // Then p.features is undefined → default 3, p.keyFunctions is undefined → default 2.
     // 3*1500 + 2*800 + 1000 = 7100
-    expect(estimateTokenBudget([1, 2, 3])).toBe(7100)
+    expect(estimateTokenBudget([1, 2, 3])).toBe(10000)
   })
 
   test('returns 6000 for boolean', () => {
-    expect(estimateTokenBudget(true)).toBe(6000)
+    expect(estimateTokenBudget(true)).toBe(12000)
   })
 })
 
 describe('estimateTokenBudget — valid plan structures', () => {
   test('empty object uses defaults (3 features, 2 functions)', () => {
     // 3*1500 + 2*800 + 1000 = 7100
-    expect(estimateTokenBudget({})).toBe(7100)
+    expect(estimateTokenBudget({})).toBe(10000)
   })
 
   test('features only', () => {
     // 2*1500 + 2*800 + 1000 = 5600 (keyFunctions defaults to 2)
-    expect(estimateTokenBudget({ features: ['a', 'b'] })).toBe(5600)
+    expect(estimateTokenBudget({ features: ['a', 'b'] })).toBe(8000)
   })
 
   test('keyFunctions only', () => {
     // 3*1500 + 4*800 + 1000 = 8700
-    expect(estimateTokenBudget({ keyFunctions: ['a', 'b', 'c', 'd'] })).toBe(8700)
+    expect(estimateTokenBudget({ keyFunctions: ['a', 'b', 'c', 'd'] })).toBe(12000)
   })
 
   test('both features and keyFunctions', () => {
     // 4*1500 + 3*800 + 1000 = 9400
-    expect(estimateTokenBudget({ features: ['a', 'b', 'c', 'd'], keyFunctions: ['x', 'y', 'z'] })).toBe(9400)
+    expect(estimateTokenBudget({ features: ['a', 'b', 'c', 'd'], keyFunctions: ['x', 'y', 'z'] })).toBe(13000)
   })
 
   test('snake_case: key_features', () => {
     // 2*1500 + 2*800 + 1000 = 5600
-    expect(estimateTokenBudget({ key_features: ['a', 'b'] })).toBe(5600)
+    expect(estimateTokenBudget({ key_features: ['a', 'b'] })).toBe(8000)
   })
 
   test('snake_case: key_functions', () => {
-    expect(estimateTokenBudget({ key_functions: ['a', 'b', 'c', 'd'] })).toBe(8700)
+    expect(estimateTokenBudget({ key_functions: ['a', 'b', 'c', 'd'] })).toBe(12000)
   })
 
   test('snake_case: both key_features and key_functions', () => {
-    expect(estimateTokenBudget({ key_features: ['a', 'b', 'c', 'd'], key_functions: ['x', 'y', 'z'] })).toBe(9400)
+    // v29.61: 4*2000 + 3*1000 + 2000 = 13000
+    expect(estimateTokenBudget({ key_features: ['a', 'b', 'c', 'd'], key_functions: ['x', 'y', 'z'] })).toBe(13000)
   })
 
   test('camelCase takes precedence when both present', () => {
-    // features array (camelCase) should win over key_features
     const plan = { features: ['a', 'b'], key_features: ['x', 'y', 'z', 'w'] }
-    // 2*1500 + 2*800 + 1000 = 5600 (uses camelCase features length=2)
-    expect(estimateTokenBudget(plan)).toBe(5600)
+    // v29.61: 2*2000 + 2*1000 + 2000 = 8000 (uses camelCase features length=2)
+    expect(estimateTokenBudget(plan)).toBe(8000)
   })
 
   test('plan with other fields but no features/functions uses defaults', () => {
-    expect(estimateTokenBudget({ title: 'App', type: 'tool', layout: 'grid' })).toBe(7100)
+    // v29.61: 3*2000 + 2*1000 + 2000 = 10000 (defaults: 3 features, 2 functions)
+    expect(estimateTokenBudget({ title: 'App', type: 'tool', layout: 'grid' })).toBe(10000)
   })
 })
 
 describe('estimateTokenBudget — clamping', () => {
-  test('clamps to minimum 5000 for empty arrays', () => {
-    // 0*1500 + 0*800 + 1000 = 1000, clamped to 5000
-    expect(estimateTokenBudget({ features: [], keyFunctions: [] })).toBe(5000)
+  test('clamps to minimum 8000 for empty arrays', () => {
+    // v29.61: 0*2000 + 0*1000 + 2000 = 2000, clamped to 8000
+    expect(estimateTokenBudget({ features: [], keyFunctions: [] })).toBe(8000)
   })
 
-  test('clamps to minimum 5000 for empty snake_case arrays', () => {
-    expect(estimateTokenBudget({ key_features: [], key_functions: [] })).toBe(5000)
+  test('clamps to minimum 8000 for empty snake_case arrays', () => {
+    expect(estimateTokenBudget({ key_features: [], key_functions: [] })).toBe(8000)
   })
 
-  test('clamps to maximum 16000 for many features', () => {
-    expect(estimateTokenBudget({ features: Array(20).fill('f'), keyFunctions: [] })).toBe(16000)
+  test('clamps to maximum 32000 for many features', () => {
+    expect(estimateTokenBudget({ features: Array(20).fill('f'), keyFunctions: [] })).toBe(32000)
   })
 
-  test('clamps to maximum 16000 for many functions', () => {
-    expect(estimateTokenBudget({ features: [], keyFunctions: Array(30).fill('f') })).toBe(16000)
+  test('clamps to maximum 32000 for many functions', () => {
+    expect(estimateTokenBudget({ features: [], keyFunctions: Array(30).fill('f') })).toBe(32000)
   })
 
-  test('clamps to maximum 16000 for many features AND functions', () => {
-    expect(estimateTokenBudget({ features: Array(20).fill('f'), keyFunctions: Array(20).fill('fn') })).toBe(16000)
+  test('clamps to maximum 32000 for many features AND functions', () => {
+    expect(estimateTokenBudget({ features: Array(20).fill('f'), keyFunctions: Array(20).fill('fn') })).toBe(32000)
   })
 
   test('does NOT clamp for moderate plan', () => {
-    // 5*1500 + 4*800 + 1000 = 11700 (within 5000-16000)
-    expect(estimateTokenBudget({ features: Array(5).fill('f'), keyFunctions: Array(4).fill('fn') })).toBe(11700)
+    // v29.61: 5*2000 + 4*1000 + 2000 = 16000 (within 8000-32000)
+    expect(estimateTokenBudget({ features: Array(5).fill('f'), keyFunctions: Array(4).fill('fn') })).toBe(16000)
   })
 
   test('non-array features field is ignored (falls back to default 3)', () => {
-    expect(estimateTokenBudget({ features: 'not-an-array' })).toBe(7100)
+    // v29.61: 3*2000 + 2*1000 + 2000 = 10000
+    expect(estimateTokenBudget({ features: 'not-an-array' })).toBe(10000)
   })
 
   test('non-array keyFunctions field is ignored (falls back to default 2)', () => {
-    expect(estimateTokenBudget({ keyFunctions: { a: 1 } })).toBe(7100)
+    // v29.61: 3*2000 + 2*1000 + 2000 = 10000
+    expect(estimateTokenBudget({ keyFunctions: { a: 1 } })).toBe(10000)
   })
 })
 

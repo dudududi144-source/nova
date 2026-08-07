@@ -188,34 +188,34 @@ init();
 
 describe('estimateTokenBudget', () => {
   it('returns default 6000 for null plan', () => {
-    expect(estimateTokenBudget(null)).toBe(6000)
+    expect(estimateTokenBudget(null)).toBe(12000)
   })
 
   it('returns default 6000 for non-object plan', () => {
-    expect(estimateTokenBudget('not an object')).toBe(6000)
+    expect(estimateTokenBudget('not an object')).toBe(12000)
   })
 
   it('estimates based on features and functions', () => {
     const plan = { features: ['a', 'b', 'c'], keyFunctions: ['f1', 'f2'] }
-    // 3*1500 + 2*800 + 1000 = 7100
-    expect(estimateTokenBudget(plan)).toBe(7100)
+    // 3*2000 + 2*1000 + 2000 = 10000
+    expect(estimateTokenBudget(plan)).toBe(10000)
   })
 
   it('clamps to minimum 5000', () => {
     const plan = { features: [], keyFunctions: [] }
     // 0*1500 + 0*800 + 1000 = 1000, clamped to 5000
-    expect(estimateTokenBudget(plan)).toBe(5000)
+    expect(estimateTokenBudget(plan)).toBe(8000)
   })
 
   it('clamps to maximum 16000', () => {
     const plan = { features: Array(20).fill('f'), keyFunctions: Array(20).fill('fn') }
-    expect(estimateTokenBudget(plan)).toBe(16000)
+    expect(estimateTokenBudget(plan)).toBe(32000)
   })
 
   it('handles plan with missing fields', () => {
     const plan = { title: 'Test' }
-    // 3*1500 + 2*800 + 1000 = 7100 (defaults: 3 features, 2 keyFunctions)
-    expect(estimateTokenBudget(plan)).toBe(7100)
+    // 3*2000 + 2*1000 + 2000 = 10000 (defaults: 3 features, 2 keyFunctions)
+    expect(estimateTokenBudget(plan)).toBe(10000)
   })
 })
 

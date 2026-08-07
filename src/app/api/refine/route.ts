@@ -175,7 +175,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         for await (const chunk of llmChatStream(REFINE_PROMPT, userPrompt, {
           maxTokens: tokenBudget,
           temperature: 0.3,
-          timeoutMs: 150_000,
+          timeoutMs: 180_000,
+          thinking: true, // v29.61: Enable deep reasoning for better refinements
           signal: request.signal,
         })) {
           if (chunk.error) {

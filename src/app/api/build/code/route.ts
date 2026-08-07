@@ -308,12 +308,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       try {
         // Adaptive token budget
-        // v15: Quick mode — 65% of normal budget for faster builds (~2-3min vs ~5min)
-        // Was 50% but caused truncation + 300s retry. 65% is the sweet spot.
+        // v29.61: Quick mode no longer reduces budget — all builds get full capacity.
+        // Quick mode only skips the retry step (saves time, not quality).
         const isQuickMode = body?.quickMode === true
-        const tokenBudget = isQuickMode
-          ? Math.max(4000, Math.floor(estimateTokenBudget(plan) * 0.65))
-          : estimateTokenBudget(plan)
+        const tokenBudget = estimateTokenBudget(plan)
         logger.info('code.budget', { ip, maxTokens: tokenBudget, hasPlan: !!plan, quickMode: isQuickMode })
 
         // ═══ REAL STREAMING ═══
@@ -343,7 +341,8 @@ export async function POST(request: NextRequest): Promise<Response> {
             : llmChatStream(buildPrompt(mission), planContext, {
                 maxTokens: tokenBudget,
                 temperature: 0.4,
-                timeoutMs: 150_000,
+                timeoutMs: 180_000,
+                thinking: true, // v29.61: Enable deep reasoning for better code
                 signal: request.signal,
               })
 
@@ -624,7 +623,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         // v29.40: Retry only if score is very low (<50) and build was fast (<60s)
         // v29.23: Was disabled entirely — but some builds genuinely need retry
         const elapsedSoFar = Date.now() - startTime
-        const shouldRetry = (!staticAnalysis.passed || validation.score < 50) && combinedHint && elapsedSoFar < 60_000 && !isQuickMode
+        // v29.61: Allow retry regardless of time — quality is more important than speed
+        // Was limited to 60s for the 4GB server, now uses full capacity
+        const shouldRetry = (!staticAnalysis.passed || validation.score < 85) && combinedHint
         if (shouldRetry) {
           logger.warn('code.retry_needed', { ip, score: validation.score, staticIssues: staticAnalysis.issues.length, missingFeatures: planAdherence.missingFeatures.length, elapsedMs: elapsedSoFar, retrying: true })
           safeEnqueue(`data: ${JSON.stringify({ type: 'progress', step: 'Fixing bugs found by analysis...', elapsed: Math.floor(elapsedSoFar / 1000) })}\n\n`)
@@ -633,7 +634,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           const retryResult = await llmChat(buildPrompt(mission), retryPrompt, {
             maxTokens: tokenBudget,
             temperature: 0.3,
-            timeoutMs: 25_000,
+            timeoutMs: 60_000,
+            thinking: true, // v29.61: Enable deep reasoning for bug fixing
             signal: request.signal,
           })
 

@@ -85,9 +85,10 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   // Try Z.AI first
   let result = await llmChat(ENHANCE_SYSTEM_PROMPT, prompt, {
-    maxTokens: 300,
+    maxTokens: 500,
     temperature: 0.5,
     timeoutMs: 30_000,
+    thinking: true, // v29.61: Enable deep reasoning for better prompt enhancement
   })
 
   // Fallback to Qwen/DashScope if Z.AI failed

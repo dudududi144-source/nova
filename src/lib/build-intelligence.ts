@@ -273,22 +273,22 @@ export function validateOutput(html: string, mission: string): ValidationResult 
 // Instead of fixed maxTokens, estimate based on plan complexity.
 
 export function estimateTokenBudget(plan: unknown): number {
-  // v14 ROAST FIX: Reduced defaults for faster, more reliable builds.
-  // Was 12000 default → caused 5+ min builds and truncation.
-  // Now 6000 default with tighter clamps.
-  if (!plan || typeof plan !== 'object') return 6000
+  // v29.61: Restored high budgets for maximum quality.
+  // The 4GB server limits are removed — NOVA should use the full
+  // LLM capacity for the best possible output.
+  if (!plan || typeof plan !== 'object') return 12000
 
   const p = plan as Record<string, unknown>
   // v26: Handle both 'features'/'key_features' and 'keyFunctions'/'key_functions'
   const features = Array.isArray(p.features) ? p.features.length : (Array.isArray(p.key_features) ? p.key_features.length : 3)
   const keyFunctions = Array.isArray(p.keyFunctions) ? p.keyFunctions.length : (Array.isArray(p.key_functions) ? p.key_functions.length : 2)
 
-  // Base: 1500 tokens per feature + 800 per function + 1000 overhead
-  // Tighter budget forces the LLM to be concise and focused.
-  const estimated = 1500 * features + 800 * keyFunctions + 1000
+  // Base: 2000 tokens per feature + 1000 per function + 2000 overhead
+  // Higher budget allows the LLM to generate more complete, polished apps.
+  const estimated = 2000 * features + 1000 * keyFunctions + 2000
 
-  // Clamp: 5000 minimum, 16000 maximum (was 8000-32000 — too slow)
-  return Math.max(5000, Math.min(16000, estimated))
+  // Clamp: 8000 minimum, 32000 maximum (full LLM capacity)
+  return Math.max(8000, Math.min(32000, estimated))
 }
 
 // ── 4. Quality Metrics ──

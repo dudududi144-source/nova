@@ -23,6 +23,8 @@ export interface LlmOptions {
   timeoutMs?: number
   /** External abort signal (e.g., client disconnect). Aborts the LLM call. */
   signal?: AbortSignal
+  /** v29.61: Enable deep reasoning mode for higher quality output. */
+  thinking?: boolean
 }
 
 // SDK types are loose; we define a minimal interface for what we use.
@@ -85,6 +87,8 @@ export async function llmChat(
   const maxTokens = opts.maxTokens ?? 4000
   const temperature = opts.temperature ?? 0.4
   const timeoutMs = opts.timeoutMs ?? 60_000
+  // v29.61: Enable thinking mode for deep reasoning (was always disabled)
+  const thinkingType = opts.thinking ? 'enabled' : 'disabled'
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -112,7 +116,7 @@ export async function llmChat(
       ],
       temperature,
       max_tokens: maxTokens,
-      thinking: { type: 'disabled' },
+      thinking: { type: thinkingType },
       stream: false,
       signal: controller.signal,
     })
@@ -182,6 +186,8 @@ export async function* llmChatStream(
   const maxTokens = opts.maxTokens ?? 32000
   const temperature = opts.temperature ?? 0.4
   const timeoutMs = opts.timeoutMs ?? 150_000
+  // v29.61: Enable thinking mode for deep reasoning (was always disabled)
+  const thinkingType = opts.thinking ? 'enabled' : 'disabled'
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -206,7 +212,7 @@ export async function* llmChatStream(
       ],
       temperature,
       max_tokens: maxTokens,
-      thinking: { type: 'disabled' },
+      thinking: { type: thinkingType },
       stream: true,
       signal: controller.signal,
     })
