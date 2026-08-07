@@ -45,7 +45,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   },
 }, {
   // tests/ is NO LONGER ignored — lint checks tests too
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "upload/**", "download/**", "mini-services/**"]
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "upload/**", "download/**", "mini-services/**", "package-lock.json", ".open-next/**", "agent-ctx/**", "tool-results/**", "*.log"]
 }];
 
 export default eslintConfig;
