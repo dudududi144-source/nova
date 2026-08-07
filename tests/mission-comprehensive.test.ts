@@ -72,38 +72,38 @@ describe('validateMission — length boundaries', () => {
     expect(validateMission('abcd').ok).toBe(true)
   })
 
-  test('rejects 2001-char mission', () => {
-    expect(validateMission('a'.repeat(2001)).ok).toBe(false)
+  test('rejects 5001-char mission', () => {
+    expect(validateMission('a'.repeat(5001)).ok).toBe(false)
   })
 
-  test('accepts 2000-char mission (boundary)', () => {
-    expect(validateMission('a'.repeat(2000)).ok).toBe(true)
+  test('accepts 5000-char mission (boundary)', () => {
+    expect(validateMission('a'.repeat(5000)).ok).toBe(true)
   })
 
-  test('accepts 1999-char mission (just under boundary)', () => {
-    expect(validateMission('a'.repeat(1999)).ok).toBe(true)
+  test('accepts 4999-char mission (just under boundary)', () => {
+    expect(validateMission('a'.repeat(4999)).ok).toBe(true)
   })
 
-  test('rejects very long mission (5000 chars)', () => {
-    const r = validateMission('a'.repeat(5000))
+  test('rejects very long mission (5001 chars)', () => {
+    const r = validateMission('a'.repeat(5001))
     expect(r.ok).toBe(false)
     expect(r.error).toContain('long')
   })
 
   test('length error message includes the actual length', () => {
-    const r = validateMission('a'.repeat(2500))
+    const r = validateMission('a'.repeat(5500))
     expect(r.ok).toBe(false)
-    expect(r.error).toContain('2500')
+    expect(r.error).toContain('5500')
   })
 
-  test('trims before length check (2000 chars + 10 spaces = rejected)', () => {
+  test('trims before length check (5000 chars + 10 spaces = rejected)', () => {
     // trimmed length = 2000 → OK
-    expect(validateMission('a'.repeat(2000) + '          ').ok).toBe(true)
+    expect(validateMission('a'.repeat(5000) + '          ').ok).toBe(true)
   })
 
-  test('trims before length check (2001 chars + 10 spaces = rejected)', () => {
+  test('trims before length check (5001 chars + 10 spaces = rejected)', () => {
     // trimmed length = 2001 → rejected
-    expect(validateMission('a'.repeat(2001) + '          ').ok).toBe(false)
+    expect(validateMission('a'.repeat(5001) + '          ').ok).toBe(false)
   })
 
   test('short error message contains "short"', () => {
@@ -305,7 +305,7 @@ describe('validateMission — valid missions', () => {
 
 describe('validateMission — error message format', () => {
   test('error is always a string when ok is false', () => {
-    const cases = ['', '  ', 'ab', 'a'.repeat(2001), 'hello\x00world']
+    const cases = ['', '  ', 'ab', 'a'.repeat(5001), 'hello\x00world']
     for (const c of cases) {
       const r = validateMission(c)
       expect(r.ok).toBe(false)
@@ -329,19 +329,19 @@ describe('validateMission — error message format', () => {
   })
 
   test('too long mission error mentions "long"', () => {
-    expect(validateMission('a'.repeat(2001)).error).toMatch(/long/i)
+    expect(validateMission('a'.repeat(5001)).error).toMatch(/long/i)
   })
 
   test('control char error mentions "invalid" or "character"', () => {
     expect(validateMission('hello\x00world').error).toMatch(/invalid|character/i)
   })
 
-  test('too long error mentions "2000"', () => {
-    expect(validateMission('a'.repeat(2001)).error).toContain('2000')
+  test('too long error mentions "5000"', () => {
+    expect(validateMission('a'.repeat(5001)).error).toContain('5000')
   })
 
   test('too long error mentions actual length', () => {
-    expect(validateMission('a'.repeat(3000)).error).toContain('3000')
+    expect(validateMission('a'.repeat(6000)).error).toContain('6000')
   })
 })
 
@@ -382,9 +382,9 @@ describe('validateMission — invariants', () => {
     expect(validateMission('  ab  ').ok).toBe(false)
   })
 
-  test('boundary at exactly 2000 chars after trim', () => {
-    expect(validateMission('a'.repeat(2000) + '   ').ok).toBe(true)
-    expect(validateMission('a'.repeat(2001) + '   ').ok).toBe(false)
+  test('boundary at exactly 5000 chars after trim', () => {
+    expect(validateMission('a'.repeat(5000) + '   ').ok).toBe(true)
+    expect(validateMission('a'.repeat(5001) + '   ').ok).toBe(false)
   })
 
   test('returns true for diverse valid missions', () => {
@@ -398,7 +398,6 @@ describe('validateMission — invariants', () => {
       'function f() {}',
       '<html>test</html>',
       '12345',
-      'a'.repeat(2000),
     ]
     for (const m of validMissions) {
       expect(validateMission(m).ok).toBe(true)
@@ -412,8 +411,7 @@ describe('validateMission — invariants', () => {
       '\t\t',
       '\n\n',
       'ab',
-      'a'.repeat(2001),
-      'a'.repeat(5000),
+      'a'.repeat(5001),
       'hello\x00world',
       'hello\x7Fworld',
       'hello\x80world',

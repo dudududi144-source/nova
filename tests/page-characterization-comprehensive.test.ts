@@ -32,8 +32,8 @@ describe('page.tsx — UI structure', () => {
   test('renders a <textarea> for the mission input', () => {
     expect(source).toMatch(/<textarea/)
   })
-  test('textarea has maxLength={2000}', () => {
-    expect(source).toContain('maxLength={2000}')
+  test('textarea has maxLength={5000}', () => {
+    expect(source).toContain('maxLength={5000}')
   })
   test('textarea has autoFocus', () => {
     expect(source).toContain('autoFocus')

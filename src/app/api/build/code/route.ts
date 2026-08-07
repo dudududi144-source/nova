@@ -188,7 +188,7 @@ Output the code now:`
 }
 
 const codeLimiter = new RateLimiter(1000, 60 * 60 * 1000, 5 * 60 * 1000, 5000)
-const MAX_BODY_BYTES = 200_000
+const MAX_BODY_BYTES = 500_000
 
 const PROGRESS_STEPS = [
   'Analyzing request...',

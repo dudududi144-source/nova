@@ -149,8 +149,8 @@ describe('POST /api/refine — validation rules', () => {
     expect(data.error).toContain('short')
   })
 
-  test('returns 400 for too-long mission (> 2000 chars)', async () => {
-    const res = await POST(makeRequest({ mission: 'x'.repeat(2001), html: '<html></html>', message: 'change' }) as unknown as NextRequest)
+  test('returns 400 for too-long mission (> 5000 chars)', async () => {
+    const res = await POST(makeRequest({ mission: 'x'.repeat(5001), html: '<html></html>', message: 'change' }) as unknown as NextRequest)
     expect(res.status).toBe(400)
     const data = await res.json()
     expect(data.error).toContain('long')
@@ -171,8 +171,8 @@ describe('POST /api/refine — validation rules', () => {
     expect(res.status).toBe(400)
   })
 
-  test('returns 400 for too-long message (> 2000 chars)', async () => {
-    const res = await POST(makeRequest({ mission: 'test', html: '<html></html>', message: 'a'.repeat(2001) }) as unknown as NextRequest)
+  test('returns 400 for too-long message (> 5000 chars)', async () => {
+    const res = await POST(makeRequest({ mission: 'test', html: '<html></html>', message: 'a'.repeat(5001) }) as unknown as NextRequest)
     expect(res.status).toBe(400)
   })
 

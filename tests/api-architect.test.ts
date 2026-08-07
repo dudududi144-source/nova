@@ -111,8 +111,8 @@ describe('POST /api/build/architect — validation rules', () => {
     expect(data.error).toContain('short')
   })
 
-  test('returns 400 for too-long mission (> 2000 chars)', async () => {
-    const res = await POST(makeRequest({ mission: 'x'.repeat(2001) }) as unknown as NextRequest)
+  test('returns 400 for too-long mission (> 5000 chars)', async () => {
+    const res = await POST(makeRequest({ mission: 'x'.repeat(5001) }) as unknown as NextRequest)
     expect(res.status).toBe(400)
     const data = await res.json()
     expect(data.error).toContain('long')
@@ -157,8 +157,8 @@ describe('POST /api/build/architect — validation rules', () => {
     expect(res.status).toBe(200)
   })
 
-  test('accepts mission with exactly 2000 chars (boundary)', async () => {
-    const res = await POST(makeRequest({ mission: 'a'.repeat(2000) }) as unknown as NextRequest)
+  test('accepts mission with exactly 5000 chars (boundary)', async () => {
+    const res = await POST(makeRequest({ mission: 'a'.repeat(5000) }) as unknown as NextRequest)
     expect(res.status).toBe(200)
   })
 })

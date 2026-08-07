@@ -2190,7 +2190,7 @@ export default function Home() {
             // On mobile, autoFocus pops the on-screen keyboard on load — annoying.
             autoFocus={false}
             value={mission}
-            maxLength={2000}
+            maxLength={5000}
             onChange={(e) => {
               const v = e.target.value
               setMission(v)
@@ -3507,7 +3507,7 @@ export default function Home() {
                   }}
                   placeholder="Ask NOVA to change something..."
                   disabled={refining || loading}
-                  maxLength={2000}
+                  maxLength={5000}
                   className="flex-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none disabled:opacity-50"
                 />
                 <Button size="sm" variant="ghost" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={() => sendChat()} disabled={refining || loading || !chatInput.trim()}>

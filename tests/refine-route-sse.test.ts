@@ -121,8 +121,8 @@ describe('POST /api/refine (SSE streaming)', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns 400 for message over 2000 chars', async () => {
-    const res = await POST(makeRequest({ mission: 'test', html: '<html></html>', message: 'a'.repeat(2001) }) as unknown as NextRequest)
+  it('returns 400 for message over 5000 chars', async () => {
+    const res = await POST(makeRequest({ mission: 'test', html: '<html></html>', message: 'a'.repeat(5001) }) as unknown as NextRequest)
     expect(res.status).toBe(400)
   })
 
