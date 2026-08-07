@@ -289,9 +289,15 @@ export function analyzeHtml(html: string): StaticAnalysisResult {
  * (onclick="foo()") are mistaken for JS function calls and assignments.
  */
 function stripStrings(js: string): string {
+  // v29.69: Also strip comments — they can contain function-like patterns
+  // e.g. "// Auto-injected save/cancel button handlers" → "handlers()" false positive
+  // Remove single-line comments (// ...) — but not URLs (https://)
+  let result = js.replace(/(^|[^:])\/\/.*$/gm, '$1')
+  // Remove multi-line comments (/* ... */)
+  result = result.replace(/\/\*[\s\S]*?\*\//g, '')
   // Remove template literals (backtick strings) — these often contain
   // HTML with onclick= attributes that look like variable assignments
-  let result = js.replace(/`[^`]*`/g, '""')
+  result = result.replace(/`[^`]*`/g, '""')
   // Remove single-quoted strings
   result = result.replace(/'[^']*'/g, '""')
   // Remove double-quoted strings
