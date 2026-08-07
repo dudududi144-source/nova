@@ -3,7 +3,7 @@
 
 const BACKEND = "https://preview-chat-dc1fb2f6-89e3-4024-9cca-d9323b5fe643.space-z.ai"
 
-export default {
+const worker = {
   async fetch(request, env) {
     const url = new URL(request.url)
     const path = url.pathname
@@ -75,3 +75,5 @@ export default {
     }
   }
 }
+
+export default worker
