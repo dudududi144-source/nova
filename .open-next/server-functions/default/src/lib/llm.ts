@@ -1,0 +1,297 @@
+// LLM wrapper — server-side only.
+// Thin wrapper around z-ai-web-dev-sdk.
+// Supports both non-streaming (llmChat) and real token streaming (llmChatStream).
+//
+// NOTE: Pure utility functions (stripCodeFences, looksLikeHtml, injectCsp)
+// live in html-utils.ts, and mission validation lives in mission.ts.
+// This separation ensures that mocking this module for route tests
+// does NOT break those pure functions for other test files.
+
+import ZAI from 'z-ai-web-dev-sdk'
+
+export interface LlmResult {
+  ok: boolean
+  text: string
+  tokens: number
+  ms: number
+  error?: string
+}
+
+export interface LlmOptions {
+  maxTokens?: number
+  temperature?: number
+  timeoutMs?: number
+  /** External abort signal (e.g., client disconnect). Aborts the LLM call. */
+  signal?: AbortSignal
+}
+
+// SDK types are loose; we define a minimal interface for what we use.
+type ChatRole = 'system' | 'user' | 'assistant'
+
+interface ZaiCompletion {
+  choices: Array<{ message: { content: string | null } }>
+  usage?: { prompt_tokens?: number; completion_tokens?: number }
+}
+
+interface ZaiClient {
+  chat: {
+    completions: {
+      create: (opts: {
+        messages: Array<{ role: ChatRole; content: string }>
+        temperature: number
+        max_tokens: number
+        thinking: { type: string }
+        stream: boolean
+        signal: AbortSignal
+      }) => Promise<ZaiCompletion>
+    }
+  }
+}
+
+let zaiInstance: ZaiClient | null = null
+let zaiPromise: Promise<ZaiClient> | null = null
+
+/**
+ * Get the ZAI SDK singleton instance.
+ * Uses a promise cache to prevent double-instantiation if two builds
+ * start before the first create() resolves.
+ * Resets on failure so a stale instance doesn't poison all future calls.
+ */
+async function getZai(): Promise<ZaiClient> {
+  if (zaiInstance) return zaiInstance
+  if (zaiPromise) return zaiPromise
+  zaiPromise = ZAI.create().then((inst: unknown) => {
+    zaiInstance = inst as ZaiClient
+    zaiPromise = null
+    return zaiInstance
+  }).catch((err: unknown) => {
+    zaiPromise = null
+    throw err
+  })
+  return zaiPromise
+}
+
+/**
+ * Call the LLM with a system + user prompt.
+ * Returns a structured result with ok/text/tokens/ms/error.
+ * Errors are sanitized — raw SDK messages never leak to the client.
+ */
+export async function llmChat(
+  systemPrompt: string,
+  userPrompt: string,
+  opts: LlmOptions = {}
+): Promise<LlmResult> {
+  const t0 = Date.now()
+  const maxTokens = opts.maxTokens ?? 4000
+  const temperature = opts.temperature ?? 0.4
+  const timeoutMs = opts.timeoutMs ?? 60_000
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  // Link external signal (client disconnect) to our controller
+  let externalAborted = false
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      externalAborted = true
+      controller.abort()
+    } else {
+      opts.signal.addEventListener('abort', () => {
+        externalAborted = true
+        controller.abort()
+      }, { once: true })
+    }
+  }
+
+  try {
+    const zai = await getZai()
+    const completion = await zai.chat.completions.create({
+      messages: [
+        { role: 'assistant', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+      thinking: { type: 'disabled' },
+      stream: false,
+      signal: controller.signal,
+    })
+
+    const text = (completion?.choices?.[0]?.message?.content ?? '').toString()
+    const tokens =
+      (completion?.usage?.prompt_tokens ?? 0) +
+      (completion?.usage?.completion_tokens ?? 0)
+
+    clearTimeout(timer)
+
+    if (!text || !text.trim()) {
+      return { ok: false, text: '', tokens, ms: Date.now() - t0, error: 'The model returned an empty response. Try again.' }
+    }
+    return { ok: true, text, tokens, ms: Date.now() - t0 }
+  } catch (err: unknown) {
+    clearTimeout(timer)
+
+    // Human-friendly abort/timeout messages
+    if (externalAborted) {
+      return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'Build was cancelled.' }
+    }
+    if (controller.signal.aborted) {
+      return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: `Build timed out after ${Math.round(timeoutMs / 1000)}s. Try simplifying your request.` }
+    }
+
+    const msg = err instanceof Error ? err.message : String(err)
+
+    // Rate limit — don't expose raw SDK message
+    if (msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many requests')) {
+      return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'The AI service is busy. Try again in a minute.' }
+    }
+
+    // Don't leak raw internal errors; give a safe generic message
+    // Reset the instance — it might be stale (expired token, dropped connection)
+    zaiInstance = null
+    return { ok: false, text: '', tokens: 0, ms: Date.now() - t0, error: 'The AI service encountered an error. Try again.' }
+  }
+}
+
+/**
+ * Stream LLM tokens in real-time via the SDK's streaming mode.
+ * Returns an async generator that yields text chunks as they arrive.
+ *
+ * Usage:
+ *   for await (const chunk of llmChatStream(sys, user, opts)) {
+ *     // chunk.text = partial text
+ *     // chunk.done = true when stream is complete
+ *     // chunk.tokens = total tokens (on done)
+ *   }
+ */
+export interface StreamChunk {
+  text: string      // new text since last chunk
+  fullText: string  // accumulated text so far
+  done: boolean
+  tokens: number
+  ms: number
+  error?: string
+}
+
+export async function* llmChatStream(
+  systemPrompt: string,
+  userPrompt: string,
+  opts: LlmOptions = {}
+): AsyncGenerator<StreamChunk> {
+  const t0 = Date.now()
+  const maxTokens = opts.maxTokens ?? 32000
+  const temperature = opts.temperature ?? 0.4
+  const timeoutMs = opts.timeoutMs ?? 150_000
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  // Link external signal
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      controller.abort()
+    } else {
+      opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
+    }
+  }
+
+  try {
+    const zai = await getZai()
+
+    // Enable streaming — SDK returns response.body (ReadableStream)
+    const streamBody = await zai.chat.completions.create({
+      messages: [
+        { role: 'assistant', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+      thinking: { type: 'disabled' },
+      stream: true,
+      signal: controller.signal,
+    })
+
+    // streamBody is a ReadableStream — read it chunk by chunk
+    const reader = (streamBody as unknown as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let fullText = ''
+    let totalTokens = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Parse SSE lines: data: {...}\n\n
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data: ')) continue
+
+        const jsonStr = trimmed.slice(6)
+        if (jsonStr === '[DONE]') {
+          clearTimeout(timer)
+          yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
+          return
+        }
+
+        try {
+          const data = JSON.parse(jsonStr)
+          const content = data?.choices?.[0]?.delta?.content ?? ''
+          if (content) {
+            fullText += content
+            yield { text: content, fullText, done: false, tokens: 0, ms: 0 }
+          }
+          // Track usage if present
+          if (data?.usage?.completion_tokens) {
+            totalTokens = (data.usage.prompt_tokens ?? 0) + (data.usage.completion_tokens ?? 0)
+          }
+        } catch {
+          // Skip malformed JSON
+        }
+      }
+    }
+
+    // Flush the decoder — any remaining bytes in the internal buffer (incomplete multi-byte chars)
+    buffer += decoder.decode()
+    // Process any remaining complete lines in the buffer
+    if (buffer.trim()) {
+      const trimmed = buffer.trim()
+      if (trimmed.startsWith('data: ')) {
+        const jsonStr = trimmed.slice(6)
+        if (jsonStr === '[DONE]') {
+          clearTimeout(timer)
+          yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
+          return
+        }
+        try {
+          const data = JSON.parse(jsonStr)
+          const content = data?.choices?.[0]?.delta?.content ?? ''
+          if (content) fullText += content
+          if (data?.usage?.completion_tokens) {
+            totalTokens = (data.usage.prompt_tokens ?? 0) + (data.usage.completion_tokens ?? 0)
+          }
+        } catch {}
+      }
+    }
+
+    // Stream ended without [DONE]
+    clearTimeout(timer)
+    yield { text: '', fullText, done: true, tokens: totalTokens, ms: Date.now() - t0 }
+  } catch (err: unknown) {
+    clearTimeout(timer)
+    const msg = err instanceof Error ? err.message : String(err)
+
+    if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: Date.now() - t0, error: 'The AI service is busy. Try again in a minute.' }
+    } else if (controller.signal.aborted) {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: Date.now() - t0, error: `Build timed out after ${Math.round(timeoutMs / 1000)}s.` }
+    } else {
+      yield { text: '', fullText: '', done: true, tokens: 0, ms: Date.now() - t0, error: 'The AI service encountered an error. Try again.' }
+    }
+  }
+}
