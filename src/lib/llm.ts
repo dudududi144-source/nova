@@ -90,10 +90,11 @@ async function getZaiWithSettingsKey(): Promise<ZaiClient> {
     if (customKey && customKey !== 'Z.ai') {
       // A custom key was set via Settings UI — create a new instance with it
       // The SDK constructor accepts { baseUrl, apiKey, ... }
-      const customInstance = new ZAI({
+      const ZaiCtor = ZAI as unknown as { new (config: Record<string, unknown>): unknown }
+      const customInstance = new ZaiCtor({
         baseUrl: 'https://internal-api.z.ai/v1',
         apiKey: customKey,
-      } as Record<string, unknown>) as ZaiClient
+      }) as ZaiClient
       return customInstance
     }
   } catch {
