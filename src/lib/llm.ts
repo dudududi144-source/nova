@@ -58,10 +58,14 @@ let zaiPromise: Promise<ZaiClient> | null = null
  * Uses a promise cache to prevent double-instantiation if two builds
  * start before the first create() resolves.
  * Resets on failure so a stale instance doesn't poison all future calls.
+ *
+ * v29.73: If a Z.AI API key is set via the Settings UI, use it directly
+ * instead of relying on the SDK's config file auto-detection.
  */
 async function getZai(): Promise<ZaiClient> {
   if (zaiInstance) return zaiInstance
   if (zaiPromise) return zaiPromise
+
   zaiPromise = ZAI.create().then((inst: unknown) => {
     zaiInstance = inst as ZaiClient
     zaiPromise = null
@@ -71,6 +75,31 @@ async function getZai(): Promise<ZaiClient> {
     throw err
   })
   return zaiPromise
+}
+
+/**
+ * v29.73: Check if a custom Z.AI API key is set via Settings UI.
+ * If so, create a new ZAI instance with that key (overriding the config file).
+ * This makes the Settings UI key actually work for Z.AI.
+ */
+async function getZaiWithSettingsKey(): Promise<ZaiClient> {
+  try {
+    // Dynamically import to avoid circular dependency
+    const { getEffectiveApiKey } = await import('@/app/api/settings/route')
+    const customKey = getEffectiveApiKey('zai')
+    if (customKey && customKey !== 'Z.ai') {
+      // A custom key was set via Settings UI — create a new instance with it
+      // The SDK constructor accepts { baseUrl, apiKey, ... }
+      const customInstance = new ZAI({
+        baseUrl: 'https://internal-api.z.ai/v1',
+        apiKey: customKey,
+      } as Record<string, unknown>) as ZaiClient
+      return customInstance
+    }
+  } catch {
+    // Settings API not available — fall back to default
+  }
+  return getZai()
 }
 
 /**
@@ -108,7 +137,7 @@ export async function llmChat(
   }
 
   try {
-    const zai = await getZai()
+    const zai = await getZaiWithSettingsKey()
     const completion = await zai.chat.completions.create({
       messages: [
         { role: 'assistant', content: systemPrompt },
@@ -202,7 +231,7 @@ export async function* llmChatStream(
   }
 
   try {
-    const zai = await getZai()
+    const zai = await getZaiWithSettingsKey()
 
     // Enable streaming — SDK returns response.body (ReadableStream)
     const streamBody = await zai.chat.completions.create({
