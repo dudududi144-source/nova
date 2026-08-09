@@ -207,7 +207,7 @@ bun run dev             # Open http://localhost:3000
 | Fallback AI | Kimi K3 via TokenRouter (free, OpenAI-compatible) |
 | Memory | IndexedDB |
 | Streaming | Server-Sent Events (SSE) |
-| Testing | Bun test — 3029 tests, 5342 assertions |
+| Testing | Bun test — 3029 tests, 5259 assertions |
 
 ---
 
