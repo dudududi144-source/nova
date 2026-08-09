@@ -81,22 +81,34 @@ async function getZai(): Promise<ZaiClient> {
  * v29.73: Check if a custom Z.AI API key is set via Settings UI.
  * If so, create a new ZAI instance with that key (overriding the config file).
  * This makes the Settings UI key actually work for Z.AI.
+ * v29.74: Cache the custom instance to avoid recreating it on every call.
  */
+let customZaiInstance: ZaiClient | null = null
+let customZaiKey: string | null = null
+
 async function getZaiWithSettingsKey(): Promise<ZaiClient> {
   try {
-    // Dynamically import to avoid circular dependency
     const { getEffectiveApiKey } = await import('@/app/api/settings/route')
     const customKey = getEffectiveApiKey('zai')
+
+    // If key matches cached instance, return it
+    if (customZaiInstance && customZaiKey === customKey) {
+      return customZaiInstance
+    }
+
     if (customKey && customKey !== 'Z.ai') {
-      // A custom key was set via Settings UI — create a new instance with it
-      // The SDK constructor accepts { baseUrl, apiKey, ... }
+      // A custom key was set via Settings UI — create and cache a new instance
       const ZaiCtor = ZAI as unknown as { new (config: Record<string, unknown>): unknown }
-      const customInstance = new ZaiCtor({
+      customZaiInstance = new ZaiCtor({
         baseUrl: 'https://internal-api.z.ai/v1',
         apiKey: customKey,
       }) as ZaiClient
-      return customInstance
+      customZaiKey = customKey
+      return customZaiInstance
     }
+    // Key changed or cleared — invalidate cache
+    customZaiInstance = null
+    customZaiKey = null
   } catch {
     // Settings API not available — fall back to default
   }
