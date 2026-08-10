@@ -7061,3 +7061,41 @@ Stage Summary:
 - No test logic was changed — only type declarations and casts.
 - All tests still pass at the same rate (2593/2593, 247 intentionally skipped).
 - GitHub is fully synced at 24b9455.
+
+---
+Task ID: 1038
+Agent: main (Z.ai Code) — Repo Slimdown
+Task: Find and remove dead/junk files from the repo
+
+Work Log:
+- Scanned src/lib/ for unused modules — all 3 flagged files (json-extract,
+  model-circuit-breaker, plan-adherence) are actually imported by API routes.
+  Initial scan was a false positive (rg glob issue).
+- Found 2 categories of truly-unused tracked files:
+  1. skills/ (1076 files, 37MB) — environment-provided skill files, never
+     referenced by NOVA source. Added to .gitignore.
+  2. download/ (3 files, 524KB) — old backup zips from v37/v38, not relevant
+     to current v29.x. Was already in .gitignore but committed before it.
+
+- Used 'git rm --cached' to remove from repo while keeping files on disk
+  for runtime use (skills/ needed by environment skill system).
+
+- Added 'skills/' to .gitignore (was missing).
+
+Verification:
+- tsc --noEmit: 0 errors ✓
+- ESLint: 0 errors ✓
+- Tests: 2593 pass, 0 fail ✓
+- Server: HTTP 200 ✓
+
+Repo size reduction:
+- Before: 1286 tracked files, 41MB
+- After: 207 tracked files, 3.7MB (84% file reduction, 91% size reduction)
+- 262,647 lines deleted from repo history (this commit)
+
+Committed as v29.88 (a5b19a7), pushed to GitHub. Fully synced.
+
+Stage Summary:
+- Repo is now lean: only NOVA source (177 ts/tsx files), tests, configs.
+- No dead code files, no junk backups, no environment skill files.
+- All quality gates still green (TS, lint, tests).
