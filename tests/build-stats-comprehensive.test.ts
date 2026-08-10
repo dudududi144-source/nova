@@ -302,10 +302,11 @@ describe('recordBuildInStats — timestamps', () => {
   })
   test('subsequent build updates lastBuildAt but preserves firstBuildAt', () => {
     let stats = recordBuildInStats({ ...EMPTY_STATS }, { quality: 80, ms: 1000, tokens: 100, mission: 'a' })
-    const firstAt = stats.firstBuildAt
+    const firstAt = stats.firstBuildAt as number
     stats = recordBuildInStats(stats, { quality: 85, ms: 1000, tokens: 100, mission: 'b' })
     expect(stats.firstBuildAt).toBe(firstAt)
-    expect(stats.lastBuildAt).toBeGreaterThanOrEqual(firstAt)
+    const lastAt = stats.lastBuildAt as number
+    expect(lastAt).toBeGreaterThanOrEqual(firstAt)
   })
   test('preserves existing firstBuildAt from loaded stats', () => {
     const existing: BuildStats = {

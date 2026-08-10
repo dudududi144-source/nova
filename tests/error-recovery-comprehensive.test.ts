@@ -286,7 +286,7 @@ describe('assessMissionVagueness — boundaries', () => {
 describe('assessMissionVagueness — significant word counting', () => {
   test('mission with one significant word → vague', () => {
     // "calculator" alone (length >3), other words are <=3 or filler
-    expect(assessMissionVagueness('a calculator app').category).toBe('mission-vague')
+    expect(assessMissionVagueness('a calculator app')!.category).toBe('mission-vague')
   })
   test('mission with two significant words → not vague', () => {
     // "calculator" + "history" — both >3 chars
@@ -294,7 +294,7 @@ describe('assessMissionVagueness — significant word counting', () => {
   })
   test('filler words are NOT counted as significant', () => {
     // "build make create" — all filler (in FILLER_WORDS set)
-    expect(assessMissionVagueness('build make create something').category).toBe('mission-vague')
+    expect(assessMissionVagueness('build make create something')!.category).toBe('mission-vague')
   })
   test('punctuation splits words', () => {
     // commas split, so "snake,game,arcade" has 3 significant words

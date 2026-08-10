@@ -241,18 +241,17 @@ describe('PROOF: Plan adherence works', () => {
 // ═══════════════════════════════════════════════════════════════
 describe('PROOF: Error recovery works', () => {
   it('categorizes network errors', () => {
-    const result = analyzeError('fetch failed: ECONNREFUSED')
+    const result = analyzeError('fetch failed: ECONNREFUSED', 'build a snake game')
     expect(result).toBeTruthy()
   })
 
   it('categorizes timeout errors', () => {
-    const result = analyzeError('Request timed out after 30000ms')
+    const result = analyzeError('Request timed out after 30000ms', 'build a snake game')
     expect(result).toBeTruthy()
   })
 
   it('suggests related missions', () => {
-    const missions = ['build a snake game', 'build a todo app', 'build a counter']
-    const result = suggestRelatedMissions('build a tetris game', missions)
+    const result = suggestRelatedMissions('build a tetris game')
     expect(result.length).toBeGreaterThan(0)
   })
 })

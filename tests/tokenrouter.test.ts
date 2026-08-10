@@ -16,8 +16,11 @@ interface MockResponseInit {
   ok?: boolean
   status?: number
   body?: ReadableStream<Uint8Array> | null
-  json?: () => Promise<unknown>
-  text?: () => Promise<string>
+  // json/text return synchronous values (the test mocks return plain objects).
+  // The real Response.json() returns a Promise, but makeResponse() calls these
+  // synchronously and stringifies the result, so we type them as sync here.
+  json?: () => unknown
+  text?: () => string
 }
 
 const mockFetch = mock((_url: string, _init?: unknown): Promise<Response> => {
@@ -51,6 +54,8 @@ const {
   critiqueHtml,
   DEFAULT_MODEL,
 } = await import('../src/lib/tokenrouter')
+// Type-only (TokenRouterChunk is an interface, erased at runtime)
+type TokenRouterChunk = import('../src/lib/tokenrouter').TokenRouterChunk
 
 // ── Helpers ──
 
@@ -68,7 +73,7 @@ function makeResponse(opts: MockResponseInit): Response {
     return new Response(body, { status, headers: { 'Content-Type': 'application/json' } })
   }
   if (opts.text !== undefined) {
-    return new Response(opts.text, { status })
+    return new Response(opts.text(), { status })
   }
   return new Response('', { status })
 }
@@ -429,7 +434,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns auth error on 401', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 401,
-      text: () => Promise.resolve('Unauthorized'),
+      text: () => 'Unauthorized',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -441,7 +446,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns auth error on 403', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 403,
-      text: () => Promise.resolve('Forbidden'),
+      text: () => 'Forbidden',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -453,7 +458,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns rate-limit error on 429', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 429,
-      text: () => Promise.resolve('Too Many Requests'),
+      text: () => 'Too Many Requests',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -466,7 +471,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns server error on 500', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 500,
-      text: () => Promise.resolve('Internal Server Error'),
+      text: () => 'Internal Server Error',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -478,7 +483,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns server error on 503', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 503,
-      text: () => Promise.resolve('Service Unavailable'),
+      text: () => 'Service Unavailable',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -490,7 +495,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns generic status error on 400', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 400,
-      text: () => Promise.resolve('Bad Request'),
+      text: () => 'Bad Request',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -502,7 +507,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('does NOT leak the response body in the error message', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 400,
-      text: () => Promise.resolve('SENSITIVE-INTERNAL-DATA'),
+      text: () => 'SENSITIVE-INTERNAL-DATA',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -513,7 +518,7 @@ describe.skip('tokenRouterChat — HTTP error cases', () => {
   it('returns a non-negative ms value even on error', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 500,
-      text: () => Promise.resolve('error'),
+      text: () => 'error',
     }))
 
     const result = await tokenRouterChat('sys', 'user')
@@ -628,7 +633,7 @@ describe.skip('tokenRouterStream — function shape', () => {
     }))
 
     const gen = tokenRouterStream('sys', 'user')
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of gen) chunks.push(c)
     expect(chunks.length).toBeGreaterThan(0)
     expect(chunks[chunks.length - 1].done).toBe(true)
@@ -641,7 +646,7 @@ describe.skip('tokenRouterStream — not configured', () => {
   it('yields error chunk when API key is missing', async () => {
     delete process.env.TOKENROUTER_API_KEY
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks.length).toBe(1)
@@ -663,7 +668,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     // First chunk: text="Hello", fullText="Hello", done=false
@@ -685,7 +690,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].fullText).toBe('A')
@@ -703,7 +708,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     // First chunk should have reasoning text (not content text)
@@ -725,7 +730,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[chunks.length - 1].done).toBe(true)
@@ -741,7 +746,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[chunks.length - 1].tokens).toBe(12)
@@ -807,7 +812,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     // The malformed chunk is skipped; the content chunk + final chunk remain.
@@ -824,7 +829,7 @@ describe.skip('tokenRouterStream — success cases', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     // The "event: ping" line doesn't start with "data: " — skipped.
@@ -844,7 +849,7 @@ describe.skip('tokenRouterStream — reasoning but no content', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     const final = chunks[chunks.length - 1]
@@ -860,7 +865,7 @@ describe.skip('tokenRouterStream — reasoning but no content', () => {
       ]),
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     const final = chunks[chunks.length - 1]
@@ -874,10 +879,10 @@ describe.skip('tokenRouterStream — HTTP errors', () => {
   it('yields auth-error chunk on 401', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 401,
-      text: () => Promise.resolve('Unauthorized'),
+      text: () => 'Unauthorized',
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks.length).toBe(1)
@@ -888,10 +893,10 @@ describe.skip('tokenRouterStream — HTTP errors', () => {
   it('yields rate-limit-error chunk on 429', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 429,
-      text: () => Promise.resolve('Too Many Requests'),
+      text: () => 'Too Many Requests',
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('busy')
@@ -900,10 +905,10 @@ describe.skip('tokenRouterStream — HTTP errors', () => {
   it('yields server-error chunk on 500', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 500,
-      text: () => Promise.resolve('Internal Server Error'),
+      text: () => 'Internal Server Error',
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('encountered an error')
@@ -915,7 +920,7 @@ describe.skip('tokenRouterStream — HTTP errors', () => {
       body: null,
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('No response body')
@@ -924,10 +929,10 @@ describe.skip('tokenRouterStream — HTTP errors', () => {
   it('does NOT leak HTTP error body in the error chunk', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 400,
-      text: () => Promise.resolve('SENSITIVE-ERROR-DETAILS'),
+      text: () => 'SENSITIVE-ERROR-DETAILS',
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).not.toContain('SENSITIVE-ERROR-DETAILS')
@@ -936,10 +941,10 @@ describe.skip('tokenRouterStream — HTTP errors', () => {
   it('error chunk has done=true and ms >= 0', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 500,
-      text: () => Promise.resolve('error'),
+      text: () => 'error',
     }))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].done).toBe(true)
@@ -962,7 +967,7 @@ describe.skip('tokenRouterStream — fetch rejection', () => {
       return Promise.resolve(makeResponse({ body: makeSseBody(['data: [DONE]\n\n']) }))
     })
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user', { signal: controller.signal })) chunks.push(c)
 
     expect(chunks[0].error).toContain('cancelled')
@@ -971,7 +976,7 @@ describe.skip('tokenRouterStream — fetch rejection', () => {
   it('yields "Network error" when fetch rejects with network error', async () => {
     mockFetch.mockRejectedValue(new Error('fetch failed: ENOTFOUND'))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('Network error')
@@ -980,7 +985,7 @@ describe.skip('tokenRouterStream — fetch rejection', () => {
   it('yields "busy" when fetch rejects with 429-style error', async () => {
     mockFetch.mockRejectedValue(new Error('429 Too Many Requests'))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('busy')
@@ -989,7 +994,7 @@ describe.skip('tokenRouterStream — fetch rejection', () => {
   it('yields generic error for unknown fetch rejection', async () => {
     mockFetch.mockRejectedValue(new Error('something weird'))
 
-    const chunks = []
+    const chunks: TokenRouterChunk[] = []
     for await (const c of tokenRouterStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('encountered an error')
@@ -1191,7 +1196,7 @@ describe.skip('critiqueHtml — error cases', () => {
   it('returns ok=false with error when tokenRouterChat fails', async () => {
     mockFetch.mockResolvedValue(makeResponse({
       status: 500,
-      text: () => Promise.resolve('error'),
+      text: () => 'error',
     }))
 
     const result = await critiqueHtml('<html></html>', 'mission')

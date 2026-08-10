@@ -4,16 +4,20 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { logger } from '../src/lib/logger'
 
-const ORIG_LOG_LEVEL = process.env.LOG_LEVEL
-const ORIG_NODE_ENV = process.env.NODE_ENV
+// @types/node marks NODE_ENV as readonly. Cast process.env to a mutable record
+// so tests can set/delete it. (LOG_LEVEL is not in the type defs, so it's already mutable.)
+const env = process.env as Record<string, string | undefined>
+
+const ORIG_LOG_LEVEL = env.LOG_LEVEL
+const ORIG_NODE_ENV = env.NODE_ENV
 
 describe('logger', () => {
   afterEach(() => {
     // Restore env vars after each test.
     if (ORIG_LOG_LEVEL === undefined) delete process.env.LOG_LEVEL
     else process.env.LOG_LEVEL = ORIG_LOG_LEVEL
-    if (ORIG_NODE_ENV === undefined) delete process.env.NODE_ENV
-    else process.env.NODE_ENV = ORIG_NODE_ENV
+    if (ORIG_NODE_ENV === undefined) delete env.NODE_ENV
+    else env.NODE_ENV = ORIG_NODE_ENV
   })
 
   describe('getLevel', () => {
@@ -24,13 +28,13 @@ describe('logger', () => {
 
     it('returns "info" by default when no env vars are set', () => {
       delete process.env.LOG_LEVEL
-      delete process.env.NODE_ENV
+      delete env.NODE_ENV
       expect(logger.getLevel()).toBe('info')
     })
 
     it('returns "warn" when NODE_ENV=production (and no LOG_LEVEL)', () => {
       delete process.env.LOG_LEVEL
-      process.env.NODE_ENV = 'production'
+      env.NODE_ENV = 'production'
       expect(logger.getLevel()).toBe('warn')
     })
 
@@ -51,13 +55,13 @@ describe('logger', () => {
 
     it('falls back to "info" when LOG_LEVEL is invalid', () => {
       process.env.LOG_LEVEL = 'invalid-level'
-      delete process.env.NODE_ENV
+      delete env.NODE_ENV
       expect(logger.getLevel()).toBe('info')
     })
 
     it('LOG_LEVEL takes precedence over NODE_ENV', () => {
       process.env.LOG_LEVEL = 'debug'
-      process.env.NODE_ENV = 'production'
+      env.NODE_ENV = 'production'
       expect(logger.getLevel()).toBe('debug')
     })
   })

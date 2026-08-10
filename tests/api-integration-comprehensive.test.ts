@@ -62,7 +62,8 @@ function makeJsonRequest(
   if (options.body !== undefined) {
     init.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
   }
-  return new NextRequest(`http://localhost:3000${url}`, init)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new NextRequest(`http://localhost:3000${url}`, init as any)
 }
 
 function makeRunRequest(body: unknown, ip?: string): NextRequest {

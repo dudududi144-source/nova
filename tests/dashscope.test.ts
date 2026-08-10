@@ -53,6 +53,8 @@ const {
   dashscopeChat,
   dashscopeStream,
 } = dashscopeMod
+// Type-only import (DashScopeChunk is an interface, erased at runtime)
+type DashScopeChunk = import('../src/lib/dashscope').DashScopeChunk
 
 // ── Env var management ──
 
@@ -146,7 +148,7 @@ describe.skip('dashscopeStream — not configured (runs first to avoid client ca
   it('yields error chunk when DASHSCOPE_API_KEY is missing', async () => {
     delete process.env.DASHSCOPE_API_KEY
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks.length).toBe(1)
@@ -157,7 +159,7 @@ describe.skip('dashscopeStream — not configured (runs first to avoid client ca
   it('yields error chunk when DASHSCOPE_API_KEY is placeholder', async () => {
     process.env.DASHSCOPE_API_KEY = 'your-key-here'
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks.length).toBe(1)
@@ -432,7 +434,7 @@ describe.skip('dashscopeStream — function shape', () => {
 
     const gen = dashscopeStream('sys', 'user')
     // Drain the generator
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of gen) chunks.push(c)
     // The stream should at least yield a final done chunk.
     expect(chunks.length).toBeGreaterThan(0)
@@ -457,7 +459,7 @@ describe.skip('dashscopeStream — success cases', () => {
       { usage: { prompt_tokens: 5, completion_tokens: 10 } },
     ])))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     // First chunk: text="Hello", fullText="Hello", done=false
@@ -484,7 +486,7 @@ describe.skip('dashscopeStream — success cases', () => {
       { usage: { prompt_tokens: 1, completion_tokens: 3 } },
     ])))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].fullText).toBe('A')
@@ -501,7 +503,7 @@ describe.skip('dashscopeStream — success cases', () => {
       { usage: { prompt_tokens: 1, completion_tokens: 1 } },
     ])))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     // The first content chunk + final chunk = 2 chunks.
@@ -517,7 +519,7 @@ describe.skip('dashscopeStream — success cases', () => {
       { usage: { prompt_tokens: 1, completion_tokens: 1 } },
     ])))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks.length).toBe(2)
@@ -530,7 +532,7 @@ describe.skip('dashscopeStream — success cases', () => {
       {}, // no usage
     ])))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[chunks.length - 1].tokens).toBe(0)
@@ -603,7 +605,7 @@ describe.skip('dashscopeStream — error cases', () => {
   it('yields rate-limit error chunk when OpenAI throws 429', async () => {
     mockCreate.mockImplementation(() => Promise.reject(new Error('429 Too Many Requests')))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks.length).toBe(1)
@@ -614,7 +616,7 @@ describe.skip('dashscopeStream — error cases', () => {
   it('yields rate-limit error chunk when error contains "rate limit" (lowercase)', async () => {
     mockCreate.mockImplementation(() => Promise.reject(new Error('rate limit exceeded')))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('rate limited')
@@ -625,7 +627,7 @@ describe.skip('dashscopeStream — error cases', () => {
     err.name = 'AbortError'
     mockCreate.mockImplementation(() => Promise.reject(err))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('cancelled')
@@ -634,7 +636,7 @@ describe.skip('dashscopeStream — error cases', () => {
   it('yields "cancelled" error chunk when error message contains "aborted"', async () => {
     mockCreate.mockImplementation(() => Promise.reject(new Error('Request was aborted')))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('cancelled')
@@ -643,7 +645,7 @@ describe.skip('dashscopeStream — error cases', () => {
   it('yields generic error chunk for other errors', async () => {
     mockCreate.mockImplementation(() => Promise.reject(new Error('something weird')))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('DashScope error')
@@ -653,7 +655,7 @@ describe.skip('dashscopeStream — error cases', () => {
   it('yields generic error chunk when error is a non-Error value', async () => {
     mockCreate.mockImplementation(() => Promise.reject('plain string error'))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].error).toContain('DashScope error')
@@ -663,7 +665,7 @@ describe.skip('dashscopeStream — error cases', () => {
   it('error chunk has done=true and ms >= 0', async () => {
     mockCreate.mockImplementation(() => Promise.reject(new Error('fail')))
 
-    const chunks = []
+    const chunks: DashScopeChunk[] = []
     for await (const c of dashscopeStream('sys', 'user')) chunks.push(c)
 
     expect(chunks[0].done).toBe(true)
