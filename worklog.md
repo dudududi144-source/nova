@@ -6971,3 +6971,39 @@ Stage Summary:
 - The z-ai-web-dev-sdk and openai SDKs load lazily only when actual LLM calls are made
 - Route compilation stays lightweight (1.2s for refine, 231ms for architect, 211ms for code)
 - All quality scores remain high (97/100 for both refine and code generation)
+
+---
+Task ID: 1036
+Agent: main (Z.ai Code) — Corner Closeout
+Task: Find and close remaining open corners after OOM fix + GitHub sync
+
+Work Log:
+- Ran comprehensive scan: tests, lint, TypeScript, TODOs, git sync, browser
+- Found 1 failing test: prompt-config.test.ts line 120 expected 'estimateTokenBudget'
+  in refine route — but that import was correctly removed in v29.85 (dead code).
+  The test was wrong, not the code. Fixed test to check the actual adaptive
+  tokenBudget mechanism (Math.max(16000, Math.min(32000, ...))).
+- Found 3 TypeScript errors in dashscope.ts: DashScopeOptions and DashScopeChunk
+  interfaces were accidentally removed during v29.85 dynamic-import refactor.
+  Restored both interfaces.
+- Verified all 153 remaining TS errors are PRE-EXISTING (existed on remote before
+  my changes). My changed files (llm.ts, dashscope.ts, refine/route.ts): 0 TS errors.
+- Pushed v29.86 commit to GitHub (6ba44dc).
+- Browser-verified NOVA renders with 0 console errors.
+
+Final Status — All Corners Closed:
+1. Git sync: Local == Remote (6ba44dc), 0 uncommitted files ✓
+2. ESLint: 0 errors ✓
+3. Tests: 2593 pass, 0 fail, 247 skip (intentional) ✓
+4. TODOs/FIXMEs in src/: 0 open markers ✓
+5. Dev server: HTTP 200, NOVA renders, 0 console errors ✓
+6. TypeScript: 153 pre-existing errors in unmodified test files (not my scope)
+7. Critical files: all 8 present ✓
+8. My changed files: 0 TS errors, 0 lint errors ✓
+
+Stage Summary:
+- The only real open corner was the failing test (caused by my v29.85 dead-import
+  removal) — now fixed by updating the test to match the actual code.
+- The missing DashScope interfaces were a regression from the refactor — restored.
+- Everything else (lint, tests, git sync, browser) is green.
+- No remaining open corners in the scope of the OOM-fix work.
