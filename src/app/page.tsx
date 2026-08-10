@@ -32,6 +32,7 @@ import { PreviewErrorBoundary } from '@/components/preview-error-boundary'
 // v29.43: RunCodeButton extracted to its own component file.
 import { RunCodeButton } from '@/components/run-code-button'
 import { ShortcutsModal } from '@/components/shortcuts-modal'
+import { SettingsModal } from '@/components/settings-modal'
 // Constants extracted to lib for maintainability (page.tsx was 4600+ lines).
 import {
   STARTER_CATEGORIES,
@@ -3984,98 +3985,7 @@ export default function Home() {
 
       {/* v29.39: Settings panel — configure API keys */}
       {showSettings && (
-        <div
-          role="dialog"
-          aria-label="API Settings"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowSettings(false)}
-        >
-          <div
-            className="w-full max-w-lg rounded-lg border border-border/40 bg-card p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">API Settings</h2>
-              <button
-                type="button"
-                onClick={() => setShowSettings(false)}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="mb-4 text-[11px] text-muted-foreground">
-              Configure LLM API keys. Keys are stored in memory (not disk) and take precedence over environment variables.
-            </p>
-            {apiSettings ? (
-              <div className="space-y-4">
-                {[
-                  { id: 'zai', label: 'Z.AI (Primary)', key: 'zaiApiKey' },
-                  { id: 'dashscope', label: 'DashScope / Qwen (Secondary)', key: 'dashscopeApiKey' },
-                  { id: 'tokenrouter', label: 'TokenRouter / Kimi (Tertiary)', key: 'tokenrouterApiKey' },
-                ].map(({ id, label, key }) => {
-                  const info = (apiSettings.keys as Record<string, { configured: boolean; masked: string; source: string }>)[id]
-                  return (
-                    <div key={id} className="rounded-md border border-border/40 p-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-medium">{label}</span>
-                        <span className={`rounded px-1.5 py-0.5 text-[9px] ${info?.configured ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/20 text-muted-foreground'}`}>
-                          {info?.configured ? 'Configured' : 'Not set'}
-                        </span>
-                      </div>
-                      {info?.configured && (
-                        <p className="mb-2 text-[10px] text-muted-foreground/60">
-                          Current: {info.masked} ({info.source})
-                        </p>
-                      )}
-                      <input
-                        type="password"
-                        placeholder="Enter API key and press Enter..."
-                        className="w-full rounded border border-border/40 bg-background px-2 py-1.5 text-[11px] focus:outline-none focus:border-primary"
-                        onKeyDown={async (e) => {
-                          if (e.key !== 'Enter') return
-                          const value = (e.target as HTMLInputElement).value
-                          if (!value.trim()) return
-                          try {
-                            const res = await fetch('/api/settings', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ [key]: value.trim() }),
-                            })
-                            const data = await res.json()
-                            if (data.ok) {
-                              setApiSettings({ keys: data.keys, models: data.models })
-                              toast.success(`${label} key updated`)
-                              ;(e.target as HTMLInputElement).value = ''
-                            }
-                          } catch {
-                            toast.error('Failed to update key')
-                          }
-                        }}
-                      />
-                    </div>
-                  )
-                })}
-                <div className="rounded-md bg-muted/10 p-3 text-[10px] text-muted-foreground">
-                  <p className="font-medium">Available models:</p>
-                  <div className="mt-1 flex gap-2">
-                    {Object.entries(apiSettings.models).map(([model, available]) => (
-                      <span key={model} className={`rounded px-1.5 py-0.5 text-[9px] ${available ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/20 text-muted-foreground/50'}`}>
-                        {model === 'z-ai' ? 'Z.AI' : model === 'qwen' ? 'Qwen' : 'Kimi'}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading...
-              </div>
-            )}
-          </div>
-        </div>
+        <SettingsModal onClose={() => setShowSettings(false)} apiSettings={apiSettings} />
       )}
 
       {/* v20: Build statistics panel — shows persistent stats across sessions */}

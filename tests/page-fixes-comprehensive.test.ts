@@ -14,20 +14,25 @@ const source = fs.readFileSync(
   'utf-8'
 )
 
+// v29.81: SettingsModal extracted to separate component
+const settingsSource = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/settings-modal.tsx'),
+  'utf-8'
+)
+
 // ---------------------------------------------------------------------------
 // Helper: extract the settings API-key input section (the <input> element that
 // has the "Enter API key and press Enter" placeholder).
 // ---------------------------------------------------------------------------
 function getSettingsInputSection(): string {
-  const placeholderIdx = source.indexOf('Enter API key and press Enter')
+  // v29.81: Settings moved to src/components/settings-modal.tsx
+  const placeholderIdx = settingsSource.indexOf('Enter API key and press Enter')
   expect(placeholderIdx).toBeGreaterThan(-1)
-  // Walk backwards from the placeholder to find the opening <input tag.
-  const inputOpenIdx = source.lastIndexOf('<input', placeholderIdx)
-  // Walk forwards to find the closing /> after the placeholder.
-  const inputCloseIdx = source.indexOf('/>', placeholderIdx)
+  const inputOpenIdx = settingsSource.lastIndexOf('<input', placeholderIdx)
+  const inputCloseIdx = settingsSource.indexOf('/>', placeholderIdx)
   expect(inputOpenIdx).toBeGreaterThan(-1)
   expect(inputCloseIdx).toBeGreaterThan(-1)
-  return source.slice(inputOpenIdx, inputCloseIdx + 2)
+  return settingsSource.slice(inputOpenIdx, inputCloseIdx + 2)
 }
 
 // ---------------------------------------------------------------------------
@@ -88,8 +93,9 @@ function getKeyboardHandlerSection(): string {
 // with an Enter guard so the key is only sent when the user presses Enter.
 // ===========================================================================
 describe('BUG #1: Settings API-key input uses Enter (not onChange)', () => {
+  // v29.81: Settings moved to src/components/settings-modal.tsx
   test('settings input placeholder text is "Enter API key and press Enter..."', () => {
-    expect(source).toContain('Enter API key and press Enter')
+    expect(settingsSource).toContain('Enter API key and press Enter')
   })
 
   test('settings input uses onKeyDown handler (not onChange)', () => {

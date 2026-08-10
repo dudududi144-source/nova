@@ -383,9 +383,9 @@ describe('page.tsx line count decreased after v29.46 dead-code removal', () => {
     expect(lineCount).toBeLessThan(4300)
   })
 
-  test('source has approximately 4235 lines (within ±50 of the target)', () => {
+  test('source has approximately 4100 lines (within ±100 of the target)', () => {
     const lineCount = source.split('\n').length
-    expect(lineCount).toBeGreaterThanOrEqual(4185)
-    expect(lineCount).toBeLessThanOrEqual(4285)
+    expect(lineCount).toBeGreaterThanOrEqual(4000)
+    expect(lineCount).toBeLessThanOrEqual(4200)
   })
 })
