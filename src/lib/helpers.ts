@@ -80,11 +80,16 @@ export function validateHistory(stored: unknown): BuildResult[] {
 // Lowercases, collapses whitespace, trims, removes punctuation — so
 // "Build a snake game" and "build a snake game!!" group together.
 export function normalizeMission(mission: string): string {
+  // v29.74: Sort words to make lookup word-order independent
+  // ("build snake game" == "game snake build")
   return mission
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+    .split(' ')
+    .sort()
+    .join(' ')
 }
 
 // v11: Group history builds by normalized mission, keeping order of latest-first.
