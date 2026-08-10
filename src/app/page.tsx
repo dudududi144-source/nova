@@ -270,8 +270,13 @@ export default function Home() {
         if (!cancelled) {
           setProbeResult({ ...probe, summary: `${result.id} ${probe.summary}` })
           if (probe.errors.length > 0) {
-            // Don't toast — just show the badge. User can click to see details.
-            console.warn('[NOVA] Probe found', probe.errors.length, 'runtime errors')
+            // v29.78: Auto-trigger fix loop when probe finds errors
+            console.warn('[NOVA] Probe found', probe.errors.length, 'runtime errors — auto-fixing...')
+            toast.info(`Found ${probe.errors.length} runtime error(s) — auto-fixing...`)
+            // Trigger auto-fix loop automatically after a short delay
+            setTimeout(() => {
+              if (!cancelled) autoFixLoop()
+            }, 500)
           }
         }
       } catch (err) {

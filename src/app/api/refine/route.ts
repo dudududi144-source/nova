@@ -287,7 +287,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           const retryResult = await llmChat(
             'You are continuing an interrupted HTML generation. Output ONLY the remaining HTML. Start exactly where the previous output stopped.',
             `The previous output was truncated. Last 1000 chars:\n\n${lastChars}\n\nContinue and complete with </html>.`,
-            { maxTokens: tokenBudget, temperature: 0.2, timeoutMs: 60_000, signal: request.signal }
+            { maxTokens: tokenBudget, temperature: 0.2, timeoutMs: 60_000, thinking: true, signal: request.signal }
           )
           if (retryResult.ok) {
             rawHtml = rawHtml + stripCodeFences(retryResult.text)

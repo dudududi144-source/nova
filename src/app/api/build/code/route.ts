@@ -23,7 +23,7 @@ import { injectRuntimeErrorCapture } from '@/lib/runtime-errors'
 import { checkPlanAdherence } from '@/lib/plan-adherence'
 import { analyzeHtml } from '@/lib/static-analysis'
 import { registerBuild, storeResult, storeError } from '@/lib/build-store'
-import { recordSuccess, recordFailure } from '@/lib/model-circuit-breaker'
+import { recordSuccess, recordFailure, isModelAvailable } from '@/lib/model-circuit-breaker'
 import { parseOutput, detectLanguageFromContent, defaultFileNameForLanguage } from '@/lib/multi-file'
 import { isTokenRouterConfigured, tokenRouterStream } from '@/lib/tokenrouter'
 import { isDashScopeConfigured, dashscopeStream } from '@/lib/dashscope'
@@ -303,8 +303,12 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       // v29.43: Declare model flags before try block so they're accessible in catch
       // for correct circuit-breaker recording.
-      const useKimi = body?.model === 'kimi' && isTokenRouterConfigured()
-      const useQwen = body?.model === 'qwen' && isDashScopeConfigured()
+      // v29.78: Check circuit breaker BEFORE selecting model — if Z.AI is tripped,
+      // automatically fall back to Qwen or Kimi instead of calling a dead model.
+      const zaiAvailable = isModelAvailable('z-ai')
+      const trAvailable = isModelAvailable('tokenrouter') && isTokenRouterConfigured()
+      const useKimi = (body?.model === 'kimi' && trAvailable) || (!zaiAvailable && trAvailable)
+      const useQwen = (body?.model === 'qwen' && isDashScopeConfigured()) || (!zaiAvailable && !useKimi && isDashScopeConfigured())
 
       try {
         // Adaptive token budget

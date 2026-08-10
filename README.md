@@ -6,7 +6,7 @@
 
 **Describe anything. Get everything.**
 
-NOVA transforms a single sentence into a complete, production-grade web application — live, interactive, and fully functional. No templates. No constraints. No fixed patterns. Just pure creative intelligence that adapts to whatever you imagine.
+NOVA transforms a single sentence into a complete, production-grade web application — live, interactive, and fully functional. No code templates. No fixed output patterns. Just pure creative intelligence that adapts to whatever you imagine.
 
 </div>
 
@@ -48,7 +48,7 @@ Your words
 ┌─────────────────────────────────────────────────┐
 │  ANALYZER                                       │
 │  Static analysis — catches bugs before you do   │
-│  10+ bug types detected in <1ms                 │
+│  4 bug types detected in <1ms                 │
 └──────────────────────┬──────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────┐
@@ -68,17 +68,17 @@ Your words
 
 ### What Makes NOVA Different
 
-**No fixed patterns.** Most AI builders have presets: "if game → use Canvas", "if todo → use checklist". NOVA has none of that. The AI analyzes each request uniquely and chooses its own approach. A dice game gets dice. A trading dashboard gets charts. A solar system gets orbital mechanics. The AI decides.
+**No fixed patterns.** Most AI builders have presets: "if game → use Canvas", "if todo → use checklist". NOVA uses keyword detection to route web apps vs code, then the AI decides the architecture within that category and chooses its own approach. A dice game gets dice. A trading dashboard gets charts. A solar system gets orbital mechanics. The AI decides.
 
 **Live token streaming.** You don't wait 60 seconds for a spinner. You watch the code appear character by character — HTML structure, CSS styling, JavaScript logic — all flowing in real-time. The preview updates as the code arrives.
 
-**Deep reasoning mode.** NOVA enables thinking mode on every LLM call — architect, code generation, refinement, and bug fixing. The model reasons deeply about architecture before generating, producing more complete and functional apps.
+**Deep reasoning mode.** NOVA enables thinking mode on all primary Z.AI calls (not on Qwen/Kimi fallbacks — their APIs don't support it) — architect, code generation, refinement, and bug fixing. The model reasons deeply about architecture before generating, producing more complete and functional apps.
 
-**It actually verifies.** NOVA doesn't just generate and hope. After building, it loads the app in a sandbox, clicks every button, types in every input, and checks if the DOM actually changes. If something's broken, it sends the errors back to the AI and tries again. Up to 3 times.
+**It actually verifies.** NOVA doesn't just generate and hope. After building, it loads the app in a sandbox, clicks every button, types in every input, and checks if the DOM actually changes. If the probe finds runtime errors, NOVA automatically sends them back to the AI for fixing. Up to 3 iterations. The user can also trigger it manually.
 
 **Cross-build memory.** Build something, then rebuild it later? Instant. NOVA caches every build in IndexedDB. Rebuilding a previous request takes 0ms instead of 60s. It also suggests similar past builds as you type.
 
-**Survives anything.** SSE stream drops? NOVA polls the server and recovers the result. AI model fails? Circuit breaker disables it and falls back to the other model. Architect fails? The coder proceeds without a plan. Network timeout? Client-side detection kicks in at 300s.
+**Survives anything.** SSE stream drops? NOVA polls the server and recovers the result. AI model fails? Circuit breaker tracks failures and falls back on error. Architect fails? The coder proceeds without a plan. Network timeout? Client-side detection kicks in at 300s.
 
 ---
 
@@ -171,7 +171,7 @@ src/
 │   ├── zip.ts                        → Dependency-free ZIP encoder
 │   ├── golden-templates.ts           → Pre-built templates (available, not forced)
 │   └── ...                           → Utilities
-└── tests/                            → 3029 tests, 0 failures
+└── tests/                            → 2840 tests, 0 failures
 ```
 
 ---
@@ -207,14 +207,14 @@ bun run dev             # Open http://localhost:3000
 | Fallback AI | Kimi K3 via TokenRouter (free, OpenAI-compatible) |
 | Memory | IndexedDB |
 | Streaming | Server-Sent Events (SSE) |
-| Testing | Bun test — 3029 tests, 5259 assertions |
+| Testing | Bun test — 2840 tests, 4935 assertions |
 
 ---
 
 ## Testing
 
 ```bash
-bun test    # 3029 tests, 0 failures
+bun test    # 2840 tests, 0 failures
 ```
 
 ---
