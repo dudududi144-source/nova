@@ -55,6 +55,9 @@ server.log
 upload/
 download/
 
+# Skills (environment-provided skill files, not part of NOVA source)
+skills/
+
 # OS
 .DS_Store
 Thumbs.db
