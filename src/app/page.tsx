@@ -351,21 +351,35 @@ export default function Home() {
     if (!showBackups) return
     setLoadingBackups(true)
     fetch('/api/backup')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(d => {
         setBackupFiles(d.files || [])
         setLoadingBackups(false)
       })
-      .catch(() => setLoadingBackups(false))
+      .catch(() => {
+        setLoadingBackups(false)
+        toast.error('Failed to load backups. Please try again.')
+        setShowBackups(false)
+      })
   }, [showBackups])
 
   // v29.39: Load API settings when panel opens
+  // v29.91: Show error toast on failure instead of silently swallowing
   useEffect(() => {
     if (!showSettings) return
     fetch('/api/settings')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(d => setApiSettings(d))
-      .catch(() => {})
+      .catch((err) => {
+        toast.error('Failed to load API settings. Please try again.')
+        setShowSettings(false)
+      })
   }, [showSettings])
 
   // Save history to localStorage — pure side effect, called OUTSIDE of setState updaters
