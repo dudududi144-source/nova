@@ -349,16 +349,27 @@ export function probeApp(html: string, isGame: boolean): Promise<ProbeResult> {
     }
 
     // Load the HTML into the iframe
-    // v29.44: Security — inject a script that blocks access to parent/top/opener
-    // before the app's own scripts run. This prevents LLM-generated HTML from
-    // exfiltrating data via parent.fetch() or parent.localStorage.
-    // The probe still works because it accesses contentDocument from the parent
-    // side (not from inside the iframe).
+    // v29.44→v29.84: Security — block specific parent APIs (fetch, localStorage, etc.)
+    // but KEEP parent.postMessage working so error capture can send errors to NOVA.
+    // Previous approach (override parent entirely) broke runtime error detection.
     const securityScript = `<script>
-      // Block access to parent/top/opener to prevent data exfiltration
-      try { Object.defineProperty(window, 'parent', { get: () => window, configurable: false }); } catch (e) {}
-      try { Object.defineProperty(window, 'top', { get: () => window, configurable: false }); } catch (e) {}
-      try { Object.defineProperty(window, 'opener', { get: () => null, configurable: false }); } catch (e) {}
+      // Block parent.fetch, parent.localStorage, parent.document to prevent data exfiltration
+      // But keep parent.postMessage working for error capture
+      try {
+        var _realParent = window.parent;
+        var _safeParent = new Proxy({}, {
+          get: function(target, prop) {
+            if (prop === 'postMessage') return _realParent.postMessage.bind(_realParent);
+            if (prop === 'addEventListener') return _realParent.addEventListener.bind(_realParent);
+            if (prop === 'removeEventListener') return _realParent.removeEventListener.bind(_realParent);
+            return undefined; // Block everything else
+          },
+          set: function() { return true; } // Silently ignore writes
+        });
+        Object.defineProperty(window, 'parent', { get: function() { return _safeParent; }, configurable: false });
+        Object.defineProperty(window, 'top', { get: function() { return _safeParent; }, configurable: false });
+        Object.defineProperty(window, 'opener', { get: function() { return null; }, configurable: false });
+      } catch (e) {}
     </script>`
     // Inject the security script right after <head> (or at the start if no <head>)
     let safeHtml = html

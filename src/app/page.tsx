@@ -1084,7 +1084,9 @@ export default function Home() {
 
   const autoFixLoop = useCallback(async (maxIterations: number = 3) => {
     const currentResult = resultRef.current
-    if (!currentResult || autoFixLoopRunning) return
+    // v29.84: Also check loading/refining to prevent race condition
+    // — if a new build started, don't run auto-fix on the old result
+    if (!currentResult || autoFixLoopRunning || loading || refining) return
 
     setAutoFixLoopRunning(true)
     setAutoFixIterations(0)
