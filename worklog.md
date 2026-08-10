@@ -7273,3 +7273,44 @@ Stage Summary:
 - All previous fixes (v29.85-v29.90) are holding.
 - Every quality gate passes: TS, lint, tests, security, documentation.
 - The codebase is production-ready with no remaining open corners.
+
+---
+Task ID: 1043
+Agent: main (Z.ai Code) — UX Error Handling
+Task: Fix silent error swallowing in user-facing modal fetches
+
+Work Log:
+- Found UX bug: Settings modal fetch (/api/settings) had .catch(() => {})
+  which silently swallowed errors. If the fetch failed, the user was stuck
+  on "Loading..." forever with no feedback.
+- Found same pattern in Backups modal fetch (/api/backup): .catch only
+  turned off loading state but showed no error message.
+- Fixed both:
+  1. /api/settings fetch: added r.ok check, error toast, close modal on failure
+  2. /api/backup fetch: added r.ok check, error toast, close modal on failure
+- Verified the remaining silent catch (cacheBuild, line 944) is correct —
+  IndexedDB cache writes are non-critical, user doesn't need feedback.
+
+Additional scans completed (all clean):
+- All 77 dependencies are used (0 unused)
+- Prisma schema is a documented placeholder (0 models, future use)
+- mini-services/ is empty (just .gitkeep)
+- examples/websocket is a reference demo (not imported by app)
+- tsconfig is correct (strict mode, bundler resolution, path aliases)
+- next.config has standalone output + 4 security headers
+- All useEffect with timers/listeners have cleanup (0 memory leaks)
+- 0 'any' types in production code
+- 0 TODO/FIXME markers
+
+Verification:
+- tsc --noEmit: 0 errors ✓
+- ESLint: 0 errors ✓
+- Tests: 2593 pass, 0 fail ✓
+- Server: HTTP 200 ✓
+
+Committed as v29.91 (584c396), pushed to GitHub.
+
+Stage Summary:
+- Fixed the last UX bug found: silent error swallowing in modal fetches.
+- Users now get clear error feedback when settings/backup loading fails.
+- No remaining open corners found across all scans.
