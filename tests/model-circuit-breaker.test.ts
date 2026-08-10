@@ -310,7 +310,7 @@ describe('threshold-reaching behavior (stateful — runs last)', () => {
   })
 
   it.skip('tokenrouter is unaffected by z-ai being disabled (still available)', () => {
-    recordSuccess("tokenrouter" as any)
+    recordSuccess("tokenrouter" as ModelId)
     expect(isModelAvailable('tokenrouter')).toBe(true)
   })
 })
