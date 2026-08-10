@@ -23,6 +23,23 @@ interface OpenAIClient {
   }
 }
 
+export interface DashScopeOptions {
+  model?: string
+  temperature?: number
+  maxTokens?: number
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+export interface DashScopeChunk {
+  text: string
+  fullText: string
+  done: boolean
+  tokens: number
+  ms: number
+  error?: string
+}
+
 let client: OpenAIClient | null = null
 let lastApiKey: string | null = null
 

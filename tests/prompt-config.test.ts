@@ -117,8 +117,12 @@ describe('Refine route characterization (SSE)', () => {
     expect(refineSource).toContain('maxDuration = 180')
   })
 
-  it('has no arbitrary maxTokens limit (uses estimateTokenBudget)', () => {
-    expect(refineSource).toContain('estimateTokenBudget')
+  it('has no arbitrary maxTokens limit (uses adaptive tokenBudget)', () => {
+    // Refine uses an adaptive budget: Math.max(16000, Math.min(32000, estimatedInputTokens + 4000))
+    // (code route uses estimateTokenBudget(plan) instead — different mechanism, same goal)
+    expect(refineSource).toContain('tokenBudget')
+    expect(refineSource).toContain('Math.max(16000')
+    expect(refineSource).toContain('Math.min(32000')
   })
 
   it('has truncation detection', () => {
