@@ -6900,3 +6900,74 @@ Stage Summary:
 - Database browser with SQL CRUD (12 functions)
 - All tested in real browser with Agent Browser
 - 3029 tests, 0 failures, 0 lint errors
+
+---
+Task ID: 1035
+Agent: main (Z.ai Code) — OOM Fix
+Task: Fix the /api/refine OOM-kill issue found in the hostile audit (Task 1034)
+
+Work Log:
+- Root cause: /api/refine, /api/build/code, /api/build/architect, /api/enhance all
+  statically imported @/lib/llm (which imports z-ai-web-dev-sdk) and @/lib/dashscope
+  (which imports openai) at the top level. Turbopack had to bundle these heavy SDKs
+  during on-demand route compilation, exceeding the 4GB sandbox memory limit.
+
+- Fix applied to src/lib/llm.ts:
+  - Removed static `import ZAI from 'z-ai-web-dev-sdk'` (line 10)
+  - Added `loadZAI()` async function with module-level caching (zaiModule + zaiModulePromise)
+  - Updated `getZai()` to call `await loadZAI()` then `ZAI.default.create()`
+  - Updated `getZaiWithSettingsKey()` to call `await loadZAI()` for custom-key constructor
+  - The SDK now loads only when an actual LLM call is made, not at route compile time
+
+- Fix applied to src/lib/dashscope.ts:
+  - Removed static `import OpenAI from 'openai'` (line 12)
+  - Added minimal `OpenAIClient` structural interface (avoids importing SDK types)
+  - Changed `getClient()` from sync to async, using `await import('openai')` inside
+  - Added type assertions at `dashscopeStream` and `dashscopeChat` call sites
+    (AsyncIterable and completion object types) since create() now returns Promise<unknown>
+
+- Fix applied to src/app/api/refine/route.ts:
+  - Removed dead `estimateTokenBudget` from build-intelligence import (was imported
+    but never called — only validateOutput and analyzeQuality are used)
+
+- All 4 LLM-using routes benefit without individual changes (they import from @/lib/llm
+  and @/lib/dashscope, which are now lazy-loading)
+
+Verification Results:
+1. Lint: 0 errors ✓
+2. GET / (page): HTTP 200 ✓
+3. GET /api/refine: HTTP 405, compiled in 1.2s (was OOM before) ✓
+4. GET /api/build/architect: HTTP 405, compiled in 231ms ✓
+5. GET /api/build/code: HTTP 405, compiled in 211ms ✓
+6. GET /api/enhance: HTTP 405, compiled in 176ms ✓
+7. All 7 API routes compile without OOM ✓
+
+End-to-End LLM Tests:
+- POST /api/refine: HTTP 200 in 4.3s
+  - 215 token events streamed, 560 tokens, quality 97/100
+  - Error capture (__novaGetErrors) injected ✓
+  - LLM fixed "bad is not defined" by defining the bad() function ✓
+
+- POST /api/build/architect: HTTP 200 in 6.5s
+  - Generated "Elegant Counter" plan with 6 key features
+  - 495 tokens, hasPlan: true ✓
+
+- POST /api/build/code: HTTP 200 in 118s
+  - 4,602 token events streamed, 6,524 tokens
+  - 29,360 bytes HTML, quality 97/100
+  - 913 lines, 18 functions, 18 listeners, 65 CSS rules
+  - Static analysis: 0 errors, 0 warnings ✓
+  - Error capture injected ✓
+
+Browser Verification:
+- NOVA page renders: heading, model selectors, build input, 12 templates ✓
+- 0 console errors ✓
+- Page fills viewport (577px = 577px) ✓
+
+Stage Summary:
+- The OOM issue is FIXED: all API routes compile and run without crashing
+- The auto-fix data flow (probe → refine → LLM → fixed HTML) is proven end-to-end
+- Dynamic import() pattern is the correct fix for memory-constrained sandbox environments
+- The z-ai-web-dev-sdk and openai SDKs load lazily only when actual LLM calls are made
+- Route compilation stays lightweight (1.2s for refine, 231ms for architect, 211ms for code)
+- All quality scores remain high (97/100 for both refine and code generation)

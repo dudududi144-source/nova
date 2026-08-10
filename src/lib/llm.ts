@@ -6,8 +6,33 @@
 // live in html-utils.ts, and mission validation lives in mission.ts.
 // This separation ensures that mocking this module for route tests
 // does NOT break those pure functions for other test files.
+//
+// v29.85: The z-ai-web-dev-sdk is loaded via dynamic import() instead of a
+// static top-level import. This is critical for memory-constrained sandbox
+// environments (4GB RAM): a static import forces Turbopack to bundle the
+// entire SDK when ANY route that imports from this file is compiled, which
+// causes OOM during on-demand compilation. With dynamic import, the SDK
+// only loads when an actual LLM call is made — route compilation stays
+// lightweight and fast.
 
-import ZAI from 'z-ai-web-dev-sdk'
+// Minimal type for the dynamically-imported SDK module.
+type ZAIModule = { default: { create: () => Promise<unknown>; new (config: Record<string, unknown>): unknown } }
+let zaiModule: ZAIModule | null = null
+let zaiModulePromise: Promise<ZAIModule> | null = null
+
+async function loadZAI(): Promise<ZAIModule> {
+  if (zaiModule) return zaiModule
+  if (zaiModulePromise) return zaiModulePromise
+  zaiModulePromise = import('z-ai-web-dev-sdk').then((mod: unknown) => {
+    zaiModule = mod as ZAIModule
+    zaiModulePromise = null
+    return zaiModule
+  }).catch((err: unknown) => {
+    zaiModulePromise = null
+    throw err
+  })
+  return zaiModulePromise
+}
 
 export interface LlmResult {
   ok: boolean
@@ -66,11 +91,13 @@ async function getZai(): Promise<ZaiClient> {
   if (zaiInstance) return zaiInstance
   if (zaiPromise) return zaiPromise
 
-  zaiPromise = ZAI.create().then((inst: unknown) => {
+  zaiPromise = (async () => {
+    const ZAI = await loadZAI()
+    const inst = await ZAI.default.create()
     zaiInstance = inst as ZaiClient
     zaiPromise = null
     return zaiInstance
-  }).catch((err: unknown) => {
+  })().catch((err: unknown) => {
     zaiPromise = null
     throw err
   })
@@ -98,7 +125,8 @@ async function getZaiWithSettingsKey(): Promise<ZaiClient> {
 
     if (customKey && customKey !== 'Z.ai') {
       // A custom key was set via Settings UI — create and cache a new instance
-      const ZaiCtor = ZAI as unknown as { new (config: Record<string, unknown>): unknown }
+      const ZAIMod = await loadZAI()
+      const ZaiCtor = ZAIMod.default as unknown as { new (config: Record<string, unknown>): unknown }
       customZaiInstance = new ZaiCtor({
         baseUrl: 'https://internal-api.z.ai/v1',
         apiKey: customKey,

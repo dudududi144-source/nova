@@ -8,30 +8,25 @@
 // BaseURL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 //
 // The API key is read from the DASHSCOPE_API_KEY environment variable.
+//
+// v29.85: The openai SDK is loaded via dynamic import() instead of a static
+// top-level import. Same rationale as llm.ts — prevents Turbopack from
+// bundling the heavy SDK during route compilation, avoiding OOM in the
+// 4GB sandbox. The SDK only loads when an actual DashScope call is made.
 
-import OpenAI from 'openai'
-
-export interface DashScopeOptions {
-  model?: string
-  temperature?: number
-  maxTokens?: number
-  timeoutMs?: number
-  signal?: AbortSignal
+// Minimal structural type for the OpenAI client (avoids importing the SDK at module load).
+interface OpenAIClient {
+  chat: {
+    completions: {
+      create: (opts: Record<string, unknown>, opts2?: Record<string, unknown>) => Promise<unknown>
+    }
+  }
 }
 
-export interface DashScopeChunk {
-  text: string
-  fullText: string
-  done: boolean
-  tokens: number
-  ms: number
-  error?: string
-}
-
-let client: OpenAI | null = null
+let client: OpenAIClient | null = null
 let lastApiKey: string | null = null
 
-function getClient(): OpenAI {
+async function getClient(): Promise<OpenAIClient> {
   // v29.39: Check settings first, then env var
   let apiKey: string | undefined
   try {
@@ -47,10 +42,11 @@ function getClient(): OpenAI {
   }
   // Recreate client if key changed (e.g., user updated it via Settings)
   if (client && lastApiKey === apiKey) return client
+  const { default: OpenAI } = await import('openai')
   client = new OpenAI({
     baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     apiKey,
-  })
+  }) as unknown as OpenAIClient
   lastApiKey = apiKey
   return client
 }
@@ -85,7 +81,7 @@ export async function* dashscopeStream(
   const maxTokens = opts.maxTokens ?? 32000
 
   try {
-    const openai = getClient()
+    const openai = await getClient()
 
     const stream = await openai.chat.completions.create({
       model,
@@ -100,7 +96,10 @@ export async function* dashscopeStream(
     }, {
       signal: opts.signal,
       timeout: opts.timeoutMs ?? 180_000,
-    })
+    }) as AsyncIterable<{
+      choices?: Array<{ delta?: { content?: string } }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    }>
 
     let fullText = ''
     let totalTokens = 0
@@ -161,7 +160,7 @@ export async function dashscopeChat(
   }
 
   try {
-    const openai = getClient()
+    const openai = await getClient()
 
     const completion = await openai.chat.completions.create({
       model,
@@ -175,7 +174,10 @@ export async function dashscopeChat(
     }, {
       signal: controller.signal,
       timeout: timeoutMs,
-    })
+    }) as {
+      choices?: Array<{ message?: { content?: string } }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    }
 
     const text = completion.choices?.[0]?.message?.content ?? ''
     const tokens = (completion.usage?.prompt_tokens ?? 0) + (completion.usage?.completion_tokens ?? 0)
