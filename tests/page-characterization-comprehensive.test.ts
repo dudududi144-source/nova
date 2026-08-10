@@ -491,36 +491,35 @@ describe('page.tsx — preview width modes', () => {
 })
 
 describe('page.tsx — shortcuts panel content', () => {
+  // v29.80: ShortcutsModal extracted to src/components/shortcuts-modal.tsx
+  const shortcutsSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/shortcuts-modal.tsx'),
+    'utf-8'
+  )
   test('shortcuts panel uses role="dialog"', () => {
-    expect(source).toContain('role="dialog"')
+    expect(shortcutsSource).toContain('role="dialog"')
   })
   test('shortcuts panel has aria-label="Keyboard shortcuts"', () => {
-    expect(source).toContain('aria-label="Keyboard shortcuts"')
+    expect(shortcutsSource).toContain('aria-label="Keyboard shortcuts"')
   })
   test('shortcuts panel lists 13 shortcuts', () => {
-    const panelStart = source.indexOf("showShortcuts && (")
-    const panelEnd = source.indexOf('</div>\n      )}', panelStart)
-    const panel = source.slice(panelStart, panelEnd)
-    const items = panel.match(/keys: \[/g)
+    const items = shortcutsSource.match(/keys: \[/g)
     expect(items!.length).toBe(13)
   })
   test('shortcuts panel includes Cmd+Enter, Cmd+S, Cmd+N, E, I, D, F, S, T, M, /, Esc, ?', () => {
-    const panelStart = source.indexOf("showShortcuts && (")
-    const panelEnd = source.indexOf('</div>\n      )}', panelStart)
-    const panel = source.slice(panelStart, panelEnd)
-    expect(panel).toContain("Build the app")
-    expect(panel).toContain("Download ZIP file")
-    expect(panel).toContain("Start a new build")
-    expect(panel).toContain("Enhance prompt with AI")
-    expect(panel).toContain("Toggle build insights panel")
-    expect(panel).toContain("Toggle diff view")
-    expect(panel).toContain("Toggle fullscreen preview")
-    expect(panel).toContain("Toggle build statistics")
-    expect(panel).toContain("Toggle prompt templates")
-    expect(panel).toContain("Cycle AI model")
-    expect(panel).toContain("Slash commands menu")
-    expect(panel).toContain("Cancel build/refine")
-    expect(panel).toContain("Show/hide this help")
+    expect(shortcutsSource).toContain("Build the app")
+    expect(shortcutsSource).toContain("Download ZIP file")
+    expect(shortcutsSource).toContain("Start a new build")
+    expect(shortcutsSource).toContain("Enhance prompt with AI")
+    expect(shortcutsSource).toContain("Toggle build insights panel")
+    expect(shortcutsSource).toContain("Toggle diff view")
+    expect(shortcutsSource).toContain("Toggle fullscreen preview")
+    expect(shortcutsSource).toContain("Toggle build statistics")
+    expect(shortcutsSource).toContain("Toggle prompt templates")
+    expect(shortcutsSource).toContain("Cycle AI model")
+    expect(shortcutsSource).toContain("Slash commands menu")
+    expect(shortcutsSource).toContain("Cancel build/refine")
+    expect(shortcutsSource).toContain("Show/hide this help")
   })
 })
 

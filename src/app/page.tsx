@@ -31,6 +31,7 @@ import { PipelineProgress, stageFromProgressStep, type StageKey } from '@/compon
 import { PreviewErrorBoundary } from '@/components/preview-error-boundary'
 // v29.43: RunCodeButton extracted to its own component file.
 import { RunCodeButton } from '@/components/run-code-button'
+import { ShortcutsModal } from '@/components/shortcuts-modal'
 // Constants extracted to lib for maintainability (page.tsx was 4600+ lines).
 import {
   STARTER_CATEGORIES,
@@ -4147,57 +4148,7 @@ export default function Home() {
 
       {/* Keyboard shortcuts help panel — press ? to toggle */}
       {showShortcuts && (
-        <div
-          role="dialog"
-          aria-label="Keyboard shortcuts"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowShortcuts(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-lg border border-border/40 bg-card p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Keyboard Shortcuts</h2>
-              <button
-                type="button"
-                onClick={() => setShowShortcuts(false)}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Close shortcuts"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              {[
-                { keys: ['⌘', 'Enter'], label: 'Build the app' },
-                { keys: ['⌘', 'S'], label: 'Download ZIP file' },
-                { keys: ['⌘', 'N'], label: 'Start a new build' },
-                { keys: ['E'], label: 'Enhance prompt with AI' },
-                { keys: ['I'], label: 'Toggle build insights panel' },
-                { keys: ['D'], label: 'Toggle diff view (compare versions)' },
-                { keys: ['F'], label: 'Toggle fullscreen preview' },
-                { keys: ['S'], label: 'Toggle build statistics' },
-                { keys: ['T'], label: 'Toggle prompt templates' },
-                { keys: ['M'], label: 'Cycle AI model (Z.AI → Qwen → Kimi)' },
-                { keys: ['/'], label: 'Slash commands menu' },
-                { keys: ['Esc'], label: 'Cancel build/refine' },
-                { keys: ['?'], label: 'Show/hide this help' },
-              ].map((shortcut) => (
-                <div key={shortcut.label} className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{shortcut.label}</span>
-                  <div className="flex gap-1">
-                    {shortcut.keys.map((k) => (
-                      <kbd key={k} className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-foreground">
-                        {k}
-                      </kbd>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <ShortcutsModal onClose={() => setShowShortcuts(false)} />
       )}
 
       {/* Footer */}
