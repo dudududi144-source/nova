@@ -7194,3 +7194,38 @@ Stage Summary:
 - All API routes now have consistent security protections.
 - The biggest fix: backup route (file download) had NO rate limiting — now protected.
 - No remaining security gaps found in the codebase.
+
+---
+Task ID: 1041
+Agent: main (Z.ai Code) — README Accuracy
+Task: Fix README documentation gaps — deleted files, missing features
+
+Work Log:
+- Audited README against actual codebase: found 3 files listed that were deleted
+  in v29.76 (llm-fallback.ts, sse-reader.ts, golden-templates.ts) but never
+  removed from README project structure.
+- Found 2 files that exist but weren't listed (dashscope.ts, runtime-errors.ts).
+- Found forge/deploy bridge (added in remote commit 1ca6880) not documented
+  in User Experience features section.
+- Found FORGE_URL and DATABASE_URL env vars not in Environment Variables table.
+
+Fixed:
+- Removed 3 deleted files from project structure listing
+- Added dashscope.ts, runtime-errors.ts, design-tokens.ts to listing
+- Added 'Forge Bridge' feature to User Experience section
+- Added FORGE_URL and DATABASE_URL to env vars table
+- Updated llm.ts description to note dynamic import (v29.85 OOM fix)
+
+Verification:
+- All 14 files listed in README now exist on disk ✓
+- All 3 deleted files removed from README ✓
+- tsc --noEmit: 0 errors ✓
+- ESLint: 0 errors ✓
+- Tests: 2593 pass, 0 fail ✓
+- Browser: NOVA renders, 0 console errors ✓
+
+Committed as v29.90 (d10f6ad), pushed to GitHub.
+
+Stage Summary:
+- README is now fully accurate and up-to-date with the codebase.
+- No remaining documentation gaps found.
