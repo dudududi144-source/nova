@@ -4,10 +4,13 @@
 
 import type { NextRequest } from 'next/server'
 import { logger } from '@/lib/logger'
+import { RateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 120
+
+const deployLimiter = new RateLimiter(10, 60 * 1000, 5 * 60 * 1000, 1000)
 
 const FORGE_URL = process.env.FORGE_URL || 'https://forge.rabotatony.workers.dev'
 
@@ -20,6 +23,13 @@ interface ForgeDeployBody {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip') || 'unknown'
+  const rl = deployLimiter.check(ip)
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: 'Rate limited — too many deployments. Try again in a minute.' }, { status: 429 })
+  }
+
   let body: ForgeDeployBody
   try {
     body = (await request.json()) as ForgeDeployBody
@@ -34,6 +44,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   logger.info('forge.deploy.started', {
+    ip,
     projectName: projectName || 'unnamed',
     hasHtml: !!html,
     fileCount: files?.length || 0,

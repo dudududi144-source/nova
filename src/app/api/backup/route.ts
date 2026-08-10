@@ -9,14 +9,27 @@ import type { NextRequest } from 'next/server'
 import { readdirSync, statSync, createReadStream, existsSync } from 'fs'
 import { join } from 'path'
 import { Readable } from 'stream'
+import { RateLimiter } from '@/lib/rate-limit'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
+
+const backupLimiter = new RateLimiter(30, 60 * 1000, 5 * 60 * 1000, 1000)
 
 const BACKUP_DIR = join(process.cwd(), 'download')
 
 export async function GET(request: NextRequest): Promise<Response> {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip') || 'unknown'
+  const rl = backupLimiter.check(ip)
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 })
+  }
+
   const fileName = request.nextUrl.searchParams.get('file')
+  logger.info('backup.get', { ip, hasFile: !!fileName })
 
   // If no file specified, list all backups
   if (!fileName) {
@@ -81,7 +94,15 @@ function formatBytes(bytes: number): string {
 
 // POST /api/backup — Create a new backup ZIP of all source files.
 // Saves to download/ directory with timestamp.
-export async function POST(): Promise<Response> {
+export async function POST(request: NextRequest): Promise<Response> {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip') || 'unknown'
+  const rl = backupLimiter.check(ip)
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 })
+  }
+  logger.info('backup.create.started', { ip })
+
   try {
     const { createZip } = await import('@/lib/zip')
     const { readdirSync, readFileSync, mkdirSync, writeFileSync, existsSync } = await import('fs')
@@ -152,6 +173,7 @@ export async function POST(): Promise<Response> {
     writeFileSync(zipPath, Buffer.from(zipBytes))
 
     const stat = statSync(zipPath)
+    logger.info('backup.create.completed', { ip, fileName, fileCount: files.length, size: stat.size })
     return Response.json({
       ok: true,
       fileName,
@@ -162,12 +184,20 @@ export async function POST(): Promise<Response> {
     })
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    logger.error('backup.create.failed', { ip, error: errorMsg })
     return Response.json({ ok: false, error: errorMsg }, { status: 500 })
   }
 }
 
 // DELETE /api/backup?file=name.zip — Delete a backup file.
 export async function DELETE(request: NextRequest): Promise<Response> {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip') || 'unknown'
+  const rl = backupLimiter.check(ip)
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: 'Rate limited' }, { status: 429 })
+  }
+
   const fileName = request.nextUrl.searchParams.get('file')
   if (!fileName) {
     return Response.json({ ok: false, error: 'Missing file parameter' }, { status: 400 })
@@ -185,9 +215,11 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     const { unlinkSync } = await import('fs')
     unlinkSync(filePath)
 
+    logger.info('backup.delete', { ip, file: safeName })
     return Response.json({ ok: true, deleted: safeName })
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    logger.error('backup.delete.failed', { ip, error: errorMsg })
     return Response.json({ ok: false, error: errorMsg }, { status: 500 })
   }
 }

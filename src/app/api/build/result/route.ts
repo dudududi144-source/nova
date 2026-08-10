@@ -4,9 +4,11 @@
 import type { NextRequest } from 'next/server'
 import { getResult } from '@/lib/build-store'
 import { RateLimiter } from '@/lib/rate-limit'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const resultLimiter = new RateLimiter(200, 60 * 1000, 5 * 60 * 1000, 5000)
 

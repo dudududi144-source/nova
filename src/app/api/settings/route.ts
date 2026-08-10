@@ -15,6 +15,7 @@ import { homedir } from 'os'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const settingsLimiter = new RateLimiter(30, 60 * 1000, 5 * 60 * 1000, 1000)
 

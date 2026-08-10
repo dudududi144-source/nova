@@ -383,7 +383,7 @@ describe('Backup API', () => {
 
   describe('POST /api/backup (create)', () => {
     test('creates a ZIP backup and returns file info', async () => {
-      const res = await backupPOST()
+      const res = await backupPOST(makeJsonRequest('/api/backup', { method: 'POST' }))
       expect(res.status).toBe(200)
       const data = await res.json()
       if (data.fileName) createdFiles.push(path.join(BACKUP_DIR, data.fileName))
@@ -393,7 +393,7 @@ describe('Backup API', () => {
     }, 20000)
 
     test('returns ok:true with fileName, fileCount, size, url', async () => {
-      const res = await backupPOST()
+      const res = await backupPOST(makeJsonRequest('/api/backup', { method: 'POST' }))
       const data = await res.json()
       if (data.fileName) createdFiles.push(path.join(BACKUP_DIR, data.fileName))
       expect(data.ok).toBe(true)
