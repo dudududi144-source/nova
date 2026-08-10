@@ -33,6 +33,7 @@ import { PreviewErrorBoundary } from '@/components/preview-error-boundary'
 import { RunCodeButton } from '@/components/run-code-button'
 import { ShortcutsModal } from '@/components/shortcuts-modal'
 import { SettingsModal } from '@/components/settings-modal'
+import { BackupsModal } from '@/components/backups-modal'
 // Constants extracted to lib for maintainability (page.tsx was 4600+ lines).
 import {
   STARTER_CATEGORIES,
@@ -3871,116 +3872,7 @@ export default function Home() {
 
       {/* v29.10: Backups panel — download NOVA backup ZIP files */}
       {showBackups && (
-        <div
-          role="dialog"
-          aria-label="Backup files"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowBackups(false)}
-        >
-          <div
-            className="w-full max-w-lg rounded-lg border border-border/40 bg-card p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">NOVA Backups</h2>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={async () => {
-                    try {
-                      toast.info('Creating backup...')
-                      const res = await fetch('/api/backup', { method: 'POST' })
-                      const data = await res.json()
-                      if (data.ok) {
-                        toast.success(`Backup created: ${data.fileName}`)
-                        // Refresh the list
-                        const listRes = await fetch('/api/backup')
-                        const listData = await listRes.json()
-                        setBackupFiles(listData.files || [])
-                      } else {
-                        toast.error(data.error || 'Failed to create backup')
-                      }
-                    } catch (err) {
-                      toast.error('Failed to create backup')
-                    }
-                  }}
-                  title="Create a new backup ZIP of all source files"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Backup
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setShowBackups(false)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            <p className="mb-3 text-[11px] text-muted-foreground">
-              Download NOVA backup files. Click a file to download it. Click "New Backup" to create a fresh one.
-            </p>
-            <div className="max-h-[60vh] overflow-y-auto">
-              {loadingBackups ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading...
-                </div>
-              ) : backupFiles.length === 0 ? (
-                <div className="py-4 text-sm text-muted-foreground">No backup files found.</div>
-              ) : (
-                <ul className="space-y-1">
-                  {backupFiles.map(f => (
-                    <li key={f.name} className="flex items-center gap-1">
-                      <a
-                        href={f.url}
-                        download={f.name}
-                        className="flex flex-1 items-center justify-between rounded border border-border/40 px-3 py-2 text-xs transition-colors hover:bg-accent"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Download className="h-3 w-3 text-muted-foreground" />
-                          <span className="font-mono text-foreground">{f.name}</span>
-                        </div>
-                        <div className="flex items-center gap-3 text-muted-foreground">
-                          <span>{f.sizeFormatted}</span>
-                          <span className="text-[10px]">{new Date(f.modified).toLocaleDateString()}</span>
-                        </div>
-                      </a>
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.preventDefault()
-                          if (!confirm(`Delete ${f.name}?`)) return
-                          try {
-                            const res = await fetch(`/api/backup?file=${encodeURIComponent(f.name)}`, { method: 'DELETE' })
-                            const data = await res.json()
-                            if (data.ok) {
-                              toast.success(`Deleted ${f.name}`)
-                              setBackupFiles(prev => prev.filter(b => b.name !== f.name))
-                            } else {
-                              toast.error(data.error || 'Failed to delete')
-                            }
-                          } catch {
-                            toast.error('Failed to delete backup')
-                          }
-                        }}
-                        className="rounded border border-border/40 p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                        title="Delete backup"
-                        aria-label={`Delete ${f.name}`}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
+        <BackupsModal onClose={() => setShowBackups(false)} backupFiles={backupFiles} loadingBackups={loadingBackups} onRefresh={(files) => setBackupFiles(files)} />
       )}
 
       {/* v29.39: Settings panel — configure API keys */}
