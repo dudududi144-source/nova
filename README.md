@@ -133,6 +133,7 @@ Your words
 - **Settings Panel** — Configure API keys (Z.AI, DashScope, TokenRouter) via UI; keys stored in memory, take precedence over env vars
 - **Code Execution** — Run generated Python/JS/Bash code in a sandboxed environment with stdin support
 - **Backup System** — Export/Import builds as ZIP, list and download backups
+- **Forge Bridge** — One-click deploy to Forge (forge.rabotatony.workers.dev) for live hosting
 
 ---
 
@@ -156,21 +157,21 @@ src/
 │   ├── pipeline-progress.tsx         → Visual stage tracker
 │   └── preview-error-boundary.tsx    → Crash protection
 ├── lib/
-│   ├── llm.ts                        → Z.AI SDK wrapper
+│   ├── llm.ts                        → Z.AI SDK wrapper (dynamic import)
 │   ├── tokenrouter.ts                → Kimi K3 backend
+│   ├── dashscope.ts                  → Qwen (DashScope) backend (dynamic import)
 │   ├── model-circuit-breaker.ts      → Failure tracking + auto-disable
-│   ├── llm-fallback.ts               → Multi-model fallback executor
 │   ├── build-store.ts                → In-memory result store (SSE recovery)
 │   ├── build-memory.ts               → IndexedDB cross-build cache
-│   ├── sse-reader.ts                 → Shared SSE reading utility
 │   ├── static-analysis.ts            → 10+ bug type detector
 │   ├── interaction-probe.ts          → Runtime testing (clicks, types, verifies)
 │   ├── error-recovery.ts             → Smart error categorization
 │   ├── multi-file.ts                 → Multi-file output parsing
 │   ├── diff.ts                       → LCS diff engine
 │   ├── zip.ts                        → Dependency-free ZIP encoder
-│   ├── golden-templates.ts           → Pre-built templates (available, not forced)
-│   └── ...                           → Utilities
+│   ├── runtime-errors.ts             → Error capture script injected into previews
+│   ├── design-tokens.ts              → 10 theme palettes + CSS variables
+│   └── ...                           → Utilities (html-utils, form-fixer, css-fixer, etc.)
 └── tests/                            → 2840 tests, 0 failures
 ```
 
@@ -191,6 +192,8 @@ bun run dev             # Open http://localhost:3000
 | `ZAI_API_KEY` | Auto | Auto-loaded from `/etc/.z-ai-config` in Z.ai sandbox; or set via Settings UI |
 | `DASHSCOPE_API_KEY` | Optional | For Qwen fallback; set via env var or Settings UI |
 | `TOKENROUTER_API_KEY` | Optional | For Kimi K3 fallback (free at tokenrouter.com); set via env var or Settings UI |
+| `FORGE_URL` | Optional | Forge deployment endpoint (defaults to `https://forge.rabotatony.workers.dev`) |
+| `DATABASE_URL` | Optional | SQLite path for Prisma (future use; NOVA v1 is in-memory) |
 
 > **Note:** API keys can also be configured at runtime via the Settings panel in the UI. Settings UI keys take precedence over environment variables.
 
