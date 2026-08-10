@@ -108,7 +108,7 @@ Your words
 ### Resilience Layer
 
 - **SSE Recovery** — If the stream drops, client polls `/api/build/result` to recover the completed build
-- **Circuit Breaker** — Tracks model failures; after 5 consecutive failures, temporarily disables the model (2-min cooldown)
+- **Circuit Breaker** — Tracks model failures; after 3 consecutive failures, temporarily disables the model (2-min cooldown)
 - **Graceful Degradation** — Architect failure returns `plan:null` (not 502); the coder proceeds without a plan
 - **Client Timeout** — 300-second read timeout detects half-open TCP connections
 - **Multi-Model Fallback** — Z.AI → Qwen → Kimi K3 automatic failover on all routes (architect, code, refine, enhance) with circuit breaker

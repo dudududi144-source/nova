@@ -16,7 +16,7 @@ interface ModelHealth {
   disabledUntil: number
 }
 
-const THRESHOLD = 5
+const THRESHOLD = 3 // v29.79: Lowered from 5 — 3 failures is enough to trip
 const RESET_MS = 2 * 60 * 1000
 
 function freshHealth(): ModelHealth {

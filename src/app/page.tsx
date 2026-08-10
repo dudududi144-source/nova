@@ -284,7 +284,7 @@ export default function Home() {
           console.error('[NOVA] Probe failed:', err)
         }
       }
-    }, 1500)
+    }, 500) // v29.79: Reduced from 1500ms — iframe initializes faster than expected
 
     return () => {
       cancelled = true
