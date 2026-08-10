@@ -7137,3 +7137,60 @@ Stage Summary:
 - All quality gates pass (TS, lint, tests, browser).
 - Repo is lean (3.7MB) and fully synced with GitHub.
 - No remaining open corners.
+
+---
+Task ID: 1040
+Agent: main (Z.ai Code) — Security & Consistency
+Task: Deep security/consistency scan — find API routes missing rate limiting/logging
+
+Work Log:
+- Audited all 9 API routes for consistency (maxDuration, RateLimiter, logger).
+- Found 4 routes with missing protections:
+  1. backup/route.ts — missing ALL THREE (maxDuration, RateLimiter, logger).
+     This is a file-download endpoint with no rate limiting — security risk.
+  2. forge/deploy/route.ts — missing RateLimiter (had logger + maxDuration).
+  3. build/result/route.ts — missing maxDuration + logger (had RateLimiter).
+  4. settings/route.ts — missing maxDuration (had RateLimiter + logger).
+
+- Fixed all 4 routes:
+  - backup: added RateLimiter (30 req/min), logger on all 3 handlers (GET/POST/DELETE),
+    maxDuration=60. Changed POST() signature to POST(request) for IP extraction.
+  - forge/deploy: added RateLimiter (10 req/min — deployments are heavy).
+  - build/result: added maxDuration=60, logger import.
+  - settings: added maxDuration=60.
+
+- Fixed broken tests in api-integration-comprehensive.test.ts: backup POST tests
+  were calling backupPOST() with no args. Updated to pass makeJsonRequest mock.
+
+- Verified no security issues elsewhere:
+  - No hardcoded secrets/credentials in source ✓
+  - No eval() or new Function() ✓
+  - No dangerous innerHTML assignments ✓
+  - Security headers present in next.config.ts (X-Frame-Options, X-Content-Type-Options,
+    Referrer-Policy, Permissions-Policy) ✓
+
+Final API Route Audit (all 9 routes now consistent):
+  Route         maxDuration  RateLimiter  logger
+  backup        60           ✓            ✓
+  architect     60           ✓            ✓
+  code          180          ✓            ✓
+  result        60           ✓            ✓
+  enhance       60           ✓            ✓
+  deploy        120          ✓            ✓
+  refine        180          ✓            ✓
+  run           60           ✓            ✓
+  settings      60           ✓            ✓
+
+Verification:
+- tsc --noEmit: 0 errors ✓
+- ESLint: 0 errors ✓
+- Tests: 2593 pass, 0 fail ✓
+- Browser: NOVA renders, 0 console errors ✓
+- backup API: returns file list with rate limiting ✓
+
+Committed as v29.89 (654065d), pushed to GitHub.
+
+Stage Summary:
+- All API routes now have consistent security protections.
+- The biggest fix: backup route (file download) had NO rate limiting — now protected.
+- No remaining security gaps found in the codebase.
