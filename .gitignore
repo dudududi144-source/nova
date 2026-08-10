@@ -63,3 +63,7 @@ Thumbs.db
 tmp/
 temp/
 tool-results/
+.zscripts/
+tool-results/
+agent-ctx/
+.open-next/
