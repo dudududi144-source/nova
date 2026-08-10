@@ -1,5 +1,7 @@
 'use client'
 
+import { toast } from 'sonner'
+
 // v29.81: Extracted from page.tsx for maintainability
 
 interface ApiSettings {
@@ -109,5 +111,3 @@ export function SettingsModal({ onClose, apiSettings }: SettingsModalProps) {
   )
 }
 
-// Import toast at the top of the file
-import { toast } from 'sonner'

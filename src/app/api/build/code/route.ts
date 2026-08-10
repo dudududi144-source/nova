@@ -332,14 +332,14 @@ export async function POST(request: NextRequest): Promise<Response> {
           ? dashscopeStream(buildPrompt(mission), planContext, {
               maxTokens: tokenBudget,
               temperature: 0.4,
-              timeoutMs: 150_000,
+              timeoutMs: 180_000,
               signal: request.signal,
             })
           : useKimi
             ? tokenRouterStream(buildPrompt(mission), planContext, {
                 maxTokens: tokenBudget,
                 temperature: 0.4,
-                timeoutMs: 150_000,
+                timeoutMs: 180_000,
                 signal: request.signal,
               })
             : llmChatStream(buildPrompt(mission), planContext, {
@@ -389,7 +389,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           for await (const chunk of dashscopeStream(buildPrompt(mission), planContext, {
             maxTokens: tokenBudget,
             temperature: 0.4,
-            timeoutMs: 150_000,
+            timeoutMs: 180_000,
             signal: request.signal,
           })) {
             if (chunk.error) {
@@ -428,7 +428,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           for await (const chunk of tokenRouterStream(buildPrompt(mission), planContext, {
             maxTokens: tokenBudget,
             temperature: 0.4,
-            timeoutMs: 150_000,
+            timeoutMs: 180_000,
             signal: request.signal,
           })) {
             if (chunk.error) {
