@@ -115,7 +115,7 @@ let customZaiKey: string | null = null
 
 async function getZaiWithSettingsKey(): Promise<ZaiClient> {
   try {
-    const { getEffectiveApiKey } = await import('@/app/api/settings/route')
+    const { getEffectiveApiKey } = await import('@/lib/api-keys')
     const customKey = getEffectiveApiKey('zai')
 
     // If key matches cached instance, return it

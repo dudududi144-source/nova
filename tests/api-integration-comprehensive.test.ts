@@ -28,7 +28,8 @@ mock.module('@/lib/rate-limit', () => ({
   },
 }))
 
-import { GET, POST, getEffectiveApiKey } from '../src/app/api/settings/route'
+import { GET, POST } from '../src/app/api/settings/route'
+import { getEffectiveApiKey } from '../src/lib/api-keys'
 import {
   GET as backupGET,
   POST as backupPOST,
