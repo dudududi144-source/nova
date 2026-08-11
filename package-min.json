@@ -1,0 +1,8 @@
+{
+  "name": "nova-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node nova-server.cjs"
+  },
+  "dependencies": {}
+}
