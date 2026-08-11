@@ -1,0 +1,41 @@
+name: NOVA Tunnel
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [start-tunnel]
+
+jobs:
+  tunnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: Download cloudflared
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+      - name: Start NOVA server
+        run: |
+          node nova-server.cjs &
+          sleep 3
+          curl -s http://localhost:3000/ | head -c 100
+      - name: Start Cloudflare Tunnel
+        id: tunnel
+        run: |
+          ./cloudflared tunnel --url http://localhost:3000 2>&1 | tee tunnel.log &
+          sleep 15
+          TUNNEL_URL=$(grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" tunnel.log | head -1)
+          echo "url=$TUNNEL_URL" >> $GITHUB_OUTPUT
+          echo "::notice::NOVA is live at $TUNNEL_URL"
+      - name: Keep alive
+        run: |
+          echo "NOVA URL: ${{ steps.tunnel.outputs.url }}"
+          for i in $(seq 1 200); do
+            sleep 60
+            curl -s -o /dev/null http://localhost:3000/ || true
+          done
